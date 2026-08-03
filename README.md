@@ -8,18 +8,25 @@
 
 ## 界面预览
 
-<p align="center">
-  <img src="docs/screenshots/home.png" width="240" alt="首页信息流" />
-  <img src="docs/screenshots/bilingual.png" width="240" alt="对照翻译" />
-  <img src="docs/screenshots/profile.png" width="240" alt="我的" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/categories.png" width="240" alt="分类与信源" />
-  <img src="docs/screenshots/reading-font.png" width="240" alt="阅读字体" />
-  <img src="docs/screenshots/appearance.png" width="240" alt="外观" />
-  <img src="docs/screenshots/translation.png" width="240" alt="翻译设置" />
-</p>
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/screenshots/home.jpg" alt="首页信息流" /><br/><sub>首页信息流</sub></td>
+    <td align="center" width="33%"><img src="docs/screenshots/article.jpg" alt="站内全文" /><br/><sub>站内全文</sub></td>
+    <td align="center" width="33%"><img src="docs/screenshots/bilingual.jpg" alt="对照翻译" /><br/><sub>对照翻译</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/categories.jpg" alt="分类与信源" /><br/><sub>分类与信源</sub></td>
+    <td align="center"><img src="docs/screenshots/sources.jpg" alt="综合频道" /><br/><sub>综合频道</sub></td>
+    <td align="center"><img src="docs/screenshots/translation.jpg" alt="翻译设置" /><br/><sub>翻译设置</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3">
+      <img src="docs/screenshots/reading-font.jpg" width="240" alt="阅读字体" />
+      <img src="docs/screenshots/appearance.jpg" width="240" alt="外观" />
+      <br/><sub>阅读字体 · 外观</sub>
+    </td>
+  </tr>
+</table>
 
 ## 功能
 
