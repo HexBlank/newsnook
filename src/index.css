@@ -1,0 +1,823 @@
+@import 'tailwindcss';
+
+/*
+ * Instrument Serif 光学对齐（中西混排）
+ *
+ * 同字号下汉字几乎撑满 Em Box，而 Instrument Serif 的 x-height / 大写字高
+ * 明显偏低、骨架偏窄，混排时英文/数字会显得「又小又轻」。
+ * Google Fonts 上该字体仅有 Regular(400)，无法靠字重补黑度。
+ *
+ * 做法：本地声明同名字体，用 size-adjust 只放大拉丁字形；
+ * Noto Serif SC 不受影响。若仍偏小/偏大，同步改下面四处 size-adjust（建议 112%–120%）。
+ */
+
+/* latin */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 116%;
+  src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizBRFtNs2ka5fXjeivQ4LroWlx-6zUTjg.woff2)
+    format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+/* latin-ext */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 116%;
+  src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizBRFtNs2ka5fXjeivQ4LroWlx-6zsTjmbI.woff2)
+    format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* latin italic */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 116%;
+  src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizHRFtNs2ka5fXjeivQ4LroWlx-6zAjjH7M.woff2)
+    format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+/* latin-ext italic */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 116%;
+  src: url(https://fonts.gstatic.com/s/instrumentserif/v5/jizHRFtNs2ka5fXjeivQ4LroWlx-6zAjgn7MsNo.woff2)
+    format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/*
+ * 语义色只在这里声明一层间接引用：ink 系是承托面，paper 系是落在其上的字。
+ * 真正的色值放在下方 --tone-* 里按主题切换，因此 bg-ink / text-paper 等类
+ * 无需区分明暗，任何子树也能通过 data-theme 局部改写。
+ *
+ * 注意：@theme 里的 --color-* 会在 :root 上被算成具体色并向下继承。
+ * 子树若只改 --tone-*，text-paper 等仍会拿到祖先已解析的旧色（昼读下播放器控件变墨色）。
+ * 因此每个 [data-theme] 必须同步重绑 --color-* → 当前 --tone-*。
+ */
+@theme {
+  --color-ink: var(--tone-ink);
+  --color-ink-raised: var(--tone-ink-raised);
+  --color-ink-deep: var(--tone-ink-deep);
+  --color-paper: var(--tone-paper);
+  --color-paper-muted: var(--tone-paper-muted);
+  --color-paper-faint: var(--tone-paper-faint);
+  --color-cinnabar: var(--tone-cinnabar);
+  --color-cinnabar-soft: var(--tone-cinnabar-soft);
+  --color-haze: var(--tone-haze);
+
+  --font-display: 'Instrument Serif', 'Noto Serif SC', 'Songti SC', serif;
+  --font-body: 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, monospace;
+
+  --ease-ink: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 夜读（默认）：冷墨底 + 暖纸字 */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --tone-paper-rgb: 234 228 216;
+  --tone-ink-rgb: 14 15 18;
+
+  --tone-ink: #0e0f12;
+  --tone-ink-raised: #16181d;
+  --tone-ink-deep: #08090b;
+  --tone-paper: #eae4d8;
+  --tone-paper-muted: #827d73;
+  --tone-paper-faint: #59554d;
+  --tone-cinnabar: #c45c4a;
+  --tone-cinnabar-soft: #d98474;
+  --tone-haze: rgb(var(--tone-paper-rgb) / 0.08);
+
+  --tone-body-text: rgb(var(--tone-paper-rgb) / 0.84);
+  --tone-quote-text: rgb(var(--tone-paper-rgb) / 0.7);
+  /* 头条图上的压底渐变；浅底需要更厚才压得住图片细节 */
+  --lead-veil: rgb(var(--tone-ink-rgb) / 0.7);
+  --shadow-lift: 0 12px 40px -16px rgb(0 0 0 / 0.85);
+  /* 已隐藏项的弱化：深底压暗，浅底靠降对比 */
+  --dim-hidden: brightness(0.72);
+  --grain-opacity: 0.035;
+  --grain-blend: normal;
+
+  --color-ink: var(--tone-ink);
+  --color-ink-raised: var(--tone-ink-raised);
+  --color-ink-deep: var(--tone-ink-deep);
+  --color-paper: var(--tone-paper);
+  --color-paper-muted: var(--tone-paper-muted);
+  --color-paper-faint: var(--tone-paper-faint);
+  --color-cinnabar: var(--tone-cinnabar);
+  --color-cinnabar-soft: var(--tone-cinnabar-soft);
+  --color-haze: var(--tone-haze);
+}
+
+/*
+ * 昼读：宣纸而非白纸。底色带一点暖黄灰，字用饱满深邃的墨黑，
+ * 增强未读字体的骨力与清晰度，拉大已读/未读明度差，长时间阅读舒适不刺眼。
+ */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --tone-paper-rgb: 26 24 21;
+  --tone-ink-rgb: 246 242 233;
+
+  --tone-ink: #f6f2e9;
+  --tone-ink-raised: #fffcf5;
+  --tone-ink-deep: #ebe4d6;
+  --tone-paper: #1a1815;
+  --tone-paper-muted: #7e786b;
+  --tone-paper-faint: #9e9788;
+  --tone-cinnabar: #b43d26;
+  --tone-cinnabar-soft: #be4a33;
+  --tone-haze: rgb(var(--tone-paper-rgb) / 0.09);
+
+  --tone-body-text: #24221e;
+  --tone-quote-text: #635d50;
+  --lead-veil: rgb(var(--tone-ink-rgb) / 0.86);
+  --shadow-lift: 0 14px 34px -18px rgb(72 58 38 / 0.38);
+  --dim-hidden: contrast(0.78) saturate(0.5);
+  /* 纸纹在浅底上直接叠加会发灰，改用正片叠底让噪点沉进纸里 */
+  --grain-opacity: 0.04;
+  --grain-blend: multiply;
+
+  --color-ink: var(--tone-ink);
+  --color-ink-raised: var(--tone-ink-raised);
+  --color-ink-deep: var(--tone-ink-deep);
+  --color-paper: var(--tone-paper);
+  --color-paper-muted: var(--tone-paper-muted);
+  --color-paper-faint: var(--tone-paper-faint);
+  --color-cinnabar: var(--tone-cinnabar);
+  --color-cinnabar-soft: var(--tone-cinnabar-soft);
+  --color-haze: var(--tone-haze);
+}
+
+/* 阅读排版：默认值写在这里，用户偏好在运行时覆盖同名变量 */
+:root {
+  --font-reader-sans: 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif;
+  --font-reader-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --font-reader-system: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  --reader-font-size: 15.5px;
+  --reader-line-height: 1.9;
+  --reader-paragraph-gap: 1.1em;
+  --reader-font-family: var(--font-reader-sans);
+  --reader-text-indent: 2em;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-ink-deep);
+    color: var(--color-paper);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  /*
+   * Instrument Serif 只有 400：标题用 font-medium 时禁止伪粗拉丁，
+   * 避免发糊；中文仍走 Noto Serif SC 的真实 500。
+   */
+  .font-display {
+    font-synthesis: none;
+  }
+
+  button {
+    font-family: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-cinnabar);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-cinnabar) 26%, transparent);
+    color: var(--color-paper);
+  }
+}
+
+/*
+ * 切换明暗时给一次短过渡，避免整屏硬跳；
+ * 只在切换瞬间挂上，平时不给全站元素加 transition。
+ */
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition:
+    background-color 240ms var(--ease-ink),
+    border-color 240ms var(--ease-ink),
+    color 240ms var(--ease-ink),
+    fill 240ms var(--ease-ink);
+}
+
+@layer utilities {
+  .scroll-hidden {
+    scrollbar-width: none;
+  }
+
+  .scroll-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 页面水平边距：手机留白够点按，又不过分挤窄正文行宽 */
+  .page-x {
+    padding-inline: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .page-x {
+      padding-inline: 1.5rem;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .page-x {
+      padding-inline: 1.75rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .page-x {
+      padding-inline: 2.25rem;
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .page-x {
+      padding-inline: 2.75rem;
+    }
+  }
+
+  /* 加载占位：一层缓慢扫过的微光，可用在 div 与 img 上 */
+  .ink-shimmer {
+    background-color: rgb(var(--tone-paper-rgb) / 0.045);
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      rgb(var(--tone-paper-rgb) / 0.075) 42%,
+      rgb(var(--tone-paper-rgb) / 0.075) 56%,
+      transparent 78%
+    );
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    animation: ink-shimmer-slide 1.7s var(--ease-ink) infinite;
+  }
+
+  /* 顶栏细线上的不定量刷新指示 */
+  .ink-progress {
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--color-cinnabar),
+      transparent
+    );
+    animation: ink-progress-slide 1.25s var(--ease-ink) infinite;
+  }
+
+  /*
+   * 图片下缘用蒙版渐隐，而不是盖一层与底色同调的遮罩：
+   * 主题切换、卡片叠在非 ink 底上时都不会露出错色的硬边。
+   */
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+  }
+
+  /* 横向滚动条两端渐隐，同样走蒙版，避免叠加渐变块与毛玻璃打架 */
+  .mask-fade-x {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 1.25rem,
+      #000 calc(100% - 1.25rem),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 1.25rem,
+      #000 calc(100% - 1.25rem),
+      transparent 100%
+    );
+  }
+
+  /* 分隔线两端自然消隐，比等宽实线更像纸上压痕 */
+  .rule-soft {
+    background-image: linear-gradient(
+      to right,
+      var(--color-haze),
+      var(--color-haze) 65%,
+      transparent
+    );
+  }
+
+  /* 头条标题：断行取平衡，字距按视觉而非度量收一点 */
+  .lead-title {
+    text-wrap: balance;
+    letter-spacing: 0.005em;
+    font-feature-settings: 'palt' 1;
+  }
+
+  .row-title {
+    text-wrap: pretty;
+    letter-spacing: 0.01em;
+    font-feature-settings: 'palt' 1;
+  }
+
+  /* 轻微纸纹，不依赖桌面模拟外框 */
+  .ink-grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    mix-blend-mode: var(--grain-blend);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+/* 阅读页正文排版 */
+.reader-prose {
+  font-family: var(--reader-font-family);
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.reader-prose nobr {
+  white-space: normal;
+}
+
+/* 默认段落：西文与通用段落顶格排版，不首行缩进（西文排版靠段间距区分） */
+.reader-prose p {
+  margin: 0 0 var(--reader-paragraph-gap);
+  font-size: var(--reader-font-size);
+  line-height: var(--reader-line-height);
+  color: var(--tone-body-text);
+  text-indent: 0;
+}
+
+/*
+ * 仅在满足以下条件时启用中文首行缩进（--reader-text-indent）：
+ * 1. 不是全英文文章（非 [data-article-lang="en"]）且不是明确的非 CJK 段落（非 [data-cjk="false"]）
+ * 2. 或段落明确标记为 CJK 内容（[data-cjk="true"] 或 .is-cjk）
+ */
+.reader-prose:not([data-article-lang='en']) p:not([data-cjk='false']):not(.is-non-cjk),
+.reader-prose p[data-cjk='true'],
+.reader-prose p.is-cjk {
+  text-indent: var(--reader-text-indent);
+}
+
+/* Defensive fallback for cached articles created before empty-block cleanup. */
+.reader-prose p:empty,
+.reader-prose p:has(> br:only-child),
+.reader-prose ul:empty,
+.reader-prose ol:empty {
+  display: none;
+  margin: 0;
+}
+
+/* 引用、列表、说明文字始终顶格，不缩进 */
+.reader-prose blockquote p,
+.reader-prose li p,
+.reader-prose figcaption {
+  text-indent: 0 !important;
+}
+
+.reader-prose h1,
+.reader-prose h2,
+.reader-prose h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: calc(var(--reader-font-size) * 1.3);
+  line-height: 1.4;
+  margin: 1.6em 0 0.6em;
+  color: var(--color-paper);
+}
+
+/* 阅读页大标题跟随正文字号缩放 */
+.reader-title {
+  font-family: var(--font-display);
+  font-size: calc(var(--reader-font-size) * 1.74);
+  line-height: 1.28;
+}
+
+/* 对比翻译：译文紧跟原段落，但保持独立的视觉节奏。 */
+.reader-translation {
+  display: block;
+  margin-top: 0.55em;
+  padding-top: 0.45em;
+  border-top: 1px solid color-mix(in oklab, var(--color-cinnabar) 16%, transparent);
+  font-family: var(--reader-font-family);
+  font-size: calc(var(--reader-font-size) * 0.94);
+  font-style: normal;
+  font-weight: 400;
+  line-height: calc(var(--reader-line-height) * 0.94);
+  color: var(--color-paper-muted);
+  text-indent: 0;
+}
+
+.reader-title-translation {
+  margin: 0.55em 0 0;
+  font-family: var(--reader-font-family);
+  font-size: calc(var(--reader-font-size) * 1.08);
+  line-height: 1.55;
+  color: var(--color-paper-muted);
+}
+
+/* 翻译请求期间，在尚未完成翻译的段落最后一个字符后显示内联转圈，翻译完成后自动消失。
+ * 纯图片 / 媒体块不会进入翻译队列，勿显示转圈，避免「图后空转」。 */
+.reader-prose.translation-pending
+  p:not([data-translated='true']):not(:has(.reader-translation)):not(
+    :has(img, picture, video, iframe, figure, audio, object, embed)
+  )::after,
+.reader-prose.translation-pending
+  li:not(:has(p, li)):not([data-translated='true']):not(:has(.reader-translation)):not(
+    :has(img, picture, video, iframe, figure, audio, object, embed)
+  )::after,
+.reader-prose.translation-pending
+  blockquote:not([data-translated='true']):not(:has(p, li, .reader-translation)):not(
+    :has(img, picture, video, iframe, figure, audio, object, embed)
+  )::after,
+.reader-prose.translation-pending h1:not([data-translated='true']):not(:has(.reader-translation))::after,
+.reader-prose.translation-pending h2:not([data-translated='true']):not(:has(.reader-translation))::after,
+.reader-prose.translation-pending h3:not([data-translated='true']):not(:has(.reader-translation))::after {
+  content: '';
+  display: inline-block;
+  width: 0.72em;
+  height: 0.72em;
+  margin-inline-start: 0.42em;
+  border: 1.5px solid color-mix(in oklab, var(--color-cinnabar) 32%, transparent);
+  border-top-color: var(--color-cinnabar-soft);
+  border-radius: 999px;
+  vertical-align: 0.02em;
+  animation: translation-spin 720ms linear infinite;
+}
+
+/* 请求失败或超时：未成功的段落末尾保留明确但克制的失败标记，具体原因由标题区 alert 给出。 */
+.reader-prose.translation-failed
+  p:not([data-translated='true']):not(:has(.reader-translation)):not(
+    :has(img, picture, video, iframe, figure, audio, object, embed)
+  )::after,
+.reader-prose.translation-failed
+  li:not(:has(p, li)):not([data-translated='true']):not(:has(.reader-translation)):not(
+    :has(img, picture, video, iframe, figure, audio, object, embed)
+  )::after,
+.reader-prose.translation-failed
+  blockquote:not([data-translated='true']):not(:has(p, li, .reader-translation)):not(
+    :has(img, picture, video, iframe, figure, audio, object, embed)
+  )::after,
+.reader-prose.translation-failed h1:not([data-translated='true']):not(:has(.reader-translation))::after,
+.reader-prose.translation-failed h2:not([data-translated='true']):not(:has(.reader-translation))::after,
+.reader-prose.translation-failed h3:not([data-translated='true']):not(:has(.reader-translation))::after {
+  content: '译文失败';
+  display: inline-block;
+  margin-inline-start: 0.5em;
+  font-family: var(--font-mono);
+  font-size: 0.62em;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--color-cinnabar-soft);
+  text-indent: 0;
+  vertical-align: 0.12em;
+}
+
+@keyframes translation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The shadow is only painted while the reader is revealing the page beneath it. */
+.reader-swipe-surface {
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior-x: none;
+}
+
+.reader-swipe-surface[data-swipe-back-active='true'] {
+  box-shadow: -18px 0 38px rgb(0 0 0 / 38%);
+}
+
+.reader-prose img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 0.6em 0 1.2em;
+  cursor: zoom-in;
+}
+
+/*
+ * 作者头像 / 蓝 V / 表情等徽章：保持行内小尺寸。
+ * 消毒会剥掉源站 style，依赖 data-reader-role 或加载后的 naturalWidth 分类。
+ */
+.reader-prose img.reader-img-badge,
+.reader-prose img[data-reader-role='badge'] {
+  display: inline-block;
+  width: auto;
+  max-width: 1.75em;
+  max-height: 1.75em;
+  margin: 0 0.2em;
+  vertical-align: -0.15em;
+  border-radius: 4px;
+  cursor: default;
+  min-height: 0;
+}
+
+.reader-prose video:not(.ink-video-player-media) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 0.8em 0 1.2em;
+  background: #000;
+}
+
+/* 原站 YouTube embed：不二次封装，仅做响应式占位 */
+.reader-prose iframe[src*='youtube.com/embed'],
+.reader-prose iframe[src*='youtube-nocookie.com/embed'] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 200px;
+  margin: 0.8em 0 1.2em;
+  border: 0;
+  background: #000;
+}
+
+.reader-inline-video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.8em 0 1.2em;
+}
+
+.reader-inline-video > * {
+  font-style: normal;
+}
+
+.reader-prose audio,
+.reader-prose canvas,
+.reader-prose svg:not(.lucide) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0.8em 0 1.2em;
+}
+
+/* Wide tables keep their real column geometry and scroll only inside this rail. */
+.reader-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  margin: 1.15em 0 1.45em;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-cinnabar) 45%, transparent) transparent;
+  touch-action: pan-x pan-y;
+}
+
+.reader-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  border-collapse: collapse;
+  font-size: calc(var(--reader-font-size) * 0.88);
+  line-height: 1.55;
+  color: var(--tone-body-text);
+}
+
+.reader-table-scroll th,
+.reader-table-scroll td {
+  max-width: min(72vw, 28rem);
+  padding: 0.65em 0.8em;
+  border-bottom: 1px solid var(--color-haze);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+.reader-table-scroll th {
+  color: var(--color-paper);
+  font-weight: 600;
+  background: color-mix(in oklab, var(--color-paper) 5%, transparent);
+}
+
+/* Preserve code formatting while containing horizontal movement to the block. */
+.reader-prose pre {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 1.15em 0 1.45em;
+  padding: 1em 1.05em;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border: 1px solid var(--color-haze);
+  border-radius: 10px;
+  background: var(--color-ink-raised);
+  color: var(--color-paper-muted);
+  font-family: var(--font-mono);
+  font-size: calc(var(--reader-font-size) * 0.78);
+  line-height: 1.7;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-cinnabar) 45%, transparent) transparent;
+  touch-action: pan-x pan-y;
+}
+
+.reader-prose pre code {
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+}
+
+.reader-prose :not(pre) > code {
+  overflow-wrap: anywhere;
+}
+
+/* 自定义播放器进度条：隐藏原生轨道，只保留可点的拇指区域 */
+.ink-seek {
+  margin: 0;
+  height: 100%;
+}
+.ink-seek::-webkit-slider-runnable-track {
+  height: 3px;
+  background: transparent;
+}
+.ink-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 999px;
+  border: 2px solid rgb(var(--tone-paper-rgb) / 0.9);
+  background: var(--color-cinnabar);
+  box-shadow: 0 0 0 4px rgb(var(--tone-ink-rgb) / 0.25);
+}
+.ink-seek::-moz-range-track {
+  height: 3px;
+  background: transparent;
+  border: none;
+}
+.ink-seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgb(var(--tone-paper-rgb) / 0.9);
+  background: var(--color-cinnabar);
+}
+
+.reader-prose a {
+  color: var(--color-cinnabar-soft);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-cinnabar-soft) 35%, transparent);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.reader-prose blockquote {
+  margin: 1.2em 0;
+  padding-left: 14px;
+  border-left: 2px solid color-mix(in oklab, var(--color-cinnabar) 50%, transparent);
+  font-size: var(--reader-font-size);
+  line-height: var(--reader-line-height);
+  color: var(--tone-quote-text);
+  font-style: italic;
+}
+
+.reader-prose ul,
+.reader-prose ol {
+  margin: 0 0 var(--reader-paragraph-gap);
+  padding-left: 1.2em;
+  font-size: var(--reader-font-size);
+  color: var(--tone-body-text);
+  line-height: var(--reader-line-height);
+}
+
+.reader-prose figure {
+  min-width: 0;
+  max-width: 100%;
+  margin: 1em 0;
+}
+
+.reader-prose figcaption {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-paper-faint);
+}
+
+@keyframes ink-shimmer-slide {
+  from {
+    background-position: 210% 0;
+  }
+  to {
+    background-position: -210% 0;
+  }
+}
+
+@keyframes ink-progress-slide {
+  from {
+    transform: translateX(-130%);
+  }
+  to {
+    transform: translateX(430%);
+  }
+}
+
+@keyframes ink-image-in {
+  from {
+    opacity: 0;
+    transform: scale(1.025);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes ink-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 0.62;
+  }
+}
+
+/*
+ * 正文图片由 dangerouslySetInnerHTML 注入，无法直接套 React 组件。
+ * useProgressiveImages 在运行时挂上这些类，实现占位 → 渐显。
+ */
+.reader-prose img.async-img:not(.reader-img-badge):not([data-reader-role='badge']) {
+  min-height: 140px;
+  border-radius: 10px;
+}
+
+.reader-prose img.async-img-done {
+  min-height: 0;
+  background: none;
+  animation: ink-image-in 520ms var(--ease-ink) both;
+}
+
+/* 失效图直接收起，避免正文中留下空洞 */
+.reader-prose img.async-img-failed {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

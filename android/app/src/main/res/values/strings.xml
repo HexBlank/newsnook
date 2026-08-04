@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">News Nook</string>
+    <string name="title_activity_main">News Nook</string>
+    <string name="package_name">com.aizeek.newsnook</string>
+    <string name="custom_url_scheme">com.aizeek.newsnook</string>
+</resources>

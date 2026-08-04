@@ -1,0 +1,925 @@
+import { XMLParser } from 'fast-xml-parser'
+
+import type { NewsSource, SourceKind } from '../sources/registry'
+import type { Article } from './types'
+
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  // 去掉命名空间，dc:date / content:encoded / media:thumbnail 都会被拍平
+  removeNSPrefix: true,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: true,
+  processEntities: true,
+})
+
+type Unknown = Record<string, unknown>
+
+function asRecord(value: unknown): Unknown | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Unknown) : undefined
+}
+
+function toArray(value: unknown): unknown[] {
+  if (value == null) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+/** 节点可能是字符串、带属性的对象或数组，统一取出文本 */
+function text(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = text(entry)
+      if (found) return found
+    }
+    return ''
+  }
+  const record = asRecord(value)
+  if (record && '#text' in record) return text(record['#text'])
+  return ''
+}
+
+function pick(node: Unknown, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (node[key] != null) return node[key]
+  }
+  return undefined
+}
+
+function stripTags(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function firstImageIn(html: string): string | undefined {
+  const match = html.match(/<img[^>]+src=["']([^"']+)["']/i)
+  return match?.[1]
+}
+
+function attr(value: unknown, name: string): string | undefined {
+  for (const entry of toArray(value)) {
+    const record = asRecord(entry)
+    const found = record?.[name]
+    if (typeof found === 'string' && found) return found
+  }
+  return undefined
+}
+
+function parseDate(raw: string): number | undefined {
+  if (!raw) return undefined
+  const parsed = Date.parse(raw)
+  if (!Number.isNaN(parsed)) return parsed
+
+  // 知乎日报等：yyyyMMdd
+  if (/^\d{8}$/.test(raw)) {
+    const year = Number(raw.slice(0, 4))
+    const month = Number(raw.slice(4, 6)) - 1
+    const day = Number(raw.slice(6, 8))
+    const time = new Date(year, month, day).getTime()
+    return Number.isNaN(time) ? undefined : time
+  }
+
+  // 少数源使用 "2026-07-31 09:01:25"
+  const normalized = raw.replace(' ', 'T')
+  const retry = Date.parse(normalized)
+  if (!Number.isNaN(retry)) return retry
+
+  // 晚点等："08月08日" / "2026/08/03 17:24"
+  const slash = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/)
+  if (slash) {
+    const year = Number(slash[1])
+    const month = Number(slash[2]) - 1
+    const day = Number(slash[3])
+    const hour = slash[4] ? Number(slash[4]) : 0
+    const minute = slash[5] ? Number(slash[5]) : 0
+    const time = new Date(year, month, day, hour, minute).getTime()
+    return Number.isNaN(time) ? undefined : time
+  }
+
+  const md = raw.match(/(\d{1,2})月(\d{1,2})日/)
+  if (md) {
+    const now = new Date()
+    let year = now.getFullYear()
+    const month = Number(md[1]) - 1
+    const day = Number(md[2])
+    let time = new Date(year, month, day).getTime()
+    // 省略年份的日期跨年时会落到未来。阈值取 45 天：
+    // 预告稿只领先几天，跨年误判则领先数月，两者不会混淆。
+    const FUTURE_TOLERANCE_MS = 45 * 24 * 60 * 60 * 1000
+    if (time > now.getTime() + FUTURE_TOLERANCE_MS) {
+      year -= 1
+      time = new Date(year, month, day).getTime()
+    }
+    return Number.isNaN(time) ? undefined : time
+  }
+
+  return undefined
+}
+
+function hashId(input: string): string {
+  let hash = 5381
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) + hash + input.charCodeAt(i)) >>> 0
+  }
+  return hash.toString(36)
+}
+
+function linkOfAtomEntry(node: Unknown): string {
+  const links = toArray(node.link)
+  const records = links.map(asRecord).filter(Boolean) as Unknown[]
+  const alternate = records.find((item) => {
+    const rel = item['@_rel']
+    return (rel === undefined || rel === 'alternate') && typeof item['@_href'] === 'string'
+  })
+  if (alternate) return String(alternate['@_href'])
+  const anyHref = records.find((item) => typeof item['@_href'] === 'string')
+  if (anyHref) return String(anyHref['@_href'])
+  return text(node.link)
+}
+
+function imageOf(node: Unknown, html: string): string | undefined {
+  const candidates = [
+    attr(node.enclosure, '@_url'),
+    attr(node.thumbnail, '@_url'),
+    attr(node.content, '@_url'),
+    attr(node.image, '@_url'),
+    text(asRecord(node.image)?.url),
+  ]
+  const direct = candidates.find((value) => typeof value === 'string' && /^https?:\/\//.test(value))
+  return direct ?? firstImageIn(html)
+}
+
+function buildArticle(
+  source: NewsSource,
+  raw: {
+    title: string
+    link: string
+    html: string
+    summaryText: string
+    dateRaw: string
+    image?: string
+    contentType?: Article['contentType']
+    videoUrl?: string
+    neteaseDocId?: string
+  },
+  fetchedAt: number,
+): Article | undefined {
+  const title = stripTags(raw.title)
+  if (!title) return undefined
+
+  const published = parseDate(raw.dateRaw)
+  const summary = raw.summaryText.slice(0, 220)
+
+  return {
+    id: `${source.id}:${hashId(raw.link || title)}`,
+    title,
+    summary,
+    contentHtml: raw.html && raw.html.includes('<') ? raw.html : undefined,
+    image: raw.image,
+    publishedAt: published ?? fetchedAt,
+    hasRealDate: published != null,
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceLabel: source.label,
+    sourceGroup: source.group,
+    originUrl: raw.link,
+    contentType: raw.contentType ?? 'article',
+    videoUrl: raw.videoUrl,
+    neteaseDocId: raw.neteaseDocId,
+  }
+}
+
+function parseXmlFeed(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const document = parser.parse(payload) as Unknown
+  const articles: Article[] = []
+
+  const rss = asRecord(document.rss)
+  const channel = asRecord(rss?.channel)
+  const atom = asRecord(document.feed)
+  const rdf = asRecord(document.RDF)
+
+  const nodes: Unknown[] = []
+  let isAtom = false
+
+  if (channel) {
+    nodes.push(...(toArray(channel.item).map(asRecord).filter(Boolean) as Unknown[]))
+  } else if (atom) {
+    isAtom = true
+    nodes.push(...(toArray(atom.entry).map(asRecord).filter(Boolean) as Unknown[]))
+  } else if (rdf) {
+    nodes.push(...(toArray(rdf.item).map(asRecord).filter(Boolean) as Unknown[]))
+  }
+
+  for (const node of nodes) {
+    const html = text(pick(node, 'encoded', 'content', 'description', 'summary'))
+    const descriptionText = stripTags(
+      text(pick(node, 'description', 'summary')) || html,
+    )
+    const link = isAtom ? linkOfAtomEntry(node) : text(node.link) || text(node.guid)
+    const dateRaw = text(pick(node, 'pubDate', 'published', 'updated', 'date'))
+
+    const article = buildArticle(
+      source,
+      {
+        title: text(node.title),
+        link,
+        html,
+        summaryText: descriptionText,
+        dateRaw,
+        image: imageOf(node, html),
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+function preferHttpsAsset(url: string): string {
+  if (!url.startsWith('http://')) return url
+  try {
+    const host = new URL(url).hostname
+    if (
+      host.endsWith('126.net') ||
+      host.endsWith('163.com') ||
+      host.endsWith('netease.com') ||
+      host.endsWith('126.com')
+    ) {
+      return `https://${url.slice('http://'.length)}`
+    }
+  } catch {
+    // keep original
+  }
+  return url
+}
+
+function stableNeteaseDocId(raw: string): string | undefined {
+  // 正常稿件 docid，如 L35E0QFF00019B3E；排除视频拼接脏串
+  if (/^[A-Z0-9]{8,24}$/i.test(raw)) return raw
+  return undefined
+}
+
+function parseNetease(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const data = JSON.parse(payload) as Record<string, unknown>
+  // 汽车等频道顶层为 list；普通频道为动态 TID 数组键
+  const listKey =
+    (Array.isArray(data.list) ? 'list' : undefined) ||
+    Object.keys(data).find((key) => Array.isArray(data[key]))
+  if (!listKey) return []
+
+  const entries = (data[listKey] as unknown[]).map(asRecord).filter(Boolean) as Unknown[]
+
+  return entries.flatMap((entry) => {
+    const title = text(entry.title)
+    if (!title) return []
+
+    const skipType = text(entry.skipType)
+    // 图集 / 专题本期不做站内展开，避免点开后必失败
+    if (skipType === 'photoset' || skipType === 'special') return []
+
+    const videoinfo = asRecord(entry.videoinfo)
+    const isVideo = skipType === 'video' || Boolean(videoinfo) || Boolean(text(entry.videoID))
+
+    if (isVideo) {
+      const vid = text(entry.videoID) || text(entry.skipID) || text(videoinfo?.vid)
+      if (!vid) return []
+      const description =
+        stripTags(text(videoinfo?.description)) ||
+        stripTags(text(entry.digest)) ||
+        title
+      const cover =
+        text(videoinfo?.cover) ||
+        text(videoinfo?.firstFrameImg) ||
+        text(videoinfo?.shortVideoImg) ||
+        text(entry.imgsrc) ||
+        undefined
+      const coverHttps = cover ? preferHttpsAsset(cover) : undefined
+      const mp4 = text(videoinfo?.mp4_url) || undefined
+      const m3u8 =
+        text(videoinfo?.m3u8_url) ||
+        text(asRecord(videoinfo?.video_data)?.sd_url) ||
+        undefined
+      // 实测 mp4 直链常失效，m3u8 可播；优先 HLS
+      const videoUrl = m3u8 || mp4
+      const link = `https://3g.163.com/news/video/${vid}.html`
+
+      const article = buildArticle(
+        source,
+        {
+          title,
+          link,
+          html: '',
+          summaryText: description,
+          dateRaw: text(entry.ptime) || text(videoinfo?.ptime),
+          image: coverHttps,
+          contentType: 'video',
+          videoUrl,
+          neteaseDocId: stableNeteaseDocId(text(entry.postid)) || vid,
+        },
+        fetchedAt,
+      )
+      return article ? [article] : []
+    }
+
+    const docid =
+      stableNeteaseDocId(text(entry.docid)) ||
+      stableNeteaseDocId(text(entry.postid)) ||
+      undefined
+
+    // 独家/网易号等列表常给 url_3w=news.163.com，实测大量 404；
+    // m 站与 dy 站才是真实落地页。优先 https 移动站，再退回 docid 拼链。
+    const mobileUrl = text(entry.url)
+    const desktopUrl = text(entry.url_3w)
+    const link =
+      (mobileUrl.startsWith('http') ? mobileUrl : '') ||
+      (docid ? `https://m.163.com/news/article/${docid}.html` : '') ||
+      (desktopUrl.startsWith('http') ? desktopUrl : '')
+
+    if (!link) return []
+
+    const article = buildArticle(
+      source,
+      {
+        title,
+        link,
+        html: '',
+        summaryText: stripTags(text(entry.digest)),
+        dateRaw: text(entry.ptime),
+        image: text(entry.imgsrc) ? preferHttpsAsset(text(entry.imgsrc)) : undefined,
+        contentType: 'article',
+        neteaseDocId: docid,
+      },
+      fetchedAt,
+    )
+    return article ? [article] : []
+  })
+}
+
+/** Raw page size before unsupported photosets/specials are filtered out. */
+export function neteasePageEntryCount(payload: string): number {
+  try {
+    const data = JSON.parse(payload) as Record<string, unknown>
+    if (Array.isArray(data.list)) return data.list.length
+    const list = Object.values(data).find(Array.isArray)
+    return Array.isArray(list) ? list.length : 0
+  } catch {
+    return 0
+  }
+}
+
+function parseZhihuDaily(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const data = JSON.parse(payload) as Unknown
+  const dateRaw = text(data.date)
+  const stories = [
+    ...toArray(data.top_stories),
+    ...toArray(data.stories),
+  ]
+    .map(asRecord)
+    .filter(Boolean) as Unknown[]
+
+  return stories.flatMap((story, storyIndex) => {
+    const id = text(story.id)
+    const title = text(story.title)
+    if (!id || !title) return []
+
+    const images = toArray(story.images).map(text).filter(Boolean)
+    const image = text(story.image) || images[0] || undefined
+    const link = `https://daily.zhihu.com/story/${id}`
+
+    const article = buildArticle(
+      source,
+      {
+        title,
+        link,
+        html: '',
+        summaryText: stripTags(text(story.hint) || text(story.title)),
+        dateRaw,
+        image,
+        contentType: 'article',
+        neteaseDocId: id,
+      },
+      fetchedAt,
+    )
+    // The API provides one edition date for the whole page. Preserve editorial
+    // order deterministically instead of leaving every story on the same timestamp.
+    return article ? [{ ...article, publishedAt: article.publishedAt - storyIndex }] : []
+  })
+}
+
+/** 知乎日报 JSON 的 edition date（yyyyMMdd），用于 before 分页 */
+export function zhihuEditionDate(payload: string): string | undefined {
+  try {
+    const data = JSON.parse(payload) as { date?: unknown }
+    const date = typeof data.date === 'string' ? data.date.trim() : ''
+    return /^\d{8}$/.test(date) ? date : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const ARENA_SKIP_SLUGS = new Set([
+  'about',
+  'category',
+  'page',
+  'tag',
+  'rss',
+  'feed',
+  'leaderboard-changelog',
+])
+
+/** 解码 flight / JS 字符串片段里的 \\uXXXX 与转义引号 */
+function decodeFlightText(raw: string): string {
+  try {
+    return JSON.parse(`"${raw}"`) as string
+  } catch {
+    return raw.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    )
+  }
+}
+
+function nextFlightBlob(html: string): string {
+  const chunks: string[] = []
+  const re = /self\.__next_f\.push\(\[1,"((?:\\.|[^"\\])*)"\]\)/g
+  for (const match of html.matchAll(re)) {
+    chunks.push(decodeFlightText(match[1]))
+  }
+  return chunks.length ? chunks.join('') : html
+}
+
+function titleFromSlug(slug: string): string {
+  return slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/**
+ * Arena（arena.ai/blog）无官方 RSS。
+ * 列表页把 Sanity CMS 文章元数据嵌在 Next.js flight payload 里，从中抽出 slug / 标题 / 发布时间。
+ */
+function parseArenaBlog(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const blob = nextFlightBlob(payload)
+  const found = new Map<string, { publishedAt: string; title: string }>()
+
+  const pattern =
+    /"publishedAt"\s*:\s*"([^"]+)"[\s\S]{0,500}?"slug"\s*:\s*\{[^}]*?"current"\s*:\s*"([^"]+)"[\s\S]{0,900}?"text"\s*:\s*"((?:\\.|[^"\\])*)"/g
+
+  for (const match of blob.matchAll(pattern)) {
+    const publishedAt = match[1]
+    const slug = match[2]
+    const titleRaw = match[3]
+    if (!slug || ARENA_SKIP_SLUGS.has(slug)) continue
+    const title = decodeFlightText(titleRaw).trim()
+    if (!title) continue
+    const prev = found.get(slug)
+    if (!prev || publishedAt > prev.publishedAt) {
+      found.set(slug, { publishedAt, title })
+    }
+  }
+
+  // 若 flight 解析失败，退回 sitemap 的 loc（标题用 slug 可读化）
+  if (!found.size) {
+    for (const match of payload.matchAll(
+      /<loc>\s*(https:\/\/arena\.ai\/blog\/([a-z0-9\-]+)\/?)\s*<\/loc>/gi,
+    )) {
+      const slug = match[2]
+      if (!slug || ARENA_SKIP_SLUGS.has(slug)) continue
+      found.set(slug, {
+        publishedAt: '',
+        title: titleFromSlug(slug),
+      })
+    }
+  }
+
+  const articles: Article[] = []
+  for (const [slug, meta] of found) {
+    const link = `https://arena.ai/blog/${slug}/`
+    const article = buildArticle(
+      source,
+      {
+        title: meta.title,
+        link,
+        html: '',
+        summaryText: meta.title,
+        dateRaw: meta.publishedAt,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles.sort((a, b) => b.publishedAt - a.publishedAt)
+}
+
+const ANTHROPIC_SKIP_SLUGS = new Set(['press-kit', 'feed', 'tag', 'page', 'category'])
+
+/**
+ * Anthropic News（anthropic.com/news）无官方 RSS。
+ * 与 Arena 类似：Sanity 元数据嵌在 Next.js flight 里（publishedOn / slug.current / title）。
+ */
+function parseAnthropicNews(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const blob = nextFlightBlob(payload)
+  const found = new Map<string, { publishedAt: string; title: string; summary: string }>()
+
+  const pattern =
+    /"publishedOn"\s*:\s*"([^"]+)"[\s\S]{0,500}?"slug"\s*:\s*\{[^}]*?"current"\s*:\s*"([^"]+)"[\s\S]{0,1200}?"title"\s*:\s*"((?:\\.|[^"\\])*)"/g
+
+  for (const match of blob.matchAll(pattern)) {
+    const publishedAt = match[1]
+    const slug = match[2]
+    const titleRaw = match[3]
+    if (!slug || ANTHROPIC_SKIP_SLUGS.has(slug)) continue
+    const title = decodeFlightText(titleRaw).trim()
+    if (!title) continue
+    const window = match[0]
+    const summaryMatch = window.match(/"summary"\s*:\s*"((?:\\.|[^"\\])*)"/)
+    const summary = summaryMatch ? decodeFlightText(summaryMatch[1]).trim() : ''
+    const prev = found.get(slug)
+    if (!prev || publishedAt > prev.publishedAt) {
+      found.set(slug, { publishedAt, title, summary })
+    }
+  }
+
+  // flight 失败时退回列表页可见的 /news/<slug> 链接
+  if (!found.size) {
+    for (const match of payload.matchAll(/href="\/news\/([a-zA-Z0-9\-]+)"/g)) {
+      const slug = match[1]
+      if (!slug || ANTHROPIC_SKIP_SLUGS.has(slug)) continue
+      found.set(slug, { publishedAt: '', title: titleFromSlug(slug), summary: '' })
+    }
+  }
+
+  const articles: Article[] = []
+  for (const [slug, meta] of found) {
+    const link = `https://www.anthropic.com/news/${slug}`
+    const article = buildArticle(
+      source,
+      {
+        title: meta.title,
+        link,
+        html: '',
+        summaryText: meta.summary || meta.title,
+        dateRaw: meta.publishedAt,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles.sort((a, b) => b.publishedAt - a.publishedAt)
+}
+
+/**
+ * 煎蛋 i.jandan.net JSON API（get_category_posts / get_tag_posts / get_recent_posts）。
+ * 列表已含全文 HTML，详情可直接复用 contentHtml。
+ */
+function parseJandan(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  let data: Unknown
+  try {
+    data = JSON.parse(payload) as Unknown
+  } catch {
+    return []
+  }
+
+  if (text(data.status) && text(data.status) !== 'ok') return []
+
+  const posts = toArray(data.posts).map(asRecord).filter(Boolean) as Unknown[]
+  const articles: Article[] = []
+
+  for (const post of posts) {
+    const title = text(post.title_plain) || text(post.title)
+    const id = text(post.id)
+    const apiUrl = text(post.url)
+    const link =
+      (id ? `https://jandan.net/p/${id}` : '') ||
+      (apiUrl.startsWith('http') ? apiUrl.replace('://i.jandan.net/', '://jandan.net/') : '')
+    if (!title || !link) continue
+
+    const html = typeof post.content === 'string' ? post.content : text(post.content)
+    const excerpt = stripTags(typeof post.excerpt === 'string' ? post.excerpt : text(post.excerpt))
+    const imageRaw =
+      text(post.thumbnail) ||
+      text(asRecord(post.thumbnail_images)?.full) ||
+      text(asRecord(post.thumbnail_images)?.large) ||
+      firstImageIn(html)
+    const image = imageRaw
+      ? preferHttpsAsset(imageRaw.startsWith('//') ? `https:${imageRaw}` : imageRaw)
+      : undefined
+
+    const article = buildArticle(
+      source,
+      {
+        title,
+        link,
+        html,
+        summaryText: excerpt || stripTags(html),
+        dateRaw: text(post.date) || text(post.modified),
+        image,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+/**
+ * 机器之心文章库 JSON（/api/article_library/articles.json）。
+ * 列表 content 多为摘要；全文走详情 JSON（resolveBody）。
+ */
+function parseJiqizhixin(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  let data: Unknown
+  try {
+    data = JSON.parse(payload) as Unknown
+  } catch {
+    return []
+  }
+
+  if (data.success === false) return []
+
+  const posts = toArray(data.articles).map(asRecord).filter(Boolean) as Unknown[]
+  const articles: Article[] = []
+
+  for (const post of posts) {
+    const title = text(post.title)
+    const id = text(post.id)
+    const slug = text(post.slug)
+    if (!title || !id) continue
+
+    const link = `https://www.jiqizhixin.com/articles/${slug || id}`
+    const summary = text(post.content) || text(post.description)
+    const imageRaw = text(post.coverImageUrl) || text(post.cover_image_url)
+    const image = imageRaw ? preferHttpsAsset(imageRaw) : undefined
+
+    const article = buildArticle(
+      source,
+      {
+        title,
+        link,
+        html: '',
+        summaryText: summary,
+        dateRaw: text(post.publishedAt) || text(post.published_at),
+        image,
+        // 复用字段传递详情 id，供 resolveBody 拉全文 JSON
+        neteaseDocId: id,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+/**
+ * 晚点 LatePost：POST /site/index 返回 JSON 列表。
+ * 正文在详情页 HTML，走 Readability。
+ */
+function parseLatepost(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  let data: Unknown
+  try {
+    data = JSON.parse(payload) as Unknown
+  } catch {
+    return []
+  }
+
+  if (Number(data.code) !== 1 && text(data.code) !== '1') return []
+
+  const posts = toArray(data.data).map(asRecord).filter(Boolean) as Unknown[]
+  const articles: Article[] = []
+
+  for (const post of posts) {
+    const title = text(post.title)
+    const id = text(post.id)
+    const detailPath = text(post.detail_url) || (id ? `/news/dj_detail?id=${id}` : '')
+    if (!title || !detailPath) continue
+
+    const link = detailPath.startsWith('http')
+      ? detailPath
+      : `https://www.latepost.com${detailPath.startsWith('/') ? '' : '/'}${detailPath}`
+    const cover = text(post.cover)
+    const image = cover
+      ? preferHttpsAsset(cover.startsWith('http') ? cover : `https://www.latepost.com${cover}`)
+      : undefined
+
+    const article = buildArticle(
+      source,
+      {
+        title,
+        link,
+        html: '',
+        summaryText: text(post.abstract) || text(post.intro),
+        dateRaw: text(post.release_time),
+        image,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+function wpFeaturedImage(post: Unknown): string | undefined {
+  const media = toArray(asRecord(post._embedded)?.['wp:featuredmedia'])
+    .map(asRecord)
+    .filter(Boolean) as Unknown[]
+  for (const item of media) {
+    const src = text(item.source_url)
+    if (src) return src
+  }
+  return undefined
+}
+
+/**
+ * WordPress REST API（/wp-json/wp/v2/posts?_embed=1）。
+ * 适用于关掉 /feed 但保留 REST 的 WP 站（新智元等）。
+ */
+function parseWordpressRest(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  let data: unknown
+  try {
+    data = JSON.parse(payload)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(data)) return []
+
+  const articles: Article[] = []
+  for (const entry of data) {
+    const post = asRecord(entry)
+    if (!post) continue
+
+    const title = text(asRecord(post.title)?.rendered)
+    const link = text(post.link)
+    if (!title || !link) continue
+
+    const html = text(asRecord(post.content)?.rendered)
+    const excerpt = stripTags(text(asRecord(post.excerpt)?.rendered))
+    // date 无时区，date_gmt 才能稳定还原时刻
+    const gmt = text(post.date_gmt)
+    const article = buildArticle(
+      source,
+      {
+        title,
+        link,
+        html,
+        summaryText: excerpt || stripTags(html),
+        dateRaw: gmt ? `${gmt}Z` : text(post.date),
+        image: wpFeaturedImage(post) ?? firstImageIn(html),
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+/** 果壳列表用「今天 17:15 / 昨天 20:15」相对日期，先归一成绝对时刻 */
+function absoluteCnDate(raw: string, fetchedAt: number): string {
+  const relative = raw.match(/^(今天|昨天|前天)\s*(\d{1,2}):(\d{2})$/)
+  if (!relative) return raw
+
+  const offsetDays = relative[1] === '今天' ? 0 : relative[1] === '昨天' ? 1 : 2
+  const date = new Date(fetchedAt)
+  date.setDate(date.getDate() - offsetDays)
+  date.setHours(Number(relative[2]), Number(relative[3]), 0, 0)
+  return date.toISOString()
+}
+
+/**
+ * 果壳「科学人」列表页（无官方 RSS，旧 miniserver JSON API 已下线）。
+ * 每条包在 <div class="article"> 里，标题 / 时间 / 配图都在固定 class 上。
+ */
+function parseGuokrList(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const articles: Article[] = []
+
+  for (const block of payload.split('<div class="article">').slice(1)) {
+    const titleMatch = block.match(
+      /<a[^>]*class="article-title"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/,
+    )
+    if (!titleMatch) continue
+
+    const title = stripTags(titleMatch[2])
+    // 站内链接仍是 http，升 https 避免 WebView 混合内容被拦
+    const link = titleMatch[1].replace(/^http:\/\//, 'https://')
+    if (!title || !link) continue
+
+    const dateRaw = block.match(/<span class="split">\|<\/span>\s*([^<]+)/)?.[1]?.trim() ?? ''
+    const summary = stripTags(
+      block.match(/<p class="article-summary">([\s\S]*?)<\/p>/)?.[1] ?? '',
+    )
+    const image = block.match(/<img[^>]+src="(https?:\/\/[^"]+)"/)?.[1]
+
+    const article = buildArticle(
+      source,
+      {
+        title,
+        link,
+        html: '',
+        summaryText: summary || title,
+        dateRaw: absoluteCnDate(dateRaw, fetchedAt),
+        image: image ? preferHttpsAsset(image) : undefined,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+/**
+ * 甲子光年首页（无 RSS，/feed 与 /rss.xml 都 302 到 404 页）。
+ * 卡片有两种排版：「最新文章」用 .title，头图位用 .article-title > p；
+ * 列表不带日期，发布时间只能在详情页拿到，这里按页面顺序保留。
+ */
+function parseJazzyear(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const found = new Map<string, { title: string; image?: string }>()
+
+  for (const match of payload.matchAll(
+    /article_info\.html\?id=(\d+)"([\s\S]{0,1500}?)<\/a>/g,
+  )) {
+    const id = match[1]
+    const block = match[2]
+    if (found.has(id)) continue
+
+    const title =
+      stripTags(block.match(/class="title[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '') ||
+      stripTags(block.match(/class="article-title"[^>]*>\s*<p>([\s\S]*?)<\/p>/)?.[1] ?? '')
+    if (!title) continue
+
+    const image = block
+      .match(/background-image:\s*url\(([^)]+)\)/)?.[1]
+      ?.trim()
+      .replace(/^['"]|['"]$/g, '')
+
+    found.set(id, { title, image: image || undefined })
+  }
+
+  const articles: Article[] = []
+  for (const [id, meta] of found) {
+    const article = buildArticle(
+      source,
+      {
+        title: meta.title,
+        link: `https://www.jazzyear.com/article_info.html?id=${id}`,
+        html: '',
+        summaryText: meta.title,
+        dateRaw: '',
+        image: meta.image,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+type SourceParser = (source: NewsSource, payload: string, fetchedAt: number) => Article[]
+
+/**
+ * kind → 解析器。
+ * 用 Record 而非条件分派：新增 SourceKind 时缺失解析器会在编译期报错。
+ */
+const PARSERS: Record<SourceKind, SourceParser> = {
+  feed: parseXmlFeed,
+  'google-news': parseXmlFeed,
+  netease: parseNetease,
+  zhihu: parseZhihuDaily,
+  arena: parseArenaBlog,
+  anthropic: parseAnthropicNews,
+  jandan: parseJandan,
+  jiqizhixin: parseJiqizhixin,
+  latepost: parseLatepost,
+  wordpress: parseWordpressRest,
+  guokr: parseGuokrList,
+  jazzyear: parseJazzyear,
+}
+
+export function parseSourcePayload(source: NewsSource, payload: string): Article[] {
+  const fetchedAt = Date.now()
+  const articles = (PARSERS[source.kind] ?? parseXmlFeed)(source, payload, fetchedAt)
+
+  // 上游偶尔重复推送同一条，按 id 去重
+  const seen = new Set<string>()
+  return articles.filter((article) => {
+    if (seen.has(article.id)) return false
+    seen.add(article.id)
+    return true
+  })
+}

@@ -1,0 +1,67 @@
+import { Bookmark, Newspaper } from 'lucide-react'
+
+export type TabKey = 'today' | 'me'
+
+const TABS: { key: TabKey; label: string; Icon: typeof Newspaper }[] = [
+  { key: 'today', label: '今日', Icon: Newspaper },
+  { key: 'me', label: '我的', Icon: Bookmark },
+]
+
+interface Props {
+  active: TabKey
+  laterCount: number
+  onChange: (key: TabKey) => void
+}
+
+/**
+ * 底栏导航：经典竖向图文布局，朱砂色彩点睛，配色温润纯净，无多余胶囊或杂质。
+ */
+export function TabBar({ active, laterCount, onChange }: Props) {
+  return (
+    <nav className="relative z-20 shrink-0 border-t border-haze/50 bg-ink/92 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl transition-colors duration-300">
+      <ul className="flex h-13 items-stretch">
+        {TABS.map(({ key, label, Icon }) => {
+          const isActive = key === active
+          return (
+            <li key={key} className="flex-1">
+              <button
+                type="button"
+                onClick={() => onChange(key)}
+                aria-current={isActive ? 'page' : undefined}
+                className="group relative flex h-full w-full flex-col items-center justify-center gap-0.5 transition-colors duration-200"
+              >
+                <span className="relative flex items-center justify-center">
+                  <Icon
+                    size={20}
+                    strokeWidth={isActive ? 2 : 1.5}
+                    className={`transition-all duration-200 ${
+                      isActive
+                        ? 'scale-105 text-cinnabar'
+                        : 'text-paper-muted/75 group-hover:text-paper group-active:scale-95'
+                    }`}
+                  />
+                  {key === 'me' && laterCount > 0 && (
+                    <span className="absolute -top-1 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cinnabar px-1 font-mono text-[9px] font-medium leading-none text-white shadow-sm">
+                      {laterCount > 99 ? '99+' : laterCount}
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={`font-mono text-[10.5px] tracking-[0.14em] transition-colors duration-200 ${
+                    isActive
+                      ? 'font-medium text-cinnabar'
+                      : 'text-paper-muted/75 group-hover:text-paper'
+                  }`}
+                >
+                  {label}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </nav>
+  )
+}
+
+

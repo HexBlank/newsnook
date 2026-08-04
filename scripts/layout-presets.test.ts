@@ -1,0 +1,195 @@
+/**
+ * 场景预设核心：快照 normalize / 互转 / 生命周期。
+ * 用法：npx tsx scripts/layout-presets.test.ts
+ */
+import assert from 'node:assert/strict'
+
+import { CATEGORIES } from '../src/sources/categories'
+import { DEFAULT_PREFERENCES, visibleCategories } from '../src/sources/preferences'
+import {
+  BUILTIN_DEFAULT_ID,
+  BUILTIN_PRESETS,
+  MIGRATE_LAYOUT_PRESET_ID,
+  activatePresetWritable,
+  applySnapshotToPrefs,
+  buildFreshInstallPresetsState,
+  buildMigratedPresetsState,
+  deleteUserPreset,
+  duplicateSourcesAcrossCategories,
+  ensureActiveUserPreset,
+  findBuiltinPreset,
+  normalizeSnapshot,
+  resolvePreset,
+  saveAsUserPreset,
+  snapshotFromRuntime,
+  updateUserPresetSnapshot,
+} from '../src/sources/presets'
+
+// —— Task 1: normalize + 互转 ——
+const snap = normalizeSnapshot({
+  categoryOrder: ['mix', 'tech', 'ghost-cat'],
+  hiddenCategoryIds: ['science', 'ghost-cat'],
+  categorySources: { tech: ['ithome', 'nope'], ghost: ['ithome'] },
+  customCategories: [
+    {
+      id: 'custom_1',
+      label: '我的',
+      short: '我的',
+      caption: 'x',
+      isCustom: true,
+      sourceIds: ['ithome', 'missing'],
+    },
+  ],
+  enabledSourceIds: ['ithome', 'ithome', 'missing'],
+})
+
+assert.deepEqual(snap.categoryOrder, ['mix', 'tech'])
+assert.ok(!snap.hiddenCategoryIds.includes('ghost-cat'))
+assert.deepEqual(snap.categorySources.tech, ['ithome'])
+assert.equal(snap.customCategories[0].sourceIds?.[0], 'ithome')
+assert.deepEqual(snap.enabledSourceIds, ['ithome'])
+
+const prefs = {
+  ...DEFAULT_PREFERENCES,
+  typography: { ...DEFAULT_PREFERENCES.typography, fontScale: 1.22 },
+}
+const runtime = snapshotFromRuntime(prefs, ['sspai', 'ithome'])
+const next = applySnapshotToPrefs(prefs, {
+  ...runtime,
+  categoryOrder: ['ai', 'mix'],
+  hiddenCategoryIds: ['fun'],
+  enabledSourceIds: ['qbitai'],
+})
+assert.deepEqual(next.categoryOrder, ['ai', 'mix'])
+assert.equal(next.typography.fontScale, 1.22)
+
+console.log('layout-presets core: ok')
+
+// —— Task 2: builtins ——
+assert.equal(BUILTIN_PRESETS.length, 6)
+
+const portal = normalizeSnapshot(findBuiltinPreset('builtin-default')!.snapshot)
+assert.deepEqual(portal.categoryOrder, [
+  'mix',
+  'hot',
+  'ent',
+  'sports',
+  'tech',
+  'finance',
+  'intl',
+  'health',
+  'science',
+  'fun',
+])
+assert.ok(!portal.hiddenCategoryIds.includes('ent'))
+assert.ok(!portal.hiddenCategoryIds.includes('sports'))
+assert.ok(portal.hiddenCategoryIds.includes('ai'))
+assert.ok(portal.hiddenCategoryIds.includes('game'))
+assert.deepEqual(portal.categorySources.intl, ['bbc-zh', 'dw-top', 'scmp-china', 'gnews-world'])
+assert.deepEqual(portal.categorySources.hot, ['netease'])
+assert.deepEqual(portal.categorySources.ent, ['netease-ent', 'gnews-ent'])
+assert.ok(!portal.enabledSourceIds.includes('gnews-world'))
+
+for (const preset of BUILTIN_PRESETS) {
+  const dupes = duplicateSourcesAcrossCategories(preset.snapshot.categorySources)
+  assert.deepEqual(dupes, [], `${preset.id} has cross-category source dupes: ${dupes.join(',')}`)
+}
+
+const tech = findBuiltinPreset('builtin-tech')!
+const techSnap = normalizeSnapshot(tech.snapshot)
+const visible = new Set(
+  CATEGORIES.map((c) => c.id).filter((id) => !techSnap.hiddenCategoryIds.includes(id)),
+)
+assert.ok(visible.has('tech') && visible.has('ai'))
+assert.ok(!visible.has('fun'))
+assert.ok(techSnap.enabledSourceIds.includes('qbitai'))
+assert.ok(techSnap.enabledSourceIds.includes('ithome'))
+assert.ok(techSnap.enabledSourceIds.includes('gnews-tech'))
+assert.deepEqual(techSnap.categorySources.tech?.slice(-1), ['gnews-tech'])
+
+const world = normalizeSnapshot(findBuiltinPreset('builtin-world')!.snapshot)
+assert.ok(world.enabledSourceIds.includes('bbc-zh'))
+assert.ok(world.enabledSourceIds.includes('gnews-world'))
+assert.ok(world.enabledSourceIds.includes('gnews-science'))
+assert.equal(world.categoryOrder[0], 'mix')
+assert.equal(world.categoryOrder[1], 'intl')
+assert.ok(world.categorySources.intl?.includes('gnews-world'))
+
+const biz = normalizeSnapshot(findBuiltinPreset('builtin-biz')!.snapshot)
+assert.ok(biz.enabledSourceIds.includes('latepost'))
+assert.ok(biz.enabledSourceIds.includes('jazzyear'))
+assert.ok(biz.enabledSourceIds.includes('gnews-business'))
+assert.equal(biz.categoryOrder[1], 'finance')
+assert.deepEqual(biz.categorySources.finance?.slice(-1), ['gnews-business'])
+
+const mindful = normalizeSnapshot(findBuiltinPreset('builtin-mindful')!.snapshot)
+assert.ok(mindful.enabledSourceIds.includes('guokr'))
+assert.ok(mindful.enabledSourceIds.includes('zhihu-daily'))
+assert.equal(mindful.categoryOrder[1], 'science')
+assert.equal(mindful.categoryOrder[3], 'zhihu')
+
+const fun = normalizeSnapshot(findBuiltinPreset('builtin-fun')!.snapshot)
+assert.ok(fun.enabledSourceIds.includes('netease-ent'))
+assert.ok(fun.enabledSourceIds.includes('gnews-ent'))
+assert.ok(fun.enabledSourceIds.includes('netease-history'))
+assert.ok(!fun.enabledSourceIds.includes('netease-antique'))
+assert.equal(fun.categoryOrder[1], 'fun')
+assert.deepEqual(
+  fun.categoryOrder.filter((id) => !fun.hiddenCategoryIds.includes(id)),
+  ['mix', 'fun', 'ent', 'game', 'history', 'zhihu'],
+)
+
+console.log('layout-presets builtins: ok')
+
+// —— Task 3: lifecycle ——
+const migrated = buildMigratedPresetsState(DEFAULT_PREFERENCES, ['ithome'])
+assert.equal(migrated.activePresetId, MIGRATE_LAYOUT_PRESET_ID)
+assert.equal(migrated.userPresets[0].name, '我的布局')
+assert.deepEqual(migrated.userPresets[0].snapshot.enabledSourceIds, ['ithome'])
+assert.equal(migrated.userPresets[0].builtin, false)
+
+const fresh = buildFreshInstallPresetsState()
+assert.notEqual(fresh.activePresetId, BUILTIN_DEFAULT_ID)
+assert.ok(fresh.userPresets.some((p) => p.id === fresh.activePresetId))
+
+const { state: afterSave, preset } = saveAsUserPreset(
+  migrated,
+  migrated.userPresets[0].snapshot,
+  '科技副本',
+)
+assert.equal(preset.name, '科技副本')
+assert.equal(preset.builtin, false)
+
+const untouched = updateUserPresetSnapshot(afterSave, BUILTIN_DEFAULT_ID, {
+  ...preset.snapshot,
+  categoryOrder: ['ai'],
+})
+assert.equal(untouched, afterSave)
+
+const onlyOne = {
+  activePresetId: preset.id,
+  userPresets: [preset],
+}
+const afterDelete = deleteUserPreset(onlyOne, preset.id)
+assert.equal(afterDelete.activePresetId, BUILTIN_DEFAULT_ID)
+assert.equal(afterDelete.userPresets.length, 0)
+
+const activated = activatePresetWritable(migrated, 'builtin-tech')!
+assert.ok(activated.state.userPresets.some((p) => p.id === activated.state.activePresetId))
+assert.equal(resolvePreset(activated.state, activated.state.activePresetId)?.builtin, false)
+
+const worldApply = activatePresetWritable(migrated, 'builtin-world')!
+const worldPrefs = applySnapshotToPrefs(DEFAULT_PREFERENCES, worldApply.snapshot)
+assert.deepEqual(
+  visibleCategories(worldPrefs).map((c) => c.id),
+  ['mix', 'intl', 'hot', 'science', 'tech-depth'],
+)
+
+const ensured = ensureActiveUserPreset(afterDelete)
+assert.equal(resolvePreset(ensured, ensured.activePresetId)?.builtin, false)
+assert.ok(ensured.userPresets.length >= 1)
+
+console.log('layout-presets lifecycle: ok')
+console.log('layout-presets: all ok')
+
+

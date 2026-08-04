@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!--
+      One-color line-and-detail treatment for themed icons.
+      The launcher supplies the final tint; white is used only as the mask color.
+    -->
+    <group
+        android:scaleX="0.0783"
+        android:scaleY="0.0783"
+        android:translateX="5.3"
+        android:translateY="5.2">
+
+        <!-- Rolled sheet outline -->
+        <path
+            android:pathData="M201,410C201,372 231,342 269,342H310C348,342 378,372 378,410V934C378,973 348,1003 310,1003H269C231,1003 201,973 201,934V410Z"
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="28"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+
+        <!-- Front paper outline -->
+        <path
+            android:pathData="M332,335C336,299 366,272 402,271L906,243C942,241 973,267 980,302L1036,824C1043,869 1012,911 967,917L396,972C360,976 328,949 323,913L332,335Z"
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="30"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+
+        <!-- Thumbnail and text -->
+        <path
+            android:pathData="M489,383C493,376 501,372 509,372H667C680,372 691,382 693,395L721,551C723,565 714,578 701,580L543,595C530,597 518,588 516,575L489,383Z"
+            android:fillColor="#FFFFFFFF" />
+
+        <path
+            android:pathData="M748,390H892C901,390 908,397 908,406C908,415 901,422 892,422H748C739,422 732,415 732,406C732,397 739,390 748,390Z"
+            android:fillColor="#FFFFFFFF" />
+
+        <path
+            android:pathData="M760,455H907C916,455 923,462 923,471C923,480 916,487 907,487H760C751,487 744,480 744,471C744,462 751,455 760,455Z"
+            android:fillColor="#FFFFFFFF" />
+
+        <path
+            android:pathData="M772,523H922C931,523 938,530 938,539C938,548 931,555 922,555H772C763,555 756,548 756,539C756,530 763,523 772,523Z"
+            android:fillColor="#FFFFFFFF" />
+
+        <!-- Bottom content bars -->
+        <path
+            android:pathData="M495,720C577,688 744,664 921,653"
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="68"
+            android:strokeLineCap="round" />
+
+        <path
+            android:pathData="M514,858C625,808 781,792 943,783"
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="72"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

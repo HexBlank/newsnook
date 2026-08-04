@@ -1,0 +1,310 @@
+import { Capacitor } from '@capacitor/core'
+import { Preferences } from '@capacitor/preferences'
+
+import type { Article } from './types'
+
+const PREFIX = 'newsnook:'
+/** 列表缓存超过这个时长就不再展示，避免弱网时看到过于陈旧的版面 */
+const LIST_CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 7
+const useNativePreferences = Capacitor.isNativePlatform()
+
+export const LIST_CACHE_PREFIX = 'cache:v3:'
+const LOCAL_CACHE_PREFIXES = [LIST_CACHE_PREFIX, 'body:']
+
+function reportNativeStorageError(operation: string, error: unknown): void {
+  console.warn(`[storage] Native Preferences ${operation} failed`, error)
+}
+
+/**
+ * Preferences is the durable native store; localStorage remains a synchronous mirror
+ * so the existing React state initialization path stays deterministic.
+ */
+export async function hydrateNativeStorage(): Promise<void> {
+  if (!useNativePreferences) return
+
+  try {
+    const { keys } = await Preferences.keys()
+    const legacyCacheKeys = keys.filter(
+      (key) =>
+        key.startsWith(PREFIX) &&
+        LOCAL_CACHE_PREFIXES.some((cachePrefix) => key.startsWith(PREFIX + cachePrefix)),
+    )
+    if (legacyCacheKeys.length) {
+      await Promise.all(
+        legacyCacheKeys.map((key) =>
+          Preferences.remove({ key }).catch((error: unknown) => {
+            reportNativeStorageError('remove legacy cache', error)
+          }),
+        ),
+      )
+    }
+
+    const entries = await Promise.all(
+      keys
+        .filter(
+          (key) =>
+            key.startsWith(PREFIX) &&
+            !LOCAL_CACHE_PREFIXES.some((cachePrefix) => key.startsWith(PREFIX + cachePrefix)),
+        )
+        .map(async (key) => [key, (await Preferences.get({ key })).value] as const),
+    )
+
+    for (const [key, value] of entries) {
+      if (value === null) continue
+      try {
+        localStorage.setItem(key, value)
+      } catch (error) {
+        reportNativeStorageError('hydrate mirror', error)
+        break
+      }
+    }
+  } catch (error) {
+    reportNativeStorageError('hydrate', error)
+  }
+}
+
+function read<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(PREFIX + key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+interface WriteOptions {
+  /**
+   * 只写 localStorage，不镜像到原生 Preferences。
+   * 正文缓存体积大且可再生，镜像进 SharedPreferences 会拖慢启动时的 hydrate。
+   */
+  localOnly?: boolean
+}
+
+function write(key: string, value: unknown, options?: WriteOptions): void {
+  const storageKey = PREFIX + key
+  try {
+    const serialized = JSON.stringify(value)
+    localStorage.setItem(storageKey, serialized)
+    if (useNativePreferences && !options?.localOnly) {
+      void Preferences.set({ key: storageKey, value: serialized }).catch((error: unknown) => {
+        reportNativeStorageError('write', error)
+      })
+    }
+  } catch (error) {
+    // 存储写满或被禁用时静默降级，不影响阅读
+    console.warn('[storage] localStorage write failed', error)
+  }
+}
+
+/** 供正文缓存使用：写入失败时需要感知配额溢出并自行腾空间 */
+export function writeRawOrThrow(key: string, serialized: string): void {
+  localStorage.setItem(PREFIX + key, serialized)
+}
+
+export function readRaw(key: string): string | null {
+  try {
+    return localStorage.getItem(PREFIX + key)
+  } catch {
+    return null
+  }
+}
+
+/** 枚举本地已存在的业务键（去掉 newsnook: 前缀） */
+export function listKeys(prefix = ''): string[] {
+  const full = PREFIX + prefix
+  const keys: string[] = []
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i)
+    if (key?.startsWith(full)) keys.push(key.slice(PREFIX.length))
+  }
+  return keys
+}
+
+export function removeLocalKeys(keys: string[]): void {
+  for (const key of keys) {
+    try {
+      localStorage.removeItem(PREFIX + key)
+    } catch {
+      // 忽略单键删除失败，继续清理其余键
+    }
+  }
+}
+
+export function removeKeys(keys: string[]): void {
+  removeLocalKeys(keys)
+  for (const key of keys) {
+    if (useNativePreferences) {
+      void Preferences.remove({ key: PREFIX + key }).catch((error: unknown) => {
+        reportNativeStorageError('remove', error)
+      })
+    }
+  }
+}
+
+/**
+ * localStorage 以 UTF-16 计费，用字符数 ×2 估算占用，
+ * 统计口径与配额判断保持一致。
+ */
+function approxBytes(serialized: string): number {
+  return serialized.length * 2
+}
+
+export function approxStoredBytes(key: string, serialized: string): number {
+  return approxBytes(PREFIX + key) + approxBytes(serialized)
+}
+
+export function bytesOfKeys(keys: string[]): number {
+  return keys.reduce((total, key) => {
+    const raw = readRaw(key)
+    return raw ? total + approxStoredBytes(key, raw) : total
+  }, 0)
+}
+
+export function loadEnabledSources(): string[] | undefined {
+  const stored = read<string[] | null>('enabled', null)
+  return stored ?? undefined
+}
+
+export function saveEnabledSources(ids: string[]): void {
+  write('enabled', ids)
+}
+
+/** 首启动画只完整播放一次，之后启动改用静态启动页 */
+export function hasSeenStartupSplash(): boolean {
+  return read<boolean>('splash-seen', false)
+}
+
+export function markStartupSplashSeen(): void {
+  write('splash-seen', true)
+}
+
+export function loadPreferences(): unknown {
+  return read<unknown>('preferences', null)
+}
+
+export function savePreferences(prefs: unknown): void {
+  write('preferences', prefs)
+}
+
+export function loadPresetsState(): unknown {
+  return read<unknown>('presets', null)
+}
+
+export function savePresetsState(state: unknown): void {
+  write('presets', state)
+}
+
+export interface CachedList {
+  items: Article[]
+  cachedAt: number
+  paging?: CachedPagingMeta
+}
+
+export interface CachedPagingMeta {
+  page?: number
+  cursor?: string
+  exhausted?: boolean
+}
+
+function compactCachedArticle(article: Article): Article {
+  const { contentHtml: _contentHtml, ...metadata } = article
+  return metadata
+}
+
+/**
+ * 弱网优先出内容：只要没超过可用期就返回缓存，同时后台照常尝试刷新。
+ */
+export function loadCachedList(sourceId: string): CachedList | null {
+  const entry = read<{ at: number; items: Article[]; paging?: CachedPagingMeta } | null>(
+    `${LIST_CACHE_PREFIX}${sourceId}`,
+    null,
+  )
+  if (!entry?.items?.length) return null
+
+  const age = Date.now() - entry.at
+  if (age > LIST_CACHE_MAX_AGE) {
+    removeKeys([`${LIST_CACHE_PREFIX}${sourceId}`])
+    return null
+  }
+
+  // 旧版本会把 Feed 全文一起放进列表缓存。读取时原位压缩，
+  // 避免几十个来源的大段 HTML 挤占 Android WebView 的 DOM Storage 配额。
+  const items = entry.items.map(compactCachedArticle)
+  if (entry.items.some((item) => Boolean(item.contentHtml))) {
+    write(
+      `${LIST_CACHE_PREFIX}${sourceId}`,
+      { at: entry.at, items, paging: entry.paging },
+      { localOnly: true },
+    )
+  }
+
+  return { items, cachedAt: entry.at, paging: entry.paging }
+}
+
+export function saveCachedArticles(
+  sourceId: string,
+  items: Article[],
+  paging?: CachedPagingMeta,
+): void {
+  write(
+    `${LIST_CACHE_PREFIX}${sourceId}`,
+    { at: Date.now(), items: items.slice(0, 160).map(compactCachedArticle), paging },
+    { localOnly: true },
+  )
+}
+
+export function loadIdSet(key: 'later' | 'read'): Set<string> {
+  return new Set(read<string[]>(key, []))
+}
+
+export function saveIdSet(key: 'later' | 'read', ids: Set<string>): void {
+  write(key, [...ids].slice(-500))
+}
+
+export function loadLaterArticles(): Article[] {
+  const stored = read<Article[]>('later-items', [])
+  const items = stored.map(compactCachedArticle)
+  if (stored.some((item) => Boolean(item.contentHtml))) write('later-items', items)
+  return items
+}
+
+export function saveLaterArticles(items: Article[]): void {
+  write('later-items', items.slice(0, 100).map(compactCachedArticle))
+}
+
+export function clearListCache(): void {
+  removeKeys(listKeys(LIST_CACHE_PREFIX))
+}
+
+export function listCacheStats(): { count: number; bytes: number } {
+  const keys = listKeys(LIST_CACHE_PREFIX).filter((key) => {
+    const raw = readRaw(key)
+    if (!raw) return false
+    try {
+      const entry = JSON.parse(raw) as {
+        at?: number
+        items?: Article[]
+        paging?: CachedPagingMeta
+      }
+      const valid =
+        typeof entry.at === 'number' &&
+        Array.isArray(entry.items) &&
+        entry.items.length > 0 &&
+        Date.now() - entry.at <= LIST_CACHE_MAX_AGE
+      if (!valid) {
+        removeKeys([key])
+      } else if (entry.items!.some((item) => Boolean(item.contentHtml))) {
+        write(
+          key,
+          { at: entry.at, items: entry.items!.map(compactCachedArticle), paging: entry.paging },
+          { localOnly: true },
+        )
+      }
+      return valid
+    } catch {
+      removeKeys([key])
+      return false
+    }
+  })
+  return { count: keys.length, bytes: bytesOfKeys(keys) }
+}

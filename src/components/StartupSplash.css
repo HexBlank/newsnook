@@ -1,0 +1,203 @@
+.startup-splash {
+  --splash-bg: #0e0f12;
+  --splash-muted: #888892;
+  --splash-gold: #e8b94d;
+  /* 与 BootstrapRoot 的 SPLASH_EXIT_MS 保持一致 */
+  --splash-exit: 320ms;
+  /* 静态页没有时间轴，靠这段淡入接住「深色底突然出现文案」的硬跳 */
+  --splash-static-in: 260ms;
+
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  contain: strict;
+  background: var(--splash-bg);
+  opacity: 1;
+  transition: opacity var(--splash-exit) linear;
+  will-change: opacity;
+}
+
+/* 完整动效自带收尾淡出（handoff 关键帧），动画填充值会盖过这里的过渡 */
+.startup-splash--leaving {
+  opacity: 0;
+}
+
+.startup-splash--full.startup-splash--running {
+  animation: startup-splash-handoff var(--splash-duration) linear both;
+}
+
+.startup-splash__glow {
+  position: absolute;
+  z-index: -1;
+  inset: -16%;
+  background: radial-gradient(
+    circle at 50% 47%,
+    rgb(38 38 49 / 0.42) 0,
+    rgb(14 15 18 / 0.96) 45%,
+    var(--splash-bg) 68%
+  );
+  opacity: 0.72;
+  transform: scale3d(1.04, 1.04, 1);
+  will-change: opacity, transform;
+}
+
+.startup-splash--full.startup-splash--running .startup-splash__glow {
+  animation: startup-splash-breathe var(--splash-duration) cubic-bezier(0.22, 1, 0.36, 1)
+    both;
+}
+
+.startup-splash--static .startup-splash__glow {
+  opacity: 0.5;
+  transform: scale3d(1.02, 1.02, 1);
+}
+
+.startup-splash__glow::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.startup-splash__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.startup-splash__brand {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: max(10.5%, env(safe-area-inset-bottom, 0px));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transform: translate3d(0, 14px, 0);
+  will-change: opacity, transform;
+}
+
+.startup-splash--full.startup-splash--running .startup-splash__brand {
+  animation: startup-splash-brand var(--splash-duration) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 静态启动页：top 由 JS 按「线条+文案」整体垂直居中写入，不做过渡动画 */
+.startup-splash--static .startup-splash__brand {
+  bottom: auto;
+  opacity: 1;
+  transform: none;
+}
+
+/* 只淡透明度：静态页也是 prefers-reduced-motion 的落点，不引入位移 */
+.startup-splash--static .startup-splash__canvas,
+.startup-splash--static .startup-splash__brand {
+  animation: startup-splash-static-in var(--splash-static-in) linear both;
+}
+
+.startup-splash__title {
+  color: #fff;
+  font-family: ui-serif, 'Songti SC', serif;
+  font-size: clamp(24px, 6.8vw, 29px);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
+}
+
+.startup-splash__title span {
+  color: #55555e;
+  font-size: 0.72em;
+}
+
+.startup-splash__subtitle {
+  margin-top: 7px;
+  color: var(--splash-muted);
+  font-family: ui-serif, 'Songti SC', serif;
+  font-size: 12px;
+  letter-spacing: 0.36em;
+}
+
+.startup-splash__tag {
+  margin-top: 13px;
+  padding: 4px 11px;
+  border: 1px solid rgb(255 255 255 / 0.09);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.02);
+  color: #a1a1aa;
+  font-family: system-ui, 'PingFang SC', sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+@keyframes startup-splash-static-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* 以下百分比按 6000ms 时间轴换算，与 StartupSplash.tsx 的 STAGE 对齐 */
+
+@keyframes startup-splash-handoff {
+  0%,
+  95% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes startup-splash-breathe {
+  0% {
+    opacity: 0.5;
+    transform: scale3d(1.05, 1.05, 1);
+  }
+
+  25% {
+    opacity: 0.72;
+    transform: scale3d(1, 1, 1);
+  }
+
+  58%,
+  100% {
+    opacity: 0.16;
+    transform: scale3d(0.985, 0.985, 1);
+  }
+}
+
+@keyframes startup-splash-brand {
+  0%,
+  41.5% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+
+  61.5%,
+  76.5% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  86.5%,
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -12px, 0);
+  }
+}
+
+@media (min-width: 600px) {
+  .startup-splash__brand {
+    right: calc(50% - 230px);
+    left: calc(50% - 230px);
+  }
+}

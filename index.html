@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+    />
+    <!-- 启动阶段固定深色；主题色等启动页交还后再改，避免状态栏区域闪米白 -->
+    <meta name="theme-color" content="#0E0F12" />
+    <meta name="description" content="有所闻 News Nook，直连原发媒体的沉浸式阅读器。" />
+    <style>
+      /*
+       * #boot-splash 只是 WebView 首帧的深色壳，防止系统开屏撤走后露白。
+       * 静态/完整启动画面仍由 React StartupSplash 绘制，这里不画假竖线。
+       */
+      html,
+      body {
+        margin: 0;
+        background: #0e0f12;
+      }
+
+      html[data-boot='splash'],
+      html[data-boot='splash'] body {
+        background: #0e0f12;
+      }
+
+      #boot-splash {
+        position: fixed;
+        z-index: 2147483646;
+        inset: 0;
+        background: #0e0f12;
+        pointer-events: none;
+      }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      远端字体表会阻塞渲染，并连带推迟入口模块执行；
+      弱网或离线时这段等待只会拉长空屏。先按 print 拉取，到手再切回 all。
+    -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <title>有所闻 · News Nook</title>
+    <script>
+      // 在样式表生效前定好明暗。启动阶段不改 theme-color，避免状态栏闪米白。
+      // 数据源是 localStorage 镜像，真实偏好稍后由 main.tsx 再校准一次。
+      (function () {
+        document.documentElement.dataset.boot = 'splash'
+
+        try {
+          var saved = JSON.parse(localStorage.getItem('newsnook:preferences') || '{}')
+          var mode = saved && saved.theme
+          var resolved =
+            mode === 'light' || mode === 'dark'
+              ? mode
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          document.documentElement.dataset.theme = resolved
+        } catch (error) {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <!-- 纯深色壳；竖排与文案由 StartupSplash 负责 -->
+    <div id="boot-splash" aria-hidden="true"></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
