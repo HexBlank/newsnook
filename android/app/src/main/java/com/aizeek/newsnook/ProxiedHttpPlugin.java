@@ -63,9 +63,9 @@ public class ProxiedHttpPlugin extends Plugin {
             String host = proxyObj.getString("host");
             Integer portValue = proxyObj.getInteger("port");
             if (portValue == null) {
-                Double portDouble = proxyObj.getDouble("port");
-                if (portDouble != null) {
-                    portValue = portDouble.intValue();
+                int optPort = proxyObj.optInt("port", -1);
+                if (optPort > 0) {
+                    portValue = optPort;
                 }
             }
             if (host == null || host.isEmpty() || portValue == null || portValue <= 0) {
