@@ -1,19 +1,33 @@
-name: Android Release
+name: Android Manual Build
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: '打包变体 (all: 全部, local: 离线翻译版, cloud: 云翻译轻量版)'
+        required: true
+        type: choice
+        options:
+          - all
+          - local
+          - cloud
+        default: all
+      format:
+        description: '产物类型 (apk, aab, all)'
+        required: true
+        type: choice
+        options:
+          - apk
+          - aab
+          - all
+        default: apk
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: android-manual-build-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: write
-
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -44,16 +58,6 @@ jobs:
         with:
           packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0 cmake;3.22.1'
 
-      - name: Verify tag matches package.json version
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          echo "tag=${GITHUB_REF_NAME} package.json=${PKG_VERSION}"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} must match package.json version ${PKG_VERSION} (got ${TAG_VERSION})."
-            exit 1
-          fi
-
       - name: Restore release keystore
         env:
           NEWSNOOK_KEYSTORE_BASE64: ${{ secrets.NEWSNOOK_KEYSTORE_BASE64 }}
@@ -77,28 +81,33 @@ jobs:
         run: npm ci
 
       - name: Initialize Bergamot native engine
+        if: ${{ inputs.flavor == 'all' || inputs.flavor == 'local' }}
         run: npm run bergamot:init
 
-      - name: Build signed APKs (cloud + local)
-        run: npm run android:apk
+      - name: Build signed APK
+        if: ${{ inputs.format == 'apk' || inputs.format == 'all' }}
+        run: |
+          if [ "${{ inputs.flavor }}" = "all" ]; then
+            npm run android:apk
+          else
+            npm run "android:apk:${{ inputs.flavor }}"
+          fi
 
-      - name: Build signed AABs (cloud + local)
-        run: npm run android:aab
+      - name: Build signed AAB
+        if: ${{ inputs.format == 'aab' || inputs.format == 'all' }}
+        run: |
+          if [ "${{ inputs.flavor }}" = "all" ]; then
+            npm run android:aab
+          else
+            npm run "android:aab:${{ inputs.flavor }}"
+          fi
 
       - name: List artifacts
         run: ls -lh artifacts/android/
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: |
-            artifacts/android/newsnook-*-cloud-release.apk
-            artifacts/android/newsnook-*-local-release.apk
-            artifacts/android/newsnook-*-cloud-release.aab
-            artifacts/android/newsnook-*-local-release.aab
+          name: newsnook-${{ github.ref_name }}-${{ inputs.flavor }}-${{ inputs.format }}-${{ github.run_id }}
+          path: artifacts/android/*
+          retention-days: 14

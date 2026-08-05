@@ -17,7 +17,9 @@ mkdirSync(parent, { recursive: true })
 
 if (existsSync(join(dest, 'CMakeLists.txt'))) {
   console.log('bergamot-translator already present:', dest)
-  console.log('To refresh: delete the folder and re-run npm run bergamot:init')
+  console.log('Ensuring Android compatibility patches are applied…')
+  applyAndroidPatches()
+  console.log('OK. Ready.')
   process.exit(0)
 }
 
@@ -25,8 +27,15 @@ if (existsSync(dest)) {
   rmSync(dest, { recursive: true, force: true })
 }
 
+if (process.platform === 'win32') {
+  spawnSync('git', ['config', '--global', 'core.longpaths', 'true'], {
+    shell: true,
+  })
+}
+
 function run(args, label) {
-  const result = spawnSync('git', args, {
+  const gitArgs = process.platform === 'win32' ? ['-c', 'core.longpaths=true', ...args] : args
+  const result = spawnSync('git', gitArgs, {
     stdio: 'inherit',
     shell: process.platform === 'win32',
   })
@@ -35,19 +44,28 @@ function run(args, label) {
   process.exit(result.status ?? 1)
 }
 
+function normalizeNewlines(str) {
+  return str.replace(/\r\n/g, '\n')
+}
+
 function patchFile(path, replacements) {
-  let text = readFileSync(path, 'utf8')
+  const rawText = readFileSync(path, 'utf8')
+  const isCrlf = rawText.includes('\r\n')
+  let text = normalizeNewlines(rawText)
   let changed = false
   for (const { before, after, label } of replacements) {
-    if (text.includes(after)) continue
-    if (!text.includes(before)) {
+    const normBefore = normalizeNewlines(before)
+    const normAfter = normalizeNewlines(after)
+    if (text.includes(normAfter)) continue
+    if (!text.includes(normBefore)) {
       throw new Error(`Patch anchor not found for ${label}: ${path}`)
     }
-    text = text.replace(before, after)
+    text = text.replace(normBefore, normAfter)
     changed = true
   }
   if (changed) {
-    writeFileSync(path, text, 'utf8')
+    const outputText = isCrlf ? text.replace(/\n/g, '\r\n') : text
+    writeFileSync(path, outputText, 'utf8')
     console.log('Patched:', path)
   }
 }
@@ -144,23 +162,23 @@ endif()`,
       },
       {
         label: 'pcre2 make program',
-        before: `    ${PCRE2_JIT_OPTION}
-    -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
-    -DCMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
-        after: `    ${PCRE2_JIT_OPTION}
-    -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
-    -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
-    -DCMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
+        before: `    \${PCRE2_JIT_OPTION}
+    -DCMAKE_TOOLCHAIN_FILE=\${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
+    -DCMAKE_CROSSCOMPILING_EMULATOR=\${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
+        after: `    \${PCRE2_JIT_OPTION}
+    -DCMAKE_TOOLCHAIN_FILE=\${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
+    -DCMAKE_MAKE_PROGRAM=\${CMAKE_MAKE_PROGRAM}
+    -DCMAKE_CROSSCOMPILING_EMULATOR=\${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
       },
       {
         label: 'pcre2 dedicated binary dir',
-        before: `    DOWNLOAD_DIR ${PCRE2_SRC_DIR}
-    SOURCE_DIR ${PCRE2_SRC_DIR}
-    CONFIGURE_COMMAND ${CMAKE_COMMAND} ${PCRE2_SRC_DIR} ${PCRE2_CONFIGURE_OPTIONS}`,
-        after: `    DOWNLOAD_DIR ${PCRE2_SRC_DIR}
-    SOURCE_DIR ${PCRE2_SRC_DIR}
-    BINARY_DIR ${CMAKE_BINARY_DIR}/pcre2/src/pcre2-build-android
-    CONFIGURE_COMMAND ${CMAKE_COMMAND} ${PCRE2_SRC_DIR} ${PCRE2_CONFIGURE_OPTIONS}`,
+        before: `    DOWNLOAD_DIR \${PCRE2_SRC_DIR}
+    SOURCE_DIR \${PCRE2_SRC_DIR}
+    CONFIGURE_COMMAND \${CMAKE_COMMAND} \${PCRE2_SRC_DIR} \${PCRE2_CONFIGURE_OPTIONS}`,
+        after: `    DOWNLOAD_DIR \${PCRE2_SRC_DIR}
+    SOURCE_DIR \${PCRE2_SRC_DIR}
+    BINARY_DIR \${CMAKE_BINARY_DIR}/pcre2/src/pcre2-build-android
+    CONFIGURE_COMMAND \${CMAKE_COMMAND} \${PCRE2_SRC_DIR} \${PCRE2_CONFIGURE_OPTIONS}`,
       },
     ],
   )
