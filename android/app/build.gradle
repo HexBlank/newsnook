@@ -38,16 +38,21 @@ android {
         // 不链接 ML Kit / Bergamot：适合默认分发，保留云翻译。
         cloud {
             dimension "translation"
+            externalNativeBuild {
+                cmake {
+                    arguments "-DENABLE_BERGAMOT=OFF"
+                }
+            }
         }
         // 链接 ML Kit + Bergamot/Marian：提供模型下载和完全离线翻译。
         local {
             dimension "translation"
-            // Bergamot/Marian 依赖 bionic iconv（API 28+）
+            // Bergamot/Marian 依赖 bionic iconv 与 glob（API 28+）
             minSdkVersion 28
             externalNativeBuild {
                 cmake {
                     abiFilters "arm64-v8a"
-                    arguments "-DANDROID_STL=c++_shared"
+                    arguments "-DANDROID_STL=c++_shared", "-DENABLE_BERGAMOT=ON"
                 }
             }
         }

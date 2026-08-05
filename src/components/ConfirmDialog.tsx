@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { Check } from 'lucide-react'
 
 /** 弹窗次要操作：描边取消钮 */
 const DIALOG_CANCEL_CLASS =
@@ -7,6 +8,98 @@ const DIALOG_CANCEL_CLASS =
 /** 弹窗主操作：朱砂描边 + 浅底，明暗主题下字色都用 cinnabar-soft 保证对比度 */
 const DIALOG_CONFIRM_CLASS =
   'rounded-full border border-cinnabar/70 bg-cinnabar/15 px-4 py-1.5 font-mono text-[11px] font-medium text-cinnabar-soft transition-colors hover:bg-cinnabar/25 disabled:opacity-35'
+
+export interface OptionPickerItem<T extends string = string> {
+  id: T
+  label: string
+}
+
+interface OptionPickerDialogProps<T extends string> {
+  open: boolean
+  title: string
+  value: T
+  options: OptionPickerItem<T>[]
+  onChange: (value: T) => void
+  onCancel: () => void
+}
+
+/** 应用内单选弹窗，替代原生 select（Android WebView 会弹出系统白底对话框） */
+export function OptionPickerDialog<T extends string>({
+  open,
+  title,
+  value,
+  options,
+  onChange,
+  onCancel,
+}: OptionPickerDialogProps<T>) {
+  const titleId = useId()
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel()
+    }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open, onCancel])
+
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
+      role="presentation"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="flex max-h-[min(78vh,520px)] w-full max-w-sm flex-col overflow-hidden rounded-t-3xl border border-haze bg-ink-raised shadow-2xl md:rounded-2xl"
+        style={{ paddingBottom: 'max(var(--sab, 0px), 12px)' }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex shrink-0 justify-center pt-2.5 pb-1 md:hidden" aria-hidden>
+          <span className="h-1 w-10 rounded-full bg-haze" />
+        </div>
+        <h3
+          id={titleId}
+          className="shrink-0 border-b border-haze/50 px-5 pt-3 pb-3 font-display text-[17px] font-medium text-paper"
+        >
+          {title}
+        </h3>
+        <ul className="scroll-hidden min-h-0 flex-1 divide-y divide-haze overflow-y-auto overscroll-contain" role="listbox">
+          {options.map((option) => {
+            const checked = option.id === value
+            return (
+              <li key={option.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={checked}
+                  onClick={() => onChange(option.id)}
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-paper/5"
+                >
+                  <span className="min-w-0 flex-1 text-[14.5px] text-paper">{option.label}</span>
+                  {checked ? (
+                    <Check size={16} strokeWidth={2.2} className="shrink-0 text-cinnabar" />
+                  ) : (
+                    <span className="h-4 w-4 shrink-0 rounded-full border border-haze" aria-hidden />
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>
+  )
+}
 
 interface ConfirmDialogProps {
   open: boolean

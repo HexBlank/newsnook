@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { applyNativeChrome } from '../lib/nativeChrome'
 import {
-  BergamotTranslation,
   isBergamotTranslationAvailable,
   isLocalTranslationAvailable,
 } from '../features/translation/native'
@@ -77,30 +76,6 @@ export function usePreferences(): PreferencesApi {
     setRuntimeProxyPrefs(prefs.proxy)
   }, [prefs])
 
-  useEffect(() => {
-    if (prefs.translation.provider !== 'bergamot' || !isBergamotTranslationAvailable()) return
-    let cancelled = false
-
-    void BergamotTranslation.getEngineState()
-      .then((state) => {
-        if (cancelled || state.engineReady) return
-        setPrefs((prev) => {
-          if (prev.translation.provider !== 'bergamot') return prev
-          return {
-            ...prev,
-            translation: {
-              ...prev.translation,
-              provider: resolveFallbackProvider(prev),
-            },
-          }
-        })
-      })
-      .catch(() => {})
-
-    return () => {
-      cancelled = true
-    }
-  }, [prefs.translation.provider])
 
   useEffect(() => {
     const sync = () => {

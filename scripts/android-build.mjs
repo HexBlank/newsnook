@@ -43,6 +43,30 @@ if (!existsSync(env.NEWSNOOK_KEYSTORE_FILE)) {
   throw new Error(`Release keystore not found: ${env.NEWSNOOK_KEYSTORE_FILE}`)
 }
 
+if (flavors.includes('local')) {
+  const bergamotCmake = join(
+    androidRoot,
+    'app',
+    'src',
+    'local',
+    'cpp',
+    'third_party',
+    'bergamot-translator',
+    'CMakeLists.txt',
+  )
+  if (!existsSync(bergamotCmake)) {
+    console.log('Local flavor requires bergamot-translator. Running bergamot:init…')
+    const initResult = spawnSync(
+      process.execPath,
+      [join(projectRoot, 'scripts', 'bergamot-init.mjs')],
+      { stdio: 'inherit' },
+    )
+    if (initResult.status !== 0) {
+      process.exit(initResult.status ?? 1)
+    }
+  }
+}
+
 const taskPrefix = format === 'apk' ? 'assemble' : 'bundle'
 const tasks = flavors.map(
   (flavor) => `${taskPrefix}${flavor[0].toUpperCase()}${flavor.slice(1)}Release`,

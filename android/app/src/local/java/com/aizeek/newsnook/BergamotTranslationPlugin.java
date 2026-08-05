@@ -48,11 +48,17 @@ public class BergamotTranslationPlugin extends Plugin {
     public void load() {
         store = new BergamotModelStore(getContext());
         try {
+            System.loadLibrary("c++_shared");
+        } catch (Throwable ignored) {
+        }
+        try {
             System.loadLibrary("bergamot_jni");
             nativeLoaded = true;
-        } catch (UnsatisfiedLinkError error) {
+        } catch (Throwable error) {
             nativeLoaded = false;
-            nativeLoadError = explainNativeLoadError(error);
+            nativeLoadError = error instanceof UnsatisfiedLinkError
+                ? explainNativeLoadError((UnsatisfiedLinkError) error)
+                : (error.getMessage() == null ? "原生库加载失败" : error.getMessage());
         }
     }
 

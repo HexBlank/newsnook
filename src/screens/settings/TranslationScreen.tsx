@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Check,
+  ChevronDown,
   Cloud,
   CloudCog,
   Download,
@@ -14,12 +15,13 @@ import {
 } from 'lucide-react'
 
 import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
-import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { ConfirmDialog, OptionPickerDialog } from '../../components/ConfirmDialog'
 import {
   TRANSLATION_LANGUAGES,
   TRANSLATION_PROVIDERS,
   TRANSLATION_SOURCE_LANGUAGES,
   translationDisplayModeLabel,
+  translationLanguageLabel,
   translationProviderLabel,
 } from '../../features/translation/config'
 import {
@@ -33,10 +35,8 @@ import {
 import { createTranslationProvider, mlKitLanguage } from '../../features/translation/providers'
 import type {
   CloudTranslationConfig,
-  TranslationLanguage,
   TranslationPrefs,
   TranslationProviderId,
-  TranslationSourceLanguage,
 } from '../../features/translation/types'
 import { isLocalTranslationProviderId } from '../../features/translation/types'
 
@@ -105,6 +105,7 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   const [testState, setTestState] = useState<AsyncState>('idle')
   const [testMessage, setTestMessage] = useState('')
   const [confirmDeleteModel, setConfirmDeleteModel] = useState(false)
+  const [languagePicker, setLanguagePicker] = useState<'source' | 'target' | null>(null)
 
   const autoSource = prefs.sourceLanguage === 'auto'
   const source = prefs.sourceLanguage === 'auto' ? null : mlKitLanguage(prefs.sourceLanguage)
@@ -158,7 +159,7 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   const availableProviders = TRANSLATION_PROVIDERS.filter(
     (provider) =>
       (provider.id !== 'mlkit' || localTranslationAvailable) &&
-      (provider.id !== 'bergamot' || (bergamotAvailable && bergamotState?.engineReady !== false)),
+      (provider.id !== 'bergamot' || bergamotAvailable),
   )
   const apiKeyOptional = prefs.provider === 'deeplx'
   const modelCaption = useMemo(() => {
@@ -344,55 +345,70 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
 
       <SettingsSection title="语言">
         <div className="page-x grid grid-cols-[1fr_auto_1fr] items-end gap-2 border-y border-haze bg-ink py-4">
-          <label>
+          <div>
             <span className="mb-1.5 block font-mono text-[10px] text-paper-faint">原文</span>
-            <select
-              value={prefs.sourceLanguage}
-              onChange={(event) => {
-                const sourceLanguage = event.target.value as TranslationSourceLanguage
-                const targetLanguage =
-                  sourceLanguage !== 'auto' && sourceLanguage === prefs.targetLanguage
-                    ? sourceLanguage === 'en'
-                      ? 'zh-Hans'
-                      : 'en'
-                    : prefs.targetLanguage
-                onChange({ ...prefs, sourceLanguage, targetLanguage })
-              }}
-              className="h-12 w-full rounded-xl border border-haze bg-ink-raised px-3 text-[13px] text-paper outline-none"
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={languagePicker === 'source'}
+              onClick={() => setLanguagePicker('source')}
+              className="flex h-12 w-full items-center gap-2 rounded-xl border border-haze bg-ink-raised px-3 text-left text-[13px] text-paper outline-none transition-colors hover:border-cinnabar/40"
             >
-              {TRANSLATION_SOURCE_LANGUAGES.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <span className="min-w-0 flex-1 truncate">{translationLanguageLabel(prefs.sourceLanguage)}</span>
+              <ChevronDown size={15} strokeWidth={1.8} className="shrink-0 text-paper-faint" />
+            </button>
+          </div>
           <span className="pb-3 font-mono text-[12px] text-paper-faint">→</span>
-          <label>
+          <div>
             <span className="mb-1.5 block font-mono text-[10px] text-paper-faint">译文</span>
-            <select
-              value={prefs.targetLanguage}
-              onChange={(event) => {
-                const targetLanguage = event.target.value as TranslationLanguage
-                const sourceLanguage =
-                  prefs.sourceLanguage !== 'auto' && targetLanguage === prefs.sourceLanguage
-                    ? targetLanguage === 'en'
-                      ? 'zh-Hans'
-                      : 'en'
-                    : prefs.sourceLanguage
-                onChange({ ...prefs, sourceLanguage, targetLanguage })
-              }}
-              className="h-12 w-full rounded-xl border border-haze bg-ink-raised px-3 text-[13px] text-paper outline-none"
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={languagePicker === 'target'}
+              onClick={() => setLanguagePicker('target')}
+              className="flex h-12 w-full items-center gap-2 rounded-xl border border-haze bg-ink-raised px-3 text-left text-[13px] text-paper outline-none transition-colors hover:border-cinnabar/40"
             >
-              {TRANSLATION_LANGUAGES.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <span className="min-w-0 flex-1 truncate">{translationLanguageLabel(prefs.targetLanguage)}</span>
+              <ChevronDown size={15} strokeWidth={1.8} className="shrink-0 text-paper-faint" />
+            </button>
+          </div>
         </div>
       </SettingsSection>
+
+      <OptionPickerDialog
+        open={languagePicker === 'source'}
+        title="选择原文语言"
+        value={prefs.sourceLanguage}
+        options={TRANSLATION_SOURCE_LANGUAGES}
+        onCancel={() => setLanguagePicker(null)}
+        onChange={(sourceLanguage) => {
+          const targetLanguage =
+            sourceLanguage !== 'auto' && sourceLanguage === prefs.targetLanguage
+              ? sourceLanguage === 'en'
+                ? 'zh-Hans'
+                : 'en'
+              : prefs.targetLanguage
+          onChange({ ...prefs, sourceLanguage, targetLanguage })
+          setLanguagePicker(null)
+        }}
+      />
+      <OptionPickerDialog
+        open={languagePicker === 'target'}
+        title="选择译文语言"
+        value={prefs.targetLanguage}
+        options={TRANSLATION_LANGUAGES}
+        onCancel={() => setLanguagePicker(null)}
+        onChange={(targetLanguage) => {
+          const sourceLanguage =
+            prefs.sourceLanguage !== 'auto' && targetLanguage === prefs.sourceLanguage
+              ? targetLanguage === 'en'
+                ? 'zh-Hans'
+                : 'en'
+              : prefs.sourceLanguage
+          onChange({ ...prefs, sourceLanguage, targetLanguage })
+          setLanguagePicker(null)
+        }}
+      />
 
       <SettingsSection title="翻译方式">
         <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze">

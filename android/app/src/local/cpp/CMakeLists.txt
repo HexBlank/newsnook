@@ -5,19 +5,12 @@ project(newsnook_bergamot)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(ENABLE_BERGAMOT "Enable Bergamot offline translation engine" ON)
+
 set(BERGAMOT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bergamot-translator")
 set(HAS_BERGAMOT OFF)
-if (EXISTS "${BERGAMOT_ROOT}/CMakeLists.txt")
+if (ENABLE_BERGAMOT AND EXISTS "${BERGAMOT_ROOT}/CMakeLists.txt")
   set(HAS_BERGAMOT ON)
-endif()
-
-if (ANDROID)
-  # Bergamot/Marian 强依赖 Android API 28+（如 bionic glob.h 和 iconv）
-  # cloud 变体（minSdkVersion 24）由于无需本地翻译引擎，在此直接降级为轻量桩实现
-  if ((DEFINED ANDROID_PLATFORM_LEVEL AND ANDROID_PLATFORM_LEVEL LESS 28) OR (DEFINED CMAKE_SYSTEM_VERSION AND CMAKE_SYSTEM_VERSION LESS 28))
-    message(STATUS "Android API < 28: Bergamot disabled, using stub implementation")
-    set(HAS_BERGAMOT OFF)
-  endif()
 endif()
 
 if (ANDROID)
