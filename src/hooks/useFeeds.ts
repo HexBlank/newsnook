@@ -15,6 +15,7 @@ import {
 } from '../lib/feedPagination'
 import { fetchAbsoluteText, fetchSourceText } from '../lib/http'
 import {
+  enrichJazzyearDates,
   enrichLatepostDates,
   neteasePageEntryCount,
   parseSourcePayload,
@@ -68,16 +69,26 @@ async function parseSourceArticles(
   signal?: AbortSignal,
 ): Promise<Article[]> {
   const articles = parseSourcePayload(source, payload)
-  if (source.kind !== 'latepost' || !articles.length) return articles
-  return enrichLatepostDates(
-    articles,
-    (url, fetchSignal) => fetchAbsoluteText(url, { signal: fetchSignal }),
-    signal,
-  )
+  if (!articles.length) return articles
+  if (source.kind === 'latepost') {
+    return enrichLatepostDates(
+      articles,
+      (url, fetchSignal) => fetchAbsoluteText(url, { signal: fetchSignal }),
+      signal,
+    )
+  }
+  if (source.kind === 'jazzyear') {
+    return enrichJazzyearDates(
+      articles,
+      (url, fetchSignal) => fetchAbsoluteText(url, { signal: fetchSignal }),
+      signal,
+    )
+  }
+  return articles
 }
 
-/** 晚点：列表先上屏，详情日期在后台补全后写回（不阻塞刷新完成态） */
-function scheduleLatepostDateEnrichment(
+/** 列表先上屏，详情日期在后台补全后写回（不阻塞刷新完成态） */
+function scheduleDetailDateEnrichment(
   id: string,
   source: NewsSource,
   payload: string,
@@ -90,8 +101,15 @@ function scheduleLatepostDateEnrichment(
     incoming: Article[],
   ) => number,
 ): void {
-  if (source.kind !== 'latepost' || signal.aborted) return
-  void enrichLatepostDates(
+  if (signal.aborted) return
+  const enrich =
+    source.kind === 'latepost'
+      ? enrichLatepostDates
+      : source.kind === 'jazzyear'
+        ? enrichJazzyearDates
+        : null
+  if (!enrich) return
+  void enrich(
     articles,
     (url, fetchSignal) => fetchAbsoluteText(url, { signal: fetchSignal }),
     signal,
@@ -386,7 +404,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
           const articles = parseSourcePayload(source, payload)
           if (!articles.length) throw new Error('返回内容为空')
           applyHeadPage(id, source, payload, articles)
-          scheduleLatepostDateEnrichment(
+          scheduleDetailDateEnrichment(
             id,
             source,
             payload,
@@ -471,7 +489,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
             const articles = parseSourcePayload(source, payload)
             if (!articles.length) throw new Error('返回内容为空')
             applyHeadPage(id, source, payload, articles)
-            scheduleLatepostDateEnrichment(
+            scheduleDetailDateEnrichment(
               id,
               source,
               payload,

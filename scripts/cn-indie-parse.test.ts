@@ -5,7 +5,11 @@
 import assert from 'node:assert/strict'
 import https from 'node:https'
 
-import { parseSourcePayload } from '../src/lib/parseFeed'
+import {
+  enrichJazzyearDates,
+  enrichLatepostDates,
+  parseSourcePayload,
+} from '../src/lib/parseFeed'
 import { findSource, userAgentFor, type NewsSource } from '../src/sources/registry'
 import { uncoveredSourceIds } from '../src/sources/categories'
 
@@ -80,13 +84,23 @@ async function check(id: string, expected: Expectation) {
   assert.ok(source, `missing source ${id}`)
 
   const payload = await fetchSource(source)
-  const articles = parseSourcePayload(source, payload)
+  let articles = parseSourcePayload(source, payload)
   assert.ok(
     articles.length >= expected.minCount,
     `${id}: expected >=${expected.minCount} articles, got ${articles.length}`,
   )
 
-  const sample = articles[0]
+  // 晚点列表常为月=日伪日期；与生产一致，用详情页补全后再断言
+  if (id === 'latepost' && articles.some((a) => !a.hasRealDate)) {
+    articles = await enrichLatepostDates(articles, async (url) =>
+      fetchInsecure(url, {
+        'User-Agent': DESKTOP_UA,
+        Accept: 'text/html,*/*',
+      }),
+    )
+  }
+
+  const sample = articles.find((a) => a.hasRealDate) ?? articles[0]
   assert.ok(sample.title.trim(), `${id}: empty title`)
   assert.ok(
     sample.originUrl.includes(expected.originIncludes),
@@ -138,8 +152,26 @@ await check('aiera', { minCount: 5, originIncludes: 'aiera.com.cn' })
 await check('jazzyear', {
   minCount: 5,
   originIncludes: 'jazzyear.com/article_info.html',
-  requireDate: false,
+  requireDate: false, // 列表仍可能部分无日期
 })
+
+{
+  const source = findSource('jazzyear')!
+  const articles = parseSourcePayload(source, await fetchSource(source))
+  const datedOnList = articles.filter((a) => a.hasRealDate).length
+  assert.ok(datedOnList >= 1, 'jazzyear: expected some list dates')
+  const needEnrich = articles.filter((a) => !a.hasRealDate).slice(0, 2)
+  if (needEnrich.length) {
+    const enriched = await enrichJazzyearDates(needEnrich, async (url) => {
+      const res = await fetch(url, { headers: { 'User-Agent': DESKTOP_UA } })
+      return res.text()
+    })
+    assert.ok(
+      enriched.every((a) => a.hasRealDate),
+      'jazzyear: detail enrich failed',
+    )
+  }
+}
 
 await checkJiqizhixinDetail()
 

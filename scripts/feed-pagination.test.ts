@@ -8,6 +8,7 @@ import {
   openClientCatalog,
   placeUndatedPageAfterExisting,
   sliceCatalogPage,
+  sortArticles,
   summarizePagination,
   trimLegacyCatalogCache,
 } from '../src/lib/feedPagination'
@@ -41,6 +42,19 @@ assert.deepEqual(mergeOlderPage([article('a', 30)], [article('a', 30), article('
   added: 1,
 })
 assert.ok(placeUndatedPageAfterExisting([article('a', 30)], [article('b', 100, false)])[0].publishedAt < 30)
+
+const now = 1_000_000
+const sorted = sortArticles([
+  article('undated-new', now, false),
+  article('old-real', now - 86_400_000, true),
+  article('undated-kept-order', now - 1, false),
+  article('fresh-real', now - 3_600_000, true),
+])
+assert.deepEqual(
+  sorted.map((item) => item.id),
+  ['fresh-real', 'old-real', 'undated-new', 'undated-kept-order'],
+)
+
 assert.equal(summarizePagination([]), 'unsupported')
 assert.equal(summarizePagination([{ phase: 'uninitialized' }]), 'available')
 assert.equal(summarizePagination([{ phase: 'error', error: 'network' }]), 'error')

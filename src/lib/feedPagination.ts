@@ -28,7 +28,17 @@ export function summarizePagination(
 }
 
 export function sortArticles(items: Article[]): Article[] {
-  return items.sort((a, b) => b.publishedAt - a.publishedAt)
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      if (a.item.hasRealDate !== b.item.hasRealDate) {
+        return a.item.hasRealDate ? -1 : 1
+      }
+      const byTime = b.item.publishedAt - a.item.publishedAt
+      if (byTime !== 0) return byTime
+      return a.index - b.index
+    })
+    .map(({ item }) => item)
 }
 
 /** Refresh replaces the head page but retains pages already loaded below it. */

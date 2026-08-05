@@ -33,6 +33,7 @@
     "test:cf-proxy": "npx tsx scripts/cf-pages-proxy.test.ts",
     "test:app-update": "npx tsx scripts/app-update.test.ts",
     "test:markdown": "npx tsx scripts/markdown-safe.test.ts",
+    "test:jazzyear-dates": "npx tsx scripts/jazzyear-dates.test.ts",
     "preview": "vite preview",
     "assets": "node scripts/generate-android-assets.mjs",
     "android:sync": "npm run build && node scripts/android-cap.mjs sync android",

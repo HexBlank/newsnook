@@ -184,6 +184,50 @@ export async function enrichLatepostDates(
   return next
 }
 
+/** 甲子光年详情页主时间：`<div class="time font-12">2026-07-29</div>`，取首次命中 */
+export function extractJazzyearPublishTime(html: string): string | undefined {
+  const match = html.match(/class="[^"]*time[^"]*"[^>]*>\s*(20\d{2}-\d{2}-\d{2})/)
+  return match?.[1]
+}
+
+/**
+ * 用详情页补全甲子光年列表缺日期的条目。
+ * `fetchHtml` 由调用方注入，避免 parseFeed 依赖 http。
+ */
+export async function enrichJazzyearDates(
+  articles: Article[],
+  fetchHtml: (url: string, signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
+  options?: { concurrency?: number },
+): Promise<Article[]> {
+  const concurrency = Math.max(1, options?.concurrency ?? 5)
+  const next = articles.slice()
+  let cursor = 0
+
+  async function worker(): Promise<void> {
+    while (cursor < next.length) {
+      if (signal?.aborted) return
+      const index = cursor
+      cursor += 1
+      const article = next[index]
+      if (!article || article.hasRealDate || !article.originUrl) continue
+      try {
+        const html = await fetchHtml(article.originUrl, signal)
+        if (signal?.aborted) return
+        const published = parseDate(extractJazzyearPublishTime(html) ?? '')
+        if (published == null) continue
+        next[index] = { ...article, publishedAt: published, hasRealDate: true }
+      } catch {
+        // 单条详情失败不影响整页列表
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, next.length) }, () => worker())
+  await Promise.all(workers)
+  return next
+}
+
 function hashId(input: string): string {
   let hash = 5381
   for (let i = 0; i < input.length; i += 1) {
@@ -904,10 +948,10 @@ function parseGuokrList(source: NewsSource, payload: string, fetchedAt: number):
 /**
  * 甲子光年首页（无 RSS，/feed 与 /rss.xml 都 302 到 404 页）。
  * 卡片有两种排版：「最新文章」用 .title，头图位用 .article-title > p；
- * 列表不带日期，发布时间只能在详情页拿到，这里按页面顺序保留。
+ * 部分卡片带 class="time">YYYY-MM-DD；缺日期的由 enrichJazzyearDates 用详情页补全。
  */
 function parseJazzyear(source: NewsSource, payload: string, fetchedAt: number): Article[] {
-  const found = new Map<string, { title: string; image?: string }>()
+  const found = new Map<string, { title: string; image?: string; dateRaw: string }>()
 
   for (const match of payload.matchAll(
     /article_info\.html\?id=(\d+)"([\s\S]{0,1500}?)<\/a>/g,
@@ -926,7 +970,12 @@ function parseJazzyear(source: NewsSource, payload: string, fetchedAt: number): 
       ?.trim()
       .replace(/^['"]|['"]$/g, '')
 
-    found.set(id, { title, image: image || undefined })
+    const dateRaw =
+      block.match(/class="[^"]*time[^"]*"[^>]*>\s*(20\d{2}-\d{2}-\d{2})/)?.[1] ??
+      block.match(/(20\d{2}-\d{2}-\d{2})/)?.[1] ??
+      ''
+
+    found.set(id, { title, image: image || undefined, dateRaw })
   }
 
   const articles: Article[] = []
@@ -938,7 +987,7 @@ function parseJazzyear(source: NewsSource, payload: string, fetchedAt: number): 
         link: `https://www.jazzyear.com/article_info.html?id=${id}`,
         html: '',
         summaryText: meta.title,
-        dateRaw: '',
+        dateRaw: meta.dateRaw,
         image: meta.image,
       },
       fetchedAt,
