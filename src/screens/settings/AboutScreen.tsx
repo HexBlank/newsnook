@@ -79,6 +79,14 @@ export function AboutScreen({ onBack }: Props) {
       {/* 顶部概览卡片 */}
       <div className="page-x pt-6 pb-4">
         <div className="relative overflow-hidden rounded-2xl border border-haze bg-gradient-to-b from-ink-raised/70 to-ink p-6 text-center shadow-xs">
+          <img
+            src="/logo.svg"
+            alt=""
+            width={72}
+            height={72}
+            className="mx-auto mb-4 h-[72px] w-[72px] rounded-2xl shadow-xs"
+            draggable={false}
+          />
           <h2 className="font-display text-[20px] font-medium text-paper">
             {ABOUT_CONFIG.appName}
             <span className="ml-2 font-mono text-[11px] font-normal tracking-widest text-paper-faint">

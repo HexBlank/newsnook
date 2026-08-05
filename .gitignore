@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Android release signing (local only; never commit)
+.android-signing/
+*.jks
+*.keystore
+
+# Signed build outputs from npm run android:apk / android:aab
+artifacts/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

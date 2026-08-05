@@ -74,10 +74,15 @@ export function DesktopSidebar({
       {/* 顶部品牌与题头 */}
       <div className="p-5 pb-3">
         <div className="flex items-center gap-3">
-          {/* 朱砂印章 Logo */}
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cinnabar/15 text-cinnabar border border-cinnabar/30 shadow-xs">
-            <span className="font-display text-[17px] font-bold leading-none">闻</span>
-          </div>
+          <img
+            src="/logo.svg"
+            alt=""
+            width={36}
+            height={36}
+            className="h-9 w-9 shrink-0 rounded-lg shadow-xs"
+            draggable={false}
+          />
+
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <span className="font-display text-[21px] font-medium tracking-wide text-paper">
