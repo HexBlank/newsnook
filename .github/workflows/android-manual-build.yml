@@ -1,0 +1,113 @@
+name: Android Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: '打包变体 (all: 全部, local: 离线翻译版, cloud: 云翻译轻量版)'
+        required: true
+        type: choice
+        options:
+          - all
+          - local
+          - cloud
+        default: all
+      format:
+        description: '产物类型 (apk, aab, all)'
+        required: true
+        type: choice
+        options:
+          - apk
+          - aab
+          - all
+        default: apk
+
+concurrency:
+  group: android-manual-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      NEWSNOOK_KEYSTORE_PASSWORD: ${{ secrets.NEWSNOOK_KEYSTORE_PASSWORD }}
+      NEWSNOOK_KEY_ALIAS: ${{ secrets.NEWSNOOK_KEY_ALIAS }}
+      NEWSNOOK_KEY_PASSWORD: ${{ secrets.NEWSNOOK_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0 cmake;3.22.1'
+
+      - name: Restore release keystore
+        env:
+          NEWSNOOK_KEYSTORE_BASE64: ${{ secrets.NEWSNOOK_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$NEWSNOOK_KEYSTORE_BASE64" ]; then
+            echo "::error::Secret NEWSNOOK_KEYSTORE_BASE64 is missing."
+            exit 1
+          fi
+          for name in NEWSNOOK_KEYSTORE_PASSWORD NEWSNOOK_KEY_ALIAS NEWSNOOK_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Secret ${name} is missing."
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="${RUNNER_TEMP}/newsnook-release.jks"
+          printf '%s' "$NEWSNOOK_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          echo "NEWSNOOK_KEYSTORE_FILE=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
+          echo "Restored keystore to ${KEYSTORE_PATH}"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Initialize Bergamot native engine
+        if: ${{ inputs.flavor == 'all' || inputs.flavor == 'local' }}
+        run: npm run bergamot:init
+
+      - name: Build signed APK
+        if: ${{ inputs.format == 'apk' || inputs.format == 'all' }}
+        run: |
+          if [ "${{ inputs.flavor }}" = "all" ]; then
+            npm run android:apk
+          else
+            npm run "android:apk:${{ inputs.flavor }}"
+          fi
+
+      - name: Build signed AAB
+        if: ${{ inputs.format == 'aab' || inputs.format == 'all' }}
+        run: |
+          if [ "${{ inputs.flavor }}" = "all" ]; then
+            npm run android:aab
+          else
+            npm run "android:aab:${{ inputs.flavor }}"
+          fi
+
+      - name: List artifacts
+        run: ls -lh artifacts/android/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: newsnook-${{ github.ref_name }}-${{ inputs.flavor }}-${{ inputs.format }}-${{ github.run_id }}
+          path: artifacts/android/*
+          retention-days: 14
