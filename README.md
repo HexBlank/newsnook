@@ -37,6 +37,41 @@ NEWSNOOK_KEY_ALIAS
 NEWSNOOK_KEY_PASSWORD
 ```
 
+## GitHub Actions 发版
+
+推送与 `package.json` 的 `version` 一致的 tag（形如 `v1.3.8`）后，workflow `.github/workflows/android-release.yml` 会构建 cloud/local 的签名 APK 与 AAB，并创建 published GitHub Release。
+
+在仓库 Settings → Secrets and variables → Actions 配置：
+
+| Secret | 说明 |
+|---|---|
+| `NEWSNOOK_KEYSTORE_BASE64` | release keystore（`.jks`）的 base64 |
+| `NEWSNOOK_KEYSTORE_PASSWORD` | keystore 密码 |
+| `NEWSNOOK_KEY_ALIAS` | 密钥别名（本机初始化默认为 `newsnook`） |
+| `NEWSNOOK_KEY_PASSWORD` | 密钥密码 |
+
+本机生成 base64（PowerShell）：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".android-signing/newsnook-release.jks")) | Set-Clipboard
+```
+
+本机生成 base64（bash）：
+
+```bash
+base64 -w0 .android-signing/newsnook-release.jks | pbcopy   # macOS
+base64 -w0 .android-signing/newsnook-release.jks            # Linux，复制输出
+```
+
+发版流程：
+
+1. 将 `package.json` 的 `version` 升到目标 semver 并提交
+2. `git tag vX.Y.Z`（`X.Y.Z` 必须与 version 完全一致）
+3. `git push origin vX.Y.Z`
+4. 在 Actions 与 Releases 页确认四个附件：`newsnook-<version>-{cloud,local}-release.{apk,aab}`
+
+CI 不会运行 `android:keystore:init`；必须使用与线上一致的既有签名密钥。
+
 ## 构建 Android
 
 默认同时生成两种签名 Release APK：

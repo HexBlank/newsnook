@@ -30,3 +30,5 @@ artifacts/
 *.njsproj
 *.sln
 *.sw?
+
+.superpowers/

@@ -1,0 +1,101 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      NEWSNOOK_KEYSTORE_PASSWORD: ${{ secrets.NEWSNOOK_KEYSTORE_PASSWORD }}
+      NEWSNOOK_KEY_ALIAS: ${{ secrets.NEWSNOOK_KEY_ALIAS }}
+      NEWSNOOK_KEY_PASSWORD: ${{ secrets.NEWSNOOK_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          echo "tag=${GITHUB_REF_NAME} package.json=${PKG_VERSION}"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} must match package.json version ${PKG_VERSION} (got ${TAG_VERSION})."
+            exit 1
+          fi
+
+      - name: Restore release keystore
+        env:
+          NEWSNOOK_KEYSTORE_BASE64: ${{ secrets.NEWSNOOK_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$NEWSNOOK_KEYSTORE_BASE64" ]; then
+            echo "::error::Secret NEWSNOOK_KEYSTORE_BASE64 is missing."
+            exit 1
+          fi
+          for name in NEWSNOOK_KEYSTORE_PASSWORD NEWSNOOK_KEY_ALIAS NEWSNOOK_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Secret ${name} is missing."
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="${RUNNER_TEMP}/newsnook-release.jks"
+          printf '%s' "$NEWSNOOK_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          echo "NEWSNOOK_KEYSTORE_FILE=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
+          echo "Restored keystore to ${KEYSTORE_PATH}"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build signed APKs (cloud + local)
+        run: npm run android:apk
+
+      - name: Build signed AABs (cloud + local)
+        run: npm run android:aab
+
+      - name: List artifacts
+        run: ls -lh artifacts/android/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/android/newsnook-*-cloud-release.apk
+            artifacts/android/newsnook-*-local-release.apk
+            artifacts/android/newsnook-*-cloud-release.aab
+            artifacts/android/newsnook-*-local-release.aab
