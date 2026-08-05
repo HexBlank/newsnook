@@ -30,6 +30,7 @@
     "test:google-news-parse": "npx tsx scripts/google-news-parse.test.ts",
     "test:proxy": "npx tsx scripts/proxy-routing.test.ts",
     "test:comments": "npx tsx scripts/comments-provider.test.ts",
+    "test:cf-proxy": "npx tsx scripts/cf-pages-proxy.test.ts",
     "preview": "vite preview",
     "assets": "node scripts/generate-android-assets.mjs",
     "android:sync": "npm run build && node scripts/android-cap.mjs sync android",

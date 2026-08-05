@@ -14,7 +14,7 @@ News Nook（有所闻）是**无后端**移动新闻阅读客户端：静态源�
 |---|---|
 | Backendless | 无自建 API、无账号、无云同步；列表与正文均由客户端直连上游 |
 | 站内全文 | 点开条目必须在 App 内呈现可读正文；「打开原文」只能是次要操作 |
-| 双运行时 | Web 开发态靠 Vite 代理绕 CORS；App 运行态靠 `CapacitorHttp` |
+| 双运行时 | Web 端（开发态靠 Vite 代理，生产态靠 Cloudflare Pages Functions 边缘代理）；App 运行态靠 `CapacitorHttp` |
 | 本地持久化 | 偏好、稍后读、已读、列表/正文缓存全部落在本机 |
 
 ## 3. 仓库布局
@@ -61,7 +61,7 @@ newsnook/
 │  sanitize · normalizeImages                                  │
 ├──────────────────────────────────────────────────────────────┤
 │  Runtime / Native                                            │
-│  Web: Vite /api 代理                                         │
+│  Web: Vite /api 代理（开发）/ Cloudflare Functions（生产）      │
 │  App: CapacitorHttp + Preferences + 可选 ML Kit bridge        │
 └──────────────────────────────────────────────────────────────┘
 ```
