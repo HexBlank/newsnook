@@ -84,6 +84,14 @@ const ReaderScreen = lazy(() =>
 
 const DEFAULT_ENABLED = SOURCES.filter((source) => source.enabled).map((source) => source.id)
 
+function emptyCacheSnapshot() {
+  return {
+    bodies: { count: 0, bytes: 0, pinned: 0, pinnedBytes: 0 },
+    lists: { count: 0, bytes: 0 },
+    history: [] as ReturnType<typeof listCachedArticles>,
+  }
+}
+
 function readCacheSnapshot() {
   return {
     bodies: bodyCacheStats(),
@@ -188,8 +196,27 @@ export default function App() {
   const [later, setLater] = useState<Article[]>(() => loadLaterArticles())
   const [readIds, setReadIds] = useState<Set<string>>(() => loadIdSet('read'))
   const laterRef = useRef(later)
-  const [cacheSnapshot, setCacheSnapshot] = useState(readCacheSnapshot)
-  const notifyCacheChange = useCallback(() => setCacheSnapshot(readCacheSnapshot()), [])
+  const [cacheSnapshot, setCacheSnapshot] = useState(emptyCacheSnapshot)
+  const cacheSnapshotReadyRef = useRef(false)
+  const refreshCacheSnapshot = useCallback(() => {
+    cacheSnapshotReadyRef.current = true
+    setCacheSnapshot(readCacheSnapshot())
+  }, [])
+  const notifyCacheChange = useCallback(() => {
+    // 首屏不主动扫正文/列表统计；等「我的 / 存储 / 历史」真正需要时再计算
+    if (!cacheSnapshotReadyRef.current) return
+    setCacheSnapshot(readCacheSnapshot())
+  }, [])
+
+  useEffect(() => {
+    const needsSnapshot =
+      tab === 'me' ||
+      settingsRoute?.name === 'storage' ||
+      settingsRoute?.name === 'history' ||
+      settingsRoute?.name === 'later'
+    if (!needsSnapshot) return
+    refreshCacheSnapshot()
+  }, [tab, settingsRoute, refreshCacheSnapshot])
 
   const categories = useMemo(() => visibleCategories(prefs), [prefs])
 

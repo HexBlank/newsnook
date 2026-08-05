@@ -168,11 +168,13 @@ await progressiveService.translateArticle(
   },
 )
 
-assert.equal(streamingPartials.length, 3) // title, first paragraph, second paragraph
-assert.match(streamingPartials[1], /First paragraph\./)
-assert.match(streamingPartials[1], /流:First paragraph\./)
-assert.doesNotMatch(streamingPartials[1], /流:Second paragraph\./)
-assert.match(streamingPartials[2], /流:Second paragraph\./)
+assert.ok(streamingPartials.length >= 2) // 中间 batch 会被节流合并，首末必达
+assert.match(streamingPartials[0], /First paragraph\./)
+assert.doesNotMatch(streamingPartials[0], /流:Second paragraph\./)
+assert.match(
+  streamingPartials[streamingPartials.length - 1],
+  /流:Second paragraph\./,
+)
 
 // Test Google batching limits (10 items per batch)
 const batchSizes: number[] = []

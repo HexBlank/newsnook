@@ -67,7 +67,8 @@ export function ReaderScreen({
   const [translationError, setTranslationError] = useState('')
   const translationAbortRef = useRef<AbortController | null>(null)
   const translationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
+  const pendingPartialRef = useRef<TranslatedArticleContent | null>(null)
+  const partialFrameRef = useRef(0)
   const canComment = useMemo(
     () => supportsComments({ ...article, originUrl: resolvedOriginUrl || article.originUrl }),
     [article, resolvedOriginUrl],
@@ -299,12 +300,33 @@ export function ReaderScreen({
   )
   const displayedTitle = showTranslation && translated && !comparing ? translated.title : article.title
 
+  const commentsArticle = useMemo(
+    () => ({
+      id: article.id,
+      title: displayedTitle || article.title,
+      sourceId: article.sourceId,
+      originUrl: resolvedOriginUrl || article.originUrl,
+      neteaseDocId: article.neteaseDocId,
+    }),
+    [
+      article.id,
+      article.title,
+      article.sourceId,
+      article.originUrl,
+      article.neteaseDocId,
+      displayedTitle,
+      resolvedOriginUrl,
+    ],
+  )
+
   const isCjkArticle = useMemo(() => {
     const textSample = `${displayedTitle} ${displayedHtml.slice(0, 1500)}`
     return /[\p{Script=Han}\u3040-\u30ff\uac00-\ud7af]/u.test(textSample)
   }, [displayedTitle, displayedHtml])
 
   useEffect(() => {
+    // 翻译过程中正文 HTML 高频替换，跳过表格包裹避免重复 DOM 操作
+    if (translationState === 'loading') return
     const root = proseRef.current
     if (!root || loadState !== 'ready') return
 
@@ -318,10 +340,13 @@ export function ReaderScreen({
       table.before(scroller)
       scroller.append(table)
     })
-  }, [displayedHtml, loadState])
+  }, [displayedHtml, loadState, translationState])
 
-  useProgressiveImages(proseRef, displayedHtml, loadState === 'ready')
-
+  useProgressiveImages(
+    proseRef,
+    displayedHtml,
+    loadState === 'ready' && translationState !== 'loading',
+  )
   const sourceHint = useMemo(() => {
     const origin =
       bodySource === 'feed'
@@ -366,6 +391,12 @@ export function ReaderScreen({
       setTranslationState('error')
     }, TRANSLATION_TIMEOUT_MS)
     try {
+      const flushPartial = () => {
+        partialFrameRef.current = 0
+        const pending = pendingPartialRef.current
+        if (!pending || controller.signal.aborted) return
+        setTranslated(pending)
+      }
       const result = await createTranslationService(translationPrefs).translateArticle(
         article.title,
         html,
@@ -374,11 +405,19 @@ export function ReaderScreen({
           signal: controller.signal,
           onPartial: (partial) => {
             if (controller.signal.aborted) return
-            setTranslated(partial)
+            // 每帧最多落地一次整篇 HTML，避免 batch 回调把主线程打满
+            pendingPartialRef.current = partial
+            if (partialFrameRef.current) return
+            partialFrameRef.current = window.requestAnimationFrame(flushPartial)
           },
         },
       )
       if (controller.signal.aborted) return
+      if (partialFrameRef.current) {
+        window.cancelAnimationFrame(partialFrameRef.current)
+        partialFrameRef.current = 0
+      }
+      pendingPartialRef.current = null
       setTranslated(result)
       setShowTranslation(true)
       setTranslationState('idle')
@@ -397,6 +436,11 @@ export function ReaderScreen({
         if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current)
         translationTimeoutRef.current = null
       }
+      if (partialFrameRef.current) {
+        window.cancelAnimationFrame(partialFrameRef.current)
+        partialFrameRef.current = 0
+      }
+      pendingPartialRef.current = null
     }
   }
 
@@ -600,7 +644,7 @@ export function ReaderScreen({
                   <InlineArticleVideos
                     rootRef={proseRef}
                     html={displayedHtml}
-                    enabled={loadState === 'ready'}
+                    enabled={loadState === 'ready' && translationState !== 'loading'}
                     fallbackTitle={displayedTitle}
                   />
                 </>
@@ -697,13 +741,7 @@ export function ReaderScreen({
       <CommentsDrawer
         open={commentsOpen}
         onClose={() => setCommentsOpen(false)}
-        article={{
-          id: article.id,
-          title: displayedTitle || article.title,
-          sourceId: article.sourceId,
-          originUrl: resolvedOriginUrl || article.originUrl,
-          neteaseDocId: article.neteaseDocId,
-        }}
+        article={commentsArticle}
       />
     </div>
   )

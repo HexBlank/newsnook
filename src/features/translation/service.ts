@@ -112,6 +112,7 @@ export class TranslationService {
     const texts = [title.trim(), ...parts.map((part) => part.content)]
     let currentTitle = title
     let completedCount = 0
+    let lastPartialAt = 0
 
     options?.onProgress?.({ completed: 0, total: texts.length })
     const translations = await this.provider.translate({
@@ -137,7 +138,13 @@ export class TranslationService {
         })
         completedCount += batchTranslations.length
         options?.onProgress?.({ completed: completedCount, total: texts.length })
-        options?.onPartial?.({ title: currentTitle, html: document.body.innerHTML })
+        // 序列化整篇 HTML 很贵：约 120ms 节流一次，最后一批必发
+        const now = Date.now()
+        const isLast = completedCount >= texts.length
+        if (options?.onPartial && (isLast || now - lastPartialAt >= 120)) {
+          lastPartialAt = now
+          options.onPartial({ title: currentTitle, html: document.body.innerHTML })
+        }
       },
     })
     if (translations.length !== texts.length) throw new Error('翻译服务返回的段落数量不匹配')
@@ -177,6 +184,7 @@ export class TranslationService {
     const texts = [title.trim(), ...blocks.map((block) => (block.textContent ?? '').trim())]
     let currentTitle = title
     let completedCount = 0
+    let lastPartialAt = 0
 
     options?.onProgress?.({ completed: 0, total: texts.length })
     const translations = await this.provider.translate({
@@ -208,7 +216,12 @@ export class TranslationService {
         })
         completedCount += batchTranslations.length
         options?.onProgress?.({ completed: completedCount, total: texts.length })
-        options?.onPartial?.({ title: currentTitle, html: document.body.innerHTML })
+        const now = Date.now()
+        const isLast = completedCount >= texts.length
+        if (options?.onPartial && (isLast || now - lastPartialAt >= 120)) {
+          lastPartialAt = now
+          options.onPartial({ title: currentTitle, html: document.body.innerHTML })
+        }
       },
     })
     if (translations.length !== texts.length) throw new Error('翻译服务返回的段落数量不匹配')

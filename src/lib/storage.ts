@@ -11,8 +11,44 @@ const useNativePreferences = Capacitor.isNativePlatform()
 export const LIST_CACHE_PREFIX = 'cache:v3:'
 const LOCAL_CACHE_PREFIXES = [LIST_CACHE_PREFIX, 'body:']
 
+/**
+ * 冷启动只镜像这些键。列表/正文缓存已是 localOnly，其余键延后清理即可。
+ * 全量 Preferences.keys() + 逐 key get 会明显拖慢 Android 复启。
+ */
+const BOOTSTRAP_MIRROR_KEYS = [
+  'preferences',
+  'enabled',
+  'presets',
+  'splash-seen',
+  'later-items',
+  'later',
+  'read',
+  'appUpdate',
+] as const
+
 function reportNativeStorageError(operation: string, error: unknown): void {
   console.warn(`[storage] Native Preferences ${operation} failed`, error)
+}
+
+async function cleanupLegacyNativeCacheKeys(): Promise<void> {
+  try {
+    const { keys } = await Preferences.keys()
+    const legacyCacheKeys = keys.filter(
+      (key) =>
+        key.startsWith(PREFIX) &&
+        LOCAL_CACHE_PREFIXES.some((cachePrefix) => key.startsWith(PREFIX + cachePrefix)),
+    )
+    if (!legacyCacheKeys.length) return
+    await Promise.all(
+      legacyCacheKeys.map((key) =>
+        Preferences.remove({ key }).catch((error: unknown) => {
+          reportNativeStorageError('remove legacy cache', error)
+        }),
+      ),
+    )
+  } catch (error) {
+    reportNativeStorageError('cleanup legacy', error)
+  }
 }
 
 /**
@@ -23,41 +59,27 @@ export async function hydrateNativeStorage(): Promise<void> {
   if (!useNativePreferences) return
 
   try {
-    const { keys } = await Preferences.keys()
-    const legacyCacheKeys = keys.filter(
-      (key) =>
-        key.startsWith(PREFIX) &&
-        LOCAL_CACHE_PREFIXES.some((cachePrefix) => key.startsWith(PREFIX + cachePrefix)),
-    )
-    if (legacyCacheKeys.length) {
-      await Promise.all(
-        legacyCacheKeys.map((key) =>
-          Preferences.remove({ key }).catch((error: unknown) => {
-            reportNativeStorageError('remove legacy cache', error)
-          }),
-        ),
-      )
-    }
-
-    const entries = await Promise.all(
-      keys
-        .filter(
-          (key) =>
-            key.startsWith(PREFIX) &&
-            !LOCAL_CACHE_PREFIXES.some((cachePrefix) => key.startsWith(PREFIX + cachePrefix)),
-        )
-        .map(async (key) => [key, (await Preferences.get({ key })).value] as const),
+    await Promise.all(
+      BOOTSTRAP_MIRROR_KEYS.map(async (key) => {
+        const storageKey = PREFIX + key
+        try {
+          const { value } = await Preferences.get({ key: storageKey })
+          if (value === null) return
+          localStorage.setItem(storageKey, value)
+        } catch (error) {
+          reportNativeStorageError(`hydrate ${key}`, error)
+        }
+      }),
     )
 
-    for (const [key, value] of entries) {
-      if (value === null) continue
-      try {
-        localStorage.setItem(key, value)
-      } catch (error) {
-        reportNativeStorageError('hydrate mirror', error)
-        break
-      }
-    }
+    // 历史误写入 Preferences 的大缓存清理由空闲时段完成，不挡首屏
+    const schedule =
+      typeof window !== 'undefined' && 'requestIdleCallback' in window
+        ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 4000 })
+        : (cb: () => void) => window.setTimeout(cb, 1500)
+    schedule(() => {
+      void cleanupLegacyNativeCacheKeys()
+    })
   } catch (error) {
     reportNativeStorageError('hydrate', error)
   }

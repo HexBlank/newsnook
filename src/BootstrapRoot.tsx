@@ -5,6 +5,7 @@ import App from './App'
 import { StartupSplash, type SplashMode } from './components/StartupSplash'
 import { initCompositorWakeListener } from './lib/compositorWake'
 import { applyNativeChrome } from './lib/nativeChrome'
+import { bootMark, bootMeasure } from './lib/startupPerf'
 import {
   hasSeenStartupSplash,
   hydrateNativeStorage,
@@ -20,9 +21,13 @@ const SPLASH_EXIT_MS = 320
 
 /** 先恢复原生偏好，再挂载业务界面，避免首页用旧镜像反写原生存储。 */
 async function bootstrap(): Promise<void> {
+  bootMark('hydrate-start')
   await hydrateNativeStorage()
+  bootMark('hydrate-done')
+  bootMeasure('hydrate', 'hydrate-start', 'hydrate-done')
   const theme = applyTheme(normalizePreferences(loadPreferences()).theme)
   await applyNativeChrome(theme)
+  bootMark('chrome-done')
 }
 
 let bootstrapPromise: Promise<void> | undefined
@@ -59,6 +64,7 @@ export function BootstrapRoot() {
 
   // React 启动页（含静态竖排）一旦进入 DOM，立刻摘掉 HTML 深色壳
   useLayoutEffect(() => {
+    bootMark('react-splash')
     if (!SPLASH_ENABLED) {
       clearBootSplash()
       setSplashComplete(true)
@@ -71,7 +77,11 @@ export function BootstrapRoot() {
   useEffect(() => {
     if (!splashLeaving) return
 
-    const timer = window.setTimeout(() => setSplashDetached(true), SPLASH_EXIT_MS)
+    bootMark('splash-leaving')
+    const timer = window.setTimeout(() => {
+      setSplashDetached(true)
+      bootMark('splash-detached')
+    }, SPLASH_EXIT_MS)
     return () => window.clearTimeout(timer)
   }, [splashLeaving])
 
@@ -81,7 +91,10 @@ export function BootstrapRoot() {
     const unbindWake = initCompositorWakeListener()
     let active = true
     void prepareApp().finally(() => {
-      if (active) setAppReady(true)
+      if (active) {
+        setAppReady(true)
+        bootMark('app-ready')
+      }
     })
 
     return () => {
@@ -90,7 +103,10 @@ export function BootstrapRoot() {
     }
   }, [])
 
-  const finishSplash = useCallback(() => setSplashComplete(true), [])
+  const finishSplash = useCallback(() => {
+    bootMark('splash-complete')
+    setSplashComplete(true)
+  }, [])
 
   return (
     <>

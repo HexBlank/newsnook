@@ -154,6 +154,7 @@ function orbitPosition(
   }
 }
 
+/** 接近水平时走无 transform 快路径，避免每粒子 save/rotate/restore */
 function drawParticle(
   context: CanvasRenderingContext2D,
   x: number,
@@ -165,6 +166,16 @@ function drawParticle(
   opacity: number,
 ): void {
   if (opacity <= 0.005 || width <= 0.5) return
+
+  // |sinθ| 很小 ≈ 水平短条，整理/收束阶段绝大多数帧走这里
+  if (Math.abs(Math.sin(rotation)) < 0.035) {
+    const previousAlpha = context.globalAlpha
+    context.globalAlpha = opacity
+    context.fillStyle = color
+    context.fillRect(x - width / 2, y - height / 2, width, height)
+    context.globalAlpha = previousAlpha
+    return
+  }
 
   context.save()
   context.globalAlpha = opacity
@@ -219,7 +230,11 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
 
     const canvas = canvasRef.current
     const brand = brandRef.current
-    const context = canvas?.getContext('2d', { alpha: true })
+    const context =
+      canvas?.getContext('2d', {
+        alpha: true,
+        desynchronized: true,
+      }) ?? null
     if (!canvas || !context) {
       const timer = window.setTimeout(onComplete, STATIC_DURATION_MS)
       return () => window.clearTimeout(timer)
@@ -230,6 +245,9 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
     let timelineGradient: CanvasGradient | null = null
     /** 静态页：线条区中心 Y；完整动画始终取画布中点 */
     let centerY = 0
+    /** 收束阶段颜色按 collapse 量化，避免每粒子每帧拼 rgb 字符串 */
+    let collapseColor = 'rgb(242 241 238)'
+    let lastCollapseBucket = -1
 
     const layoutStatic = () => {
       const brandHeight = brand?.getBoundingClientRect().height ?? 96
@@ -255,7 +273,11 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
       const bounds = canvas.getBoundingClientRect()
       width = Math.max(1, bounds.width)
       height = Math.max(1, bounds.height)
-      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+      // 完整动效持续 6s，Android WebView 上 2x 像素过贵；静态页仍可用更高清
+      const pixelRatio = Math.min(
+        window.devicePixelRatio || 1,
+        isStatic ? 2 : 1.5,
+      )
 
       canvas.width = Math.round(width * pixelRatio)
       canvas.height = Math.round(height * pixelRatio)
@@ -286,21 +308,29 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
         easeOutCubic(stageProgress(elapsed, STAGE.centerLineIn)) -
         easeOutCubic(stageProgress(elapsed, STAGE.centerLineOut))
 
+      const collapseBucket = (collapse * 24) | 0
+      if (collapseBucket !== lastCollapseBucket) {
+        lastCollapseBucket = collapseBucket
+        const t = collapseBucket / 24
+        collapseColor = `rgb(${Math.round(lerp(242, 232, t))} ${Math.round(lerp(241, 185, t))} ${Math.round(lerp(238, 77, t))})`
+      }
+
+      context.globalAlpha = 1
       context.clearRect(0, 0, width, height)
 
       if (timelineGradient && centerLine > 0.005) {
         const lineTop = isStatic ? centerY - (STACK_SPAN * height) / 2 : height * 0.2
         const lineHeight = isStatic ? STACK_SPAN * height : height * 0.5
-        context.save()
         context.globalAlpha = centerLine * 0.9
         context.fillStyle = timelineGradient
         context.fillRect(centerX - 0.5, lineTop, 1, lineHeight)
-        context.restore()
+        context.globalAlpha = 1
       }
 
       const finalWidth = Math.min(compositionWidth * 0.44, 184)
 
-      PARTICLES.forEach((particle) => {
+      for (let i = 0; i < PARTICLES.length; i += 1) {
+        const particle = PARTICLES[i]
         const orbit = orbitPosition(
           particle,
           vortex,
@@ -321,7 +351,7 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
             '#ef4444',
             particle.opacity * appear * (1 - adsBurst),
           )
-          return
+          continue
         }
 
         if (particle.dissolves) {
@@ -335,7 +365,7 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
             '#f2f1ee',
             particle.opacity * appear * (1 - organize),
           )
-          return
+          continue
         }
 
         const lineY = centerY + particle.lineY * height
@@ -343,9 +373,6 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
         const organizedY = lerp(orbit.y, lineY, organize)
         const organizedRotation = lerp(orbit.rotation, 0, organize)
         const organizedWidth = lerp(particle.width, particle.lineWidth, organize)
-        const red = Math.round(lerp(242, 232, collapse))
-        const green = Math.round(lerp(241, 185, collapse))
-        const blue = Math.round(lerp(238, 77, collapse))
 
         drawParticle(
           context,
@@ -354,23 +381,23 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
           lerp(organizedRotation, 0, collapse),
           lerp(organizedWidth, finalWidth, collapse) * lerp(1, 0.4, goldOut),
           lerp(particle.height, 3, collapse),
-          `rgb(${red} ${green} ${blue})`,
+          collapseColor,
           lerp(particle.opacity * appear, 1, organize) *
             (0.9 + collapse * 0.1) *
             (1 - goldOut),
         )
-      })
+      }
 
       const goldAlpha = segment(collapse, 0.7, 1) * (1 - goldOut)
       if (goldAlpha > 0.005) {
-        context.save()
-        context.globalAlpha = goldAlpha
-        context.fillStyle = '#e8b94d'
-        context.shadowColor = 'rgba(232,185,77,0.52)'
-        context.shadowBlur = 14
         const barWidth = finalWidth * lerp(1, 0.4, goldOut)
+        // 用半透明加宽条替代 shadowBlur，避免 Android WebView 上昂贵的阴影光栅
+        context.globalAlpha = goldAlpha * 0.35
+        context.fillStyle = '#e8b94d'
+        context.fillRect(centerX - barWidth / 2 - 4, centerY - 3.5, barWidth + 8, 7)
+        context.globalAlpha = goldAlpha
         context.fillRect(centerX - barWidth / 2, centerY - 1.5, barWidth, 3)
-        context.restore()
+        context.globalAlpha = 1
       }
     }
 

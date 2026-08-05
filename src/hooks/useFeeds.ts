@@ -169,31 +169,86 @@ function pagingFromCache(
   }
 }
 
-function readInitialFeeds(): InitialFeeds {
+function loadCachedSource(
+  sourceId: string,
+): {
+  items: Article[]
+  cachedAt?: number
+  paging: SourcePagingState
+} {
+  const source = findSource(sourceId)
+  const cached = loadCachedList(sourceId)
+  let items = cached?.items ?? []
+  if (
+    source &&
+    cached &&
+    usesClientCatalogPaging(source) &&
+    typeof cached.paging?.page !== 'number' &&
+    items.length > CATALOG_PAGE_SIZE
+  ) {
+    items = trimLegacyCatalogCache(items, CATALOG_PAGE_SIZE)
+  }
+  return {
+    items,
+    cachedAt: cached?.cachedAt,
+    paging: source
+      ? pagingFromCache(source, cached, items.length)
+      : { phase: 'uninitialized' },
+  }
+}
+
+/** 只恢复当前需要的源缓存，避免启动时同步解析全部 SOURCES */
+function readInitialFeeds(sourceIds: string[]): InitialFeeds {
   const buckets = new Map<string, Article[]>()
   const updatedAt: Record<string, number> = {}
   const paging: Record<string, SourcePagingState> = {}
 
-  SOURCES.forEach((source) => {
-    const cached = loadCachedList(source.id)
-    let items = cached?.items ?? []
-    // client-catalog：旧版可能把整份 Feed 写入缓存；无 page 时缩到首页窗口
-    if (
-      cached &&
-      usesClientCatalogPaging(source) &&
-      typeof cached.paging?.page !== 'number' &&
-      items.length > CATALOG_PAGE_SIZE
-    ) {
-      items = trimLegacyCatalogCache(items, CATALOG_PAGE_SIZE)
+  for (const id of sourceIds) {
+    const loaded = loadCachedSource(id)
+    if (loaded.cachedAt !== undefined && loaded.items.length) {
+      buckets.set(id, loaded.items)
+      updatedAt[id] = loaded.cachedAt
     }
-    if (cached) {
-      buckets.set(source.id, items)
-      updatedAt[source.id] = cached.cachedAt
-    }
-    paging[source.id] = pagingFromCache(source, cached, items.length)
-  })
+    paging[id] = loaded.paging
+  }
 
   return { buckets, updatedAt, paging }
+}
+
+function mergeCachedSources(
+  buckets: Map<string, Article[]>,
+  paging: Record<string, SourcePagingState>,
+  updatedAt: Record<string, number>,
+  sourceIds: string[],
+): {
+  buckets: Map<string, Article[]>
+  paging: Record<string, SourcePagingState>
+  updatedAt: Record<string, number>
+  changed: boolean
+} {
+  let changed = false
+  let nextBuckets = buckets
+  const nextPaging = paging
+  const nextUpdatedAt = { ...updatedAt }
+
+  for (const id of sourceIds) {
+    if (nextPaging[id] || nextBuckets.has(id)) continue
+    if (nextBuckets === buckets) nextBuckets = new Map(buckets)
+    const loaded = loadCachedSource(id)
+    if (loaded.cachedAt !== undefined && loaded.items.length) {
+      nextBuckets.set(id, loaded.items)
+      nextUpdatedAt[id] = loaded.cachedAt
+    }
+    nextPaging[id] = loaded.paging
+    changed = true
+  }
+
+  return {
+    buckets: nextBuckets,
+    paging: nextPaging,
+    updatedAt: nextUpdatedAt,
+    changed,
+  }
 }
 
 function cacheMeta(state: SourcePagingState | undefined): CachedPagingMeta | undefined {
@@ -229,7 +284,7 @@ function errorMessage(error: unknown): string {
 
 export function useFeeds(enabledIds: string[], onCacheChange?: () => void): FeedsResult {
   const initialRef = useRef<InitialFeeds | null>(null)
-  if (!initialRef.current) initialRef.current = readInitialFeeds()
+  if (!initialRef.current) initialRef.current = readInitialFeeds(enabledIds)
 
   const [buckets, setBuckets] = useState(initialRef.current.buckets)
   const [statuses, setStatuses] = useState<Record<string, SourceStatus>>({})
@@ -243,6 +298,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   const pagingRef = useRef(initialRef.current.paging)
   const bucketsRef = useRef(buckets)
   bucketsRef.current = buckets
+  const updatedAtRef = useRef(initialRef.current.updatedAt)
   const enabledIdsRef = useRef(enabledIds)
   enabledIdsRef.current = enabledIds
   /** client-catalog：完整解析结果仅驻内存，列表窗口从此切片 */
@@ -253,6 +309,26 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   const loadMoreControllerRef = useRef<AbortController | null>(null)
   const loadMoreInFlightRef = useRef(false)
   const refreshInFlightRef = useRef(false)
+
+  // 分类切换时按需从本地缓存补齐，不在首屏同步扫全部源
+  const enabledKey = enabledIds.join('|')
+  useEffect(() => {
+    const merged = mergeCachedSources(
+      bucketsRef.current,
+      pagingRef.current,
+      updatedAtRef.current,
+      enabledIdsRef.current,
+    )
+    if (!merged.changed) return
+    pagingRef.current = merged.paging
+    updatedAtRef.current = merged.updatedAt
+    if (merged.buckets !== bucketsRef.current) {
+      bucketsRef.current = merged.buckets
+      setBuckets(merged.buckets)
+    }
+    setUpdatedAtBySource(merged.updatedAt)
+    setPagingTick((tick) => tick + 1)
+  }, [enabledKey])
 
   const ensureClientCatalog = useCallback(
     async (source: NewsSource, signal: AbortSignal): Promise<Article[]> => {
@@ -270,7 +346,11 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   )
 
   const markBucketReady = useCallback((id: string, items: Article[]) => {
-    setUpdatedAtBySource((prev) => ({ ...prev, [id]: Date.now() }))
+    setUpdatedAtBySource((prev) => {
+      const next = { ...prev, [id]: Date.now() }
+      updatedAtRef.current = next
+      return next
+    })
     setStatuses((prev) => ({
       ...prev,
       [id]: {
@@ -708,7 +788,6 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
     }
   }, [])
 
-  const enabledKey = enabledIds.join('|')
   useEffect(() => {
     void prefetchMissing(enabledIdsRef.current)
   }, [enabledKey, prefetchMissing])
