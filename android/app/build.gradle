@@ -97,7 +97,7 @@ android {
 afterEvaluate {
     tasks.matching { task ->
         def name = task.name.toLowerCase()
-        name.contains("externalnativebuild") && name.contains("cloud")
+        (name.contains("externalnativebuild") || name.contains("cmake")) && name.contains("cloud")
     }.configureEach { task ->
         task.enabled = false
     }

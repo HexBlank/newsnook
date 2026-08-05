@@ -12,6 +12,15 @@ if (EXISTS "${BERGAMOT_ROOT}/CMakeLists.txt")
 endif()
 
 if (ANDROID)
+  # Bergamot/Marian 强依赖 Android API 28+（如 bionic glob.h 和 iconv）
+  # cloud 变体（minSdkVersion 24）由于无需本地翻译引擎，在此直接降级为轻量桩实现
+  if ((DEFINED ANDROID_PLATFORM_LEVEL AND ANDROID_PLATFORM_LEVEL LESS 28) OR (DEFINED CMAKE_SYSTEM_VERSION AND CMAKE_SYSTEM_VERSION LESS 28))
+    message(STATUS "Android API < 28: Bergamot disabled, using stub implementation")
+    set(HAS_BERGAMOT OFF)
+  endif()
+endif()
+
+if (ANDROID)
   # cpuinfo / ruy 在 Android NDK 下偶发 FindThreads 误判；
   # bionic 自带 pthread，这里显式喂给下游 CMake。
   set(CMAKE_REQUIRED_INCLUDES
