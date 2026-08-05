@@ -34,23 +34,28 @@ export function revealItems(root: HTMLElement | null, reduced: boolean, selector
     return
   }
 
-  animate(items, {
+  // 针对首屏前 12 个条目执行精致错落入场，超出部分直接就绪，杜绝长列表并发 JS 动画挤占帧率
+  const animatedItems = items.slice(0, 12)
+  const instantItems = items.slice(12)
+  instantItems.forEach(clearInlineMotion)
+
+  animate(animatedItems, {
     opacity: [0, 1],
     translateY: [16, 0],
     duration: 620,
     delay: stagger(30),
     ease: 'out(3)',
     onComplete: () => {
-      items.forEach((item) => {
+      animatedItems.forEach((item) => {
         if (item.isConnected) clearInlineMotion(item)
       })
     },
   })
 
   // 动画被打断或异常时兜底，确保清理 inline 样式
-  const settleMs = 680 + Math.min(items.length, 40) * 30
+  const settleMs = 680 + animatedItems.length * 30
   window.setTimeout(() => {
-    items.forEach((item) => {
+    animatedItems.forEach((item) => {
       if (item.isConnected) clearInlineMotion(item)
     })
   }, settleMs)

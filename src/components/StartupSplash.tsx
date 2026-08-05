@@ -10,7 +10,8 @@ export type SplashMode = 'full' | 'static'
 const FULL_DURATION_MS = 6000
 /** 静态启动页取「新闻已整理成竖排、品牌已就位」的那一帧 */
 const STATIC_FREEZE_MS = 3900
-const STATIC_DURATION_MS = 1000
+/** 日常后续启动停留时间（轻快平滑接驳） */
+const STATIC_DURATION_MS = 360
 const PARTICLE_COUNT = 48
 /** 漩涡阶段每个粒子公转的弧度系数，越大吸入感越强 */
 const VORTEX_TURNS = 2.4
@@ -433,6 +434,7 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
       role="status"
       aria-live="polite"
       aria-label="有所闻正在启动"
+      onClick={isStatic ? onComplete : undefined}
       style={{ '--splash-duration': `${FULL_DURATION_MS}ms` } as CSSProperties}
     >
       <div className="startup-splash__glow" aria-hidden />

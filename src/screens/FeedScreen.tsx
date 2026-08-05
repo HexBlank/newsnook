@@ -607,9 +607,9 @@ export function FeedScreen({
         >
           {/*
             三页均 absolute inset-0：布局盒始终在裁剪视口内，各自 translate 跟手。
-            避免「宽 flex 轨道 + 整体平移」时邻页在 overflow 外不被合成绘制，露出空白底。
+            仅在发生横滑拖拽（dragX !== 0）时挂载邻页视图，消除日常上下滚动时的闲置 DOM 与图片开销。
           */}
-          {swipeEnabled && (
+          {swipeEnabled && dragX !== 0 && (
             <div
               className="pointer-events-none absolute inset-0 overflow-hidden bg-ink"
               style={{
@@ -647,7 +647,7 @@ export function FeedScreen({
             listScroller
           )}
 
-          {swipeEnabled && (
+          {swipeEnabled && dragX !== 0 && (
             <div
               className="pointer-events-none absolute inset-0 overflow-hidden bg-ink"
               style={{
