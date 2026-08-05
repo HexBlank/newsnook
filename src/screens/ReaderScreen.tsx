@@ -105,24 +105,40 @@ export function ReaderScreen({
   const [pillVisible, setPillVisible] = useState(true)
   const lastScrollTopRef = useRef(0)
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollRafRef = useRef(0)
 
   const handleScroll = useCallback(() => {
-    const el = rootRef.current
-    if (!el) return
-    const currentScrollTop = el.scrollTop
-    const delta = currentScrollTop - lastScrollTopRef.current
+    if (scrollRafRef.current) return
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = 0
+      const el = rootRef.current
+      if (!el) return
+      const currentScrollTop = el.scrollTop
+      const delta = currentScrollTop - lastScrollTopRef.current
 
-    if (currentScrollTop < 50 || delta < -8) {
-      setPillVisible(true)
-    } else if (delta > 15 && currentScrollTop > 80) {
-      setPillVisible(false)
-    }
-    lastScrollTopRef.current = currentScrollTop
+      if (currentScrollTop < 50 || delta < -8) {
+        setPillVisible(true)
+      } else if (delta > 15 && currentScrollTop > 80) {
+        setPillVisible(false)
+      }
+      lastScrollTopRef.current = currentScrollTop
+    })
 
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
     scrollTimeoutRef.current = setTimeout(() => {
       setPillVisible(true)
     }, 450)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current) {
+        window.cancelAnimationFrame(scrollRafRef.current)
+      }
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+    }
   }, [])
 
   // 屏幕右侧边缘向左滑动手势拉出跟贴

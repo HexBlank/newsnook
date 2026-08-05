@@ -793,13 +793,17 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   }, [enabledKey, prefetchMissing])
 
   const articles = useMemo(() => {
-    const active = new Map<string, Article[]>()
-    enabledIds.forEach((id) => {
-      const items = buckets.get(id)
-      if (items?.length) active.set(id, items)
-    })
-    return sortArticles([...active.values()].flat())
-  }, [buckets, enabledIds])
+    const list: Article[] = []
+    for (let i = 0; i < enabledIds.length; i += 1) {
+      const items = buckets.get(enabledIds[i])
+      if (items?.length) {
+        for (let j = 0; j < items.length; j += 1) {
+          list.push(items[j])
+        }
+      }
+    }
+    return sortArticles(list)
+  }, [buckets, enabledKey])
 
   const lastUpdated = useMemo(() => {
     const times = enabledIds

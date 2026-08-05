@@ -34,9 +34,9 @@ export function revealItems(root: HTMLElement | null, reduced: boolean, selector
     return
   }
 
-  // 针对首屏前 12 个条目执行精致错落入场，超出部分直接就绪，杜绝长列表并发 JS 动画挤占帧率
-  const animatedItems = items.slice(0, 12)
-  const instantItems = items.slice(12)
+  // 针对首屏前 8 个条目执行精致错落入场，超出部分直接就绪，杜绝长列表并发 JS 动画挤占帧率
+  const animatedItems = items.slice(0, 8)
+  const instantItems = items.slice(8)
   instantItems.forEach(clearInlineMotion)
 
   animate(animatedItems, {

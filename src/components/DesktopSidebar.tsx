@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
   Bookmark,
   History,
@@ -38,7 +39,7 @@ interface Props {
   onNavigateAbout: () => void
 }
 
-export function DesktopSidebar({
+export const DesktopSidebar = memo(function DesktopSidebar({
   categories,
   activeCategoryId,
   onCategoryChange,
@@ -305,4 +306,4 @@ export function DesktopSidebar({
       </div>
     </aside>
   )
-}
+})

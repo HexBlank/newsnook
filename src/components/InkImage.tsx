@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 
 type LoadState = 'loading' | 'loaded' | 'error'
 
@@ -19,13 +19,13 @@ interface Props {
  * 异步加载的图片：先按容器尺寸占位并透出扫光，解码完成后墨渗式渐显。
  * 用 span 承载，便于嵌在 button 内部而不破坏 HTML 结构。
  */
-export function InkImage({ src, ...rest }: Props) {
+export const InkImage = memo(function InkImage({ src, ...rest }: Props) {
   if (!src) return null
   // 换图时直接重建实例，避免残留上一张的加载状态
   return <InkImageFrame key={src} src={src} {...rest} />
-}
+})
 
-function InkImageFrame({
+const InkImageFrame = memo(function InkImageFrame({
   src,
   alt = '',
   className = '',
@@ -63,12 +63,13 @@ function InkImageFrame({
       }
       className={`relative block shrink-0 overflow-hidden ${open ? 'cursor-zoom-in' : ''} ${className}`}
     >
-      <span
-        aria-hidden
-        className={`ink-shimmer absolute inset-0 block transition-opacity duration-500 ${
-          state === 'loading' ? 'opacity-100' : 'opacity-0'
-        }`}
-      />
+      {/* 图片加载完成后卸载扫光元素，杜绝后台持续空耗 GPU / CSS 动画 */}
+      {state === 'loading' && (
+        <span
+          aria-hidden
+          className="ink-shimmer absolute inset-0 block"
+        />
+      )}
       {state !== 'error' && (
         <img
           ref={attach}
@@ -88,4 +89,4 @@ function InkImageFrame({
       )}
     </span>
   )
-}
+})

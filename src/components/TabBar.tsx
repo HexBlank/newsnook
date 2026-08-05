@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Bookmark, Newspaper } from 'lucide-react'
 
 export type TabKey = 'today' | 'me'
@@ -16,7 +17,7 @@ interface Props {
 /**
  * 底栏导航：经典竖向图文布局，朱砂色彩点睛，配色温润纯净，无多余胶囊或杂质。
  */
-export function TabBar({ active, laterCount, onChange }: Props) {
+export const TabBar = memo(function TabBar({ active, laterCount, onChange }: Props) {
   return (
     <nav className="relative z-20 shrink-0 border-t border-haze/50 bg-ink/92 pb-[var(--sab)] backdrop-blur-xl transition-colors duration-300 lg:hidden">
       <ul className="flex h-13 items-stretch">
@@ -62,6 +63,4 @@ export function TabBar({ active, laterCount, onChange }: Props) {
       </ul>
     </nav>
   )
-}
-
-
+})

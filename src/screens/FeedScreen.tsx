@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { ChevronLeft, RotateCw } from 'lucide-react'
 
 import { ArticleRow, LeadStory } from '../components/ArticleItem'
@@ -7,6 +7,7 @@ import { FeedSkeleton } from '../components/FeedSkeleton'
 import { PresetSwitcher, type PresetSwitcherItem } from '../components/PresetSwitcher'
 import { PullIndicator } from '../components/PullIndicator'
 import { SourceFilterChips } from '../components/SourceFilterChips'
+import { useIsDesktop } from '../hooks/useMediaQuery'
 import { usePullToRefresh } from '../hooks/usePullToRefresh'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { useSwipeCategory, type SwipeDirection } from '../hooks/useSwipeCategory'
@@ -72,10 +73,12 @@ function CategoryPeek({
   scrollTop?: number
   onOpen: (article: Article) => void
 }) {
-  const lead = showLead ? articles.find((item) => item.image) : undefined
+  // 邻页预览只取前 8 篇，既满足横滑露出的视觉效果，又避免在横滑拖拽时三页 DOM 爆炸引发严重掉帧
+  const previewArticles = useMemo(() => articles.slice(0, 8), [articles])
+  const lead = showLead ? previewArticles.find((item) => item.image) : undefined
   const rest = useMemo(
-    () => (lead ? articles.filter((item) => item.id !== lead.id) : articles),
-    [articles, lead],
+    () => (lead ? previewArticles.filter((item) => item.id !== lead.id) : previewArticles),
+    [previewArticles, lead],
   )
   const grouped = useMemo(() => {
     const map = new Map<string, Article[]>()
@@ -115,6 +118,7 @@ function CategoryPeek({
             saved={laterIds.has(lead.id)}
             onOpen={onOpen}
             revealed
+            variant="lead"
           />
         )}
         {grouped.map(([bucket, items]) => (
@@ -132,6 +136,7 @@ function CategoryPeek({
                   saved={laterIds.has(article.id)}
                   onOpen={onOpen}
                   revealed
+                  variant="row"
                 />
               ))}
             </ul>
@@ -142,7 +147,7 @@ function CategoryPeek({
   )
 }
 
-export function FeedScreen({
+export const FeedScreen = memo(function FeedScreen({
   title,
   caption,
   articles,
@@ -169,6 +174,7 @@ export function FeedScreen({
   onOpen,
   onBack,
 }: Props) {
+  const isDesktop = useIsDesktop()
   const reduced = useReducedMotion()
   const listRef = useRef<HTMLDivElement>(null)
   const pulseRef = useRef<HTMLSpanElement>(null)
@@ -360,6 +366,7 @@ export function FeedScreen({
           saved={laterIds.has(lead.id)}
           onOpen={onOpen}
           onSourceClick={onSelectSource}
+          variant={isDesktop ? 'banner' : 'lead'}
         />
       )}
 
@@ -395,33 +402,36 @@ export function FeedScreen({
             <span className="rule-soft h-px flex-1" aria-hidden />
           </div>
 
-          {/* 移动端单列 (Mobile: < md) */}
-          <ul className="divide-y divide-haze md:hidden">
-            {items.map((article) => (
-              <ArticleRow
-                key={article.id}
-                article={article}
-                read={readIds.has(article.id)}
-                saved={laterIds.has(article.id)}
-                onOpen={onOpen}
-                onSourceClick={onSelectSource}
-              />
-            ))}
-          </ul>
-
-          {/* 桌面端/平板端卡片网格 (Desktop: >= md: 2列 -> 3列 -> 4列 -> 5列) */}
-          <ul className="hidden md:grid md:grid-cols-2 md:gap-4 md:px-6 md:py-2 xl:grid-cols-3 2xl:grid-cols-4 min-[2100px]:grid-cols-5 xl:px-8 2xl:px-10 min-[2100px]:gap-5">
-            {items.map((article) => (
-              <ArticleRow
-                key={article.id}
-                article={article}
-                read={readIds.has(article.id)}
-                saved={laterIds.has(article.id)}
-                onOpen={onOpen}
-                onSourceClick={onSelectSource}
-              />
-            ))}
-          </ul>
+          {/* 按平台只渲染一种列表布局，减少 50% DOM 节点与 React Diff 开销 */}
+          {!isDesktop ? (
+            <ul className="divide-y divide-haze">
+              {items.map((article) => (
+                <ArticleRow
+                  key={article.id}
+                  article={article}
+                  read={readIds.has(article.id)}
+                  saved={laterIds.has(article.id)}
+                  onOpen={onOpen}
+                  onSourceClick={onSelectSource}
+                  variant="row"
+                />
+              ))}
+            </ul>
+          ) : (
+            <ul className="grid grid-cols-2 gap-4 px-6 py-2 xl:grid-cols-3 2xl:grid-cols-4 min-[2100px]:grid-cols-5 xl:px-8 2xl:px-10 min-[2100px]:gap-5">
+              {items.map((article) => (
+                <ArticleRow
+                  key={article.id}
+                  article={article}
+                  read={readIds.has(article.id)}
+                  saved={laterIds.has(article.id)}
+                  onOpen={onOpen}
+                  onSourceClick={onSelectSource}
+                  variant="card"
+                />
+              ))}
+            </ul>
+          )}
         </div>
       ))}
 
@@ -673,4 +683,4 @@ export function FeedScreen({
       </div>
     </section>
   )
-}
+})

@@ -368,18 +368,24 @@ export default function App() {
     void refreshRef.current(fetchIds)
   }, [bootstrapKey, fetchIds.length])
 
+  const categorySourceSet = useMemo(() => new Set(categorySourceIds), [categorySourceIds])
   const articles = useMemo(
-    () => fetchedArticles.filter((item) => categorySourceIds.includes(item.sourceId)),
-    [fetchedArticles, categorySourceIds],
+    () => fetchedArticles.filter((item) => categorySourceSet.has(item.sourceId)),
+    [fetchedArticles, categorySourceSet],
   )
 
   const articlesForCategory = useCallback(
     (id: CategoryId) => {
-      const ids = sourceIdsForCategoryWithPrefs(id, prefs, enabledIds)
-      return fetchedArticles.filter((item) => ids.includes(item.sourceId))
+      const ids = new Set(sourceIdsForCategoryWithPrefs(id, prefs, enabledIds))
+      return fetchedArticles.filter((item) => ids.has(item.sourceId))
     },
     [fetchedArticles, prefs, enabledIds],
   )
+
+  const handleCategoryChange = useCallback((newId: CategoryId) => {
+    setCategoryId(newId)
+    setCategoryFilterSourceId(null)
+  }, [])
 
   const laterIds = useMemo(() => new Set(later.map((item) => item.id)), [later])
 
@@ -475,6 +481,13 @@ export default function App() {
       })),
     ]
   }, [presets.state])
+
+  const presetSwitcherConfig = useMemo(() => ({
+    activeName: presets.activePreset?.name ?? '场景预设',
+    items: presetSwitcherItems,
+    onSelect: (id: string) => presets.applyPreset(id),
+    onManage: () => setSettingsRoute({ name: 'presets' }),
+  }), [presets, presetSwitcherItems])
 
   const cachedHistory = useMemo(
     () =>
@@ -787,20 +800,12 @@ export default function App() {
         offline={offline}
         categories={categories}
         categoryId={categoryId}
-        onCategoryChange={(newId) => {
-          setCategoryId(newId)
-          setCategoryFilterSourceId(null)
-        }}
+        onCategoryChange={handleCategoryChange}
         availableSources={availableCategorySources}
         selectedSourceId={categoryFilterSourceId}
         onSelectSource={setCategoryFilterSourceId}
         articlesForCategory={articlesForCategory}
-        presetSwitcher={{
-          activeName: presets.activePreset?.name ?? '场景预设',
-          items: presetSwitcherItems,
-          onSelect: (id) => presets.applyPreset(id),
-          onManage: () => setSettingsRoute({ name: 'presets' }),
-        }}
+        presetSwitcher={presetSwitcherConfig}
         onRefresh={runRefresh}
         onLoadMore={() => void loadMore(listScopeIds)}
         onOpen={openArticle}

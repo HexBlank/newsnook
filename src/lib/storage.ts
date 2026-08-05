@@ -271,24 +271,43 @@ export function loadCachedList(sourceId: string): CachedList | null {
   return { items, cachedAt: entry.at, paging: entry.paging }
 }
 
+const scheduleTask =
+  typeof window !== 'undefined' && 'requestIdleCallback' in window
+    ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 1500 })
+    : (cb: () => void) => window.setTimeout(cb, 50)
+
 export function saveCachedArticles(
   sourceId: string,
   items: Article[],
   paging?: CachedPagingMeta,
 ): void {
-  write(
-    `${LIST_CACHE_PREFIX}${sourceId}`,
-    { at: Date.now(), items: items.slice(0, 160).map(compactCachedArticle), paging },
-    { localOnly: true },
-  )
+  const compactItems = items.slice(0, 160).map(compactCachedArticle)
+  scheduleTask(() => {
+    write(
+      `${LIST_CACHE_PREFIX}${sourceId}`,
+      { at: Date.now(), items: compactItems, paging },
+      { localOnly: true },
+    )
+  })
 }
 
 export function loadIdSet(key: 'later' | 'read'): Set<string> {
   return new Set(read<string[]>(key, []))
 }
 
+let saveIdSetTimer: ReturnType<typeof setTimeout> | null = null
+const pendingIdSets = new Map<string, string[]>()
+
 export function saveIdSet(key: 'later' | 'read', ids: Set<string>): void {
-  write(key, [...ids].slice(-500))
+  pendingIdSets.set(key, [...ids].slice(-500))
+  if (saveIdSetTimer) return
+  saveIdSetTimer = setTimeout(() => {
+    saveIdSetTimer = null
+    pendingIdSets.forEach((list, k) => {
+      write(k, list)
+    })
+    pendingIdSets.clear()
+  }, 250)
 }
 
 export function loadLaterArticles(): Article[] {
@@ -299,7 +318,10 @@ export function loadLaterArticles(): Article[] {
 }
 
 export function saveLaterArticles(items: Article[]): void {
-  write('later-items', items.slice(0, 100).map(compactCachedArticle))
+  const compactItems = items.slice(0, 100).map(compactCachedArticle)
+  scheduleTask(() => {
+    write('later-items', compactItems)
+  })
 }
 
 export function clearListCache(): void {
