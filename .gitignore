@@ -32,3 +32,6 @@ artifacts/
 *.sw?
 
 .superpowers/
+
+# Git worktrees (local isolation)
+.worktrees/
