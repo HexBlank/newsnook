@@ -18,7 +18,7 @@ interface Props {
  */
 export function TabBar({ active, laterCount, onChange }: Props) {
   return (
-    <nav className="relative z-20 shrink-0 border-t border-haze/50 bg-ink/92 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl transition-colors duration-300">
+    <nav className="relative z-20 shrink-0 border-t border-haze/50 bg-ink/92 pb-[var(--sab)] backdrop-blur-xl transition-colors duration-300 lg:hidden">
       <ul className="flex h-13 items-stretch">
         {TABS.map(({ key, label, Icon }) => {
           const isActive = key === active

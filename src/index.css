@@ -105,6 +105,12 @@
 
   --tone-paper-rgb: 234 228 216;
   --tone-ink-rgb: 14 15 18;
+  --tone-ink-raised-rgb: 22 24 29;
+  --tone-ink-deep-rgb: 8 9 11;
+  --tone-paper-muted-rgb: 130 125 115;
+  --tone-paper-faint-rgb: 89 85 77;
+  --tone-cinnabar-rgb: 196 92 74;
+  --tone-cinnabar-soft-rgb: 217 132 116;
 
   --tone-ink: #0e0f12;
   --tone-ink-raised: #16181d;
@@ -146,6 +152,12 @@
 
   --tone-paper-rgb: 26 24 21;
   --tone-ink-rgb: 246 242 233;
+  --tone-ink-raised-rgb: 255 252 245;
+  --tone-ink-deep-rgb: 235 228 214;
+  --tone-paper-muted-rgb: 126 120 107;
+  --tone-paper-faint-rgb: 158 151 136;
+  --tone-cinnabar-rgb: 180 61 38;
+  --tone-cinnabar-soft-rgb: 190 74 51;
 
   --tone-ink: #f6f2e9;
   --tone-ink-raised: #fffcf5;
@@ -175,6 +187,14 @@
   --color-cinnabar: var(--tone-cinnabar);
   --color-cinnabar-soft: var(--tone-cinnabar-soft);
   --color-haze: var(--tone-haze);
+}
+
+/* 安全区变量：优先取 Android 原生注入的高度，回退取 CSS env() */
+:root {
+  --sat: max(var(--sat-native, 0px), env(safe-area-inset-top, 0px));
+  --sab: max(var(--sab-native, 0px), env(safe-area-inset-bottom, 0px));
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
 /* 阅读排版：默认值写在这里，用户偏好在运行时覆盖同名变量 */

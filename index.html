@@ -11,6 +11,11 @@
     <meta name="theme-color" content="#0E0F12" />
     <meta name="description" content="有所闻 News Nook，直连原发媒体的沉浸式阅读器。" />
     <style>
+      :root {
+        --sat: max(var(--sat-native, 0px), env(safe-area-inset-top, 0px));
+        --sab: max(var(--sab-native, 0px), env(safe-area-inset-bottom, 0px));
+      }
+
       /*
        * #boot-splash 只是 WebView 首帧的深色壳，防止系统开屏撤走后露白。
        * 静态/完整启动画面仍由 React StartupSplash 绘制，这里不画假竖线。
@@ -48,9 +53,54 @@
     />
     <title>有所闻 · News Nook</title>
     <script>
+      // 低版本 Android WebView 兼容 Polyfill
+      ;(function () {
+        if (typeof Object.hasOwn !== 'function') {
+          Object.hasOwn = function (obj, prop) {
+            return Object.prototype.hasOwnProperty.call(obj, prop)
+          }
+        }
+        if (!Array.prototype.at) {
+          Array.prototype.at = function (n) {
+            n = Math.trunc(n) || 0
+            if (n < 0) n += this.length
+            if (n < 0 || n >= this.length) return undefined
+            return this[n]
+          }
+        }
+        if (!String.prototype.at) {
+          String.prototype.at = function (n) {
+            n = Math.trunc(n) || 0
+            if (n < 0) n += this.length
+            if (n < 0 || n >= this.length) return ''
+            return this.charAt(n)
+          }
+        }
+        if (typeof crypto !== 'undefined' && !crypto.randomUUID) {
+          crypto.randomUUID = function () {
+            return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, function (c) {
+              return (
+                Number(c) ^
+                (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))
+              ).toString(16)
+            })
+          }
+        }
+        if (typeof globalThis.structuredClone !== 'function') {
+          globalThis.structuredClone = function (val) {
+            return JSON.parse(JSON.stringify(val))
+          }
+        }
+        if (typeof queueMicrotask !== 'function') {
+          window.queueMicrotask = function (cb) {
+            Promise.resolve().then(cb)
+          }
+        }
+      })()
+
       // 在样式表生效前定好明暗。启动阶段不改 theme-color，避免状态栏闪米白。
       // 数据源是 localStorage 镜像，真实偏好稍后由 main.tsx 再校准一次。
-      (function () {
+      ;(function () {
         document.documentElement.dataset.boot = 'splash'
 
         try {

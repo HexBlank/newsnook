@@ -13,8 +13,9 @@ import {
   type PaginationViewState,
   type SourcePagingState,
 } from '../lib/feedPagination'
-import { fetchSourceText } from '../lib/http'
+import { fetchAbsoluteText, fetchSourceText } from '../lib/http'
 import {
+  enrichLatepostDates,
   neteasePageEntryCount,
   parseSourcePayload,
   zhihuEditionDate,
@@ -60,6 +61,45 @@ interface FeedsResult {
 
 /** Keep one slow source from holding the whole refresh UI indefinitely. */
 const REFRESH_TIMEOUT_MS = 25_000
+
+async function parseSourceArticles(
+  source: NewsSource,
+  payload: string,
+  signal?: AbortSignal,
+): Promise<Article[]> {
+  const articles = parseSourcePayload(source, payload)
+  if (source.kind !== 'latepost' || !articles.length) return articles
+  return enrichLatepostDates(
+    articles,
+    (url, fetchSignal) => fetchAbsoluteText(url, { signal: fetchSignal }),
+    signal,
+  )
+}
+
+/** 晚点：列表先上屏，详情日期在后台补全后写回（不阻塞刷新完成态） */
+function scheduleLatepostDateEnrichment(
+  id: string,
+  source: NewsSource,
+  payload: string,
+  articles: Article[],
+  signal: AbortSignal,
+  applyHeadPage: (
+    id: string,
+    source: NewsSource,
+    payload: string,
+    incoming: Article[],
+  ) => number,
+): void {
+  if (source.kind !== 'latepost' || signal.aborted) return
+  void enrichLatepostDates(
+    articles,
+    (url, fetchSignal) => fetchAbsoluteText(url, { signal: fetchSignal }),
+    signal,
+  ).then((enriched) => {
+    if (signal.aborted) return
+    applyHeadPage(id, source, payload, enriched)
+  })
+}
 
 interface InitialFeeds {
   buckets: Map<string, Article[]>
@@ -201,7 +241,10 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       const cached = catalogRef.current.get(source.id)
       if (cached?.length) return cached
       const payload = await fetchSourceText(source, signal)
-      const { catalog } = openClientCatalog(parseSourcePayload(source, payload), CATALOG_PAGE_SIZE)
+      const { catalog } = openClientCatalog(
+        await parseSourceArticles(source, payload, signal),
+        CATALOG_PAGE_SIZE,
+      )
       catalogRef.current.set(source.id, catalog)
       return catalog
     },
@@ -343,6 +386,14 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
           const articles = parseSourcePayload(source, payload)
           if (!articles.length) throw new Error('返回内容为空')
           applyHeadPage(id, source, payload, articles)
+          scheduleLatepostDateEnrichment(
+            id,
+            source,
+            payload,
+            articles,
+            controller.signal,
+            applyHeadPage,
+          )
           anySucceeded = true
           synced = true
         } catch (error) {
@@ -420,6 +471,14 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
             const articles = parseSourcePayload(source, payload)
             if (!articles.length) throw new Error('返回内容为空')
             applyHeadPage(id, source, payload, articles)
+            scheduleLatepostDateEnrichment(
+              id,
+              source,
+              payload,
+              articles,
+              controller.signal,
+              applyHeadPage,
+            )
             anySucceeded = true
           } catch (error) {
             if (controller.signal.aborted) return
@@ -523,7 +582,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
                   page: nextPage,
                 })
                 if (controller.signal.aborted) return
-                const parsed = parseSourcePayload(source, payload)
+                const parsed = await parseSourceArticles(source, payload, controller.signal)
                 // 网易用原始条目数（过滤图集后可能为空但仍有下一页）；其它源用解析结果
                 const rawCount =
                   source.kind === 'netease' ? neteasePageEntryCount(payload) : parsed.length
@@ -559,7 +618,11 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
             if (!state.cursor) {
               const headPayload = await fetchSourceText(source, controller.signal)
               if (controller.signal.aborted) return
-              const headArticles = parseSourcePayload(source, headPayload)
+              const headArticles = await parseSourceArticles(
+                source,
+                headPayload,
+                controller.signal,
+              )
               if (!headArticles.length) throw new Error('知乎日报最新一期为空')
               applyHeadPage(id, source, headPayload, headArticles)
               state = pagingRef.current[id]
@@ -572,7 +635,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
               url: zhihuBeforeUrl(previousCursor),
             })
             if (controller.signal.aborted) return
-            const parsed = parseSourcePayload(source, payload)
+            const parsed = await parseSourceArticles(source, payload, controller.signal)
             const nextCursor = zhihuEditionDate(payload)
             if (!nextCursor || nextCursor >= previousCursor) {
               throw new Error('知乎日报返回了无效的历史日期游标')

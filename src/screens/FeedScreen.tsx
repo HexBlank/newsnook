@@ -352,7 +352,7 @@ export function FeedScreen({
   }, [articles])
 
   const listBody = (
-    <div ref={listRef}>
+    <div ref={listRef} className="w-full max-w-[2400px] mx-auto pb-12">
       {lead && (
         <LeadStory
           article={lead}
@@ -390,11 +390,27 @@ export function FeedScreen({
 
       {grouped.map(([bucket, items]) => (
         <div key={bucket}>
-          <div className="page-x flex items-center gap-3 pt-5 pb-1.5">
+          <div className="page-x lg:px-6 xl:px-8 2xl:px-10 flex items-center gap-3 pt-6 pb-2">
             <span className="font-mono text-[10px] tracking-[0.28em] text-paper-faint">{bucket}</span>
             <span className="rule-soft h-px flex-1" aria-hidden />
           </div>
-          <ul className="divide-y divide-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze xl:grid-cols-3">
+
+          {/* 移动端单列 (Mobile: < md) */}
+          <ul className="divide-y divide-haze md:hidden">
+            {items.map((article) => (
+              <ArticleRow
+                key={article.id}
+                article={article}
+                read={readIds.has(article.id)}
+                saved={laterIds.has(article.id)}
+                onOpen={onOpen}
+                onSourceClick={onSelectSource}
+              />
+            ))}
+          </ul>
+
+          {/* 桌面端/平板端卡片网格 (Desktop: >= md: 2列 -> 3列 -> 4列 -> 5列) */}
+          <ul className="hidden md:grid md:grid-cols-2 md:gap-4 md:px-6 md:py-2 xl:grid-cols-3 2xl:grid-cols-4 min-[2100px]:grid-cols-5 xl:px-8 2xl:px-10 min-[2100px]:gap-5">
             {items.map((article) => (
               <ArticleRow
                 key={article.id}
@@ -410,7 +426,7 @@ export function FeedScreen({
       ))}
 
       <footer
-        className={`page-x pt-10 pb-8 text-center font-mono text-[10px] leading-relaxed text-paper-faint ${
+        className={`page-x lg:px-6 xl:px-8 2xl:px-10 pt-10 pb-8 text-center font-mono text-[10px] leading-relaxed text-paper-faint ${
           articles.length === 0 && refreshing ? 'hidden' : ''
         }`}
       >
@@ -484,42 +500,55 @@ export function FeedScreen({
 
   return (
     <section className="relative flex min-h-0 flex-1 flex-col">
-      <header className="relative z-20 shrink-0 bg-ink/92 pt-1.5 pb-1 backdrop-blur-xl">
-        <div className="page-x flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-baseline gap-2">
+      <header className="relative z-20 shrink-0 bg-ink/92 pt-2 pb-1.5 backdrop-blur-xl border-b border-haze/40">
+        <div className="page-x lg:px-6 xl:px-8 2xl:px-10 max-w-[2400px] mx-auto flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-baseline gap-2.5">
             {onBack && (
-              <button type="button" onClick={onBack} aria-label="返回" className="-ml-1 self-center p-1">
+              <button type="button" onClick={onBack} aria-label="返回" className="-ml-1 self-center p-1 hover:text-paper">
                 <ChevronLeft size={18} strokeWidth={1.5} className="text-paper-muted" />
               </button>
             )}
-            <h1 className="shrink-0 font-display text-[19px] leading-none text-paper md:text-[21px]">
+            <h1 className="shrink-0 font-display text-[19px] leading-none text-paper md:text-[21px] lg:text-[23px]">
               {title}
             </h1>
-            <p className="min-w-0 truncate font-mono text-[9.5px] tracking-[0.14em] text-paper-faint">
+            <p className="min-w-0 truncate font-mono text-[9.5px] lg:text-[11.5px] tracking-[0.14em] text-paper-faint">
               {activeCategory?.caption || caption}
             </p>
+            <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded-full border border-haze/80 bg-ink-raised/50 text-[10px] font-mono text-paper-faint">
+              共 {articles.length} 条
+            </span>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden lg:inline-block font-mono text-[11px] text-paper-faint">
+              {lastUpdated ? `更新于 ${relativeTime(lastUpdated)}` : ''}
+            </span>
+
             {presetSwitcher && (
-              <PresetSwitcher
-                activeName={presetSwitcher.activeName}
-                items={presetSwitcher.items}
-                onSelect={presetSwitcher.onSelect}
-                onManage={presetSwitcher.onManage}
-              />
+              <div className="lg:hidden">
+                <PresetSwitcher
+                  activeName={presetSwitcher.activeName}
+                  items={presetSwitcher.items}
+                  onSelect={presetSwitcher.onSelect}
+                  onManage={presetSwitcher.onManage}
+                />
+              </div>
             )}
+
             <button
               type="button"
               onClick={() => void onRefresh()}
               aria-label="刷新"
-              className="relative -mr-1 flex h-9 w-9 shrink-0 items-center justify-center"
+              className="relative flex h-8.5 w-8.5 lg:h-8 lg:w-8 lg:px-2.5 lg:w-auto shrink-0 items-center justify-center gap-1.5 rounded-lg border border-transparent lg:border-haze/70 lg:bg-ink-raised/50 lg:hover:bg-ink-raised lg:hover:border-paper-faint/30 transition-all text-paper-muted hover:text-paper"
             >
               <RotateCw
-                size={15}
+                size={14}
                 strokeWidth={1.6}
-                className={`text-paper-muted ${refreshing ? 'animate-spin' : ''}`}
+                className={`text-paper-muted ${refreshing ? 'animate-spin text-cinnabar' : ''}`}
               />
+              <span className="hidden lg:inline font-mono text-[11px] text-paper-muted">
+                {refreshing ? '刷新中' : '刷新'}
+              </span>
               <span
                 ref={pulseRef}
                 className="pointer-events-none absolute h-2 w-2 rounded-full bg-cinnabar opacity-0"
@@ -530,7 +559,7 @@ export function FeedScreen({
         </div>
 
         {categoryId && categories && categories.length > 0 && onCategoryChange && (
-          <div className="mt-1">
+          <div className="mt-1 lg:hidden">
             <CategoryRail
               categories={categories}
               activeId={categoryId}
@@ -544,7 +573,7 @@ export function FeedScreen({
         )}
 
         {availableSources && availableSources.length > 1 && onSelectSource && (
-          <div className="mt-1">
+          <div className="mt-1 lg:mt-2">
             <SourceFilterChips
               sources={availableSources}
               selectedSourceId={selectedSourceId ?? null}
@@ -554,7 +583,7 @@ export function FeedScreen({
           </div>
         )}
 
-        <div className="page-x mt-1.5 h-px w-full">
+        <div className="page-x lg:px-6 xl:px-8 mt-1.5 h-px w-full">
           <div className="relative h-px w-full overflow-hidden bg-haze">
             <div
               ref={inkLineRef}

@@ -5,7 +5,13 @@ import http from 'node:http'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import postcss from 'postcss'
+import { ProxyAgent, fetch as undiciFetch } from 'undici'
+import { SocksProxyAgent } from 'socks-proxy-agent'
 
+import { normalizeProxyPrefs } from './src/features/proxy/config.ts'
+import { planNodeUpstream } from './src/features/proxy/nodeAgent.ts'
+import type { ProxyPrefs } from './src/features/proxy/types.ts'
 import { type NewsSource } from './src/sources/registry.ts'
 
 const { version: appVersion } = JSON.parse(readFileSync('./package.json', 'utf-8')) as {
@@ -22,6 +28,9 @@ const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
+/** 浏览器经 POST /api/dev-proxy-prefs 同步到开发服务器内存 */
+let activeDevProxyPrefs: ProxyPrefs | null = null
 
 function tlsErrorCode(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') return undefined
@@ -53,6 +62,7 @@ type UpstreamRequest = {
   method?: string
   headers: Record<string, string>
   body?: string
+  sourceMeta?: { id?: string; group?: string }
 }
 
 /** 证书链不完整的站点（如晚点）Node fetch 会失败；回退到不校验证书的 https 请求。 */
@@ -60,6 +70,7 @@ function fetchInsecure(
   target: string,
   request: UpstreamRequest,
   redirectsLeft = 8,
+  agent?: http.Agent | https.Agent,
 ): Promise<UpstreamResult> {
   return new Promise((resolve, reject) => {
     const url = new URL(target)
@@ -70,12 +81,12 @@ function fetchInsecure(
       {
         method,
         headers: request.headers,
+        agent,
         ...(url.protocol === 'https:' ? { rejectUnauthorized: false } : {}),
       },
       (res) => {
         const status = res.statusCode ?? 0
         const location = res.headers.location
-        // POST 跟随重定向时降级为 GET，与浏览器常见行为一致
         if (REDIRECT_STATUSES.has(status) && location && redirectsLeft > 0) {
           res.resume()
           resolve(
@@ -83,6 +94,7 @@ function fetchInsecure(
               new URL(location, url).href,
               { method: 'GET', headers: request.headers },
               redirectsLeft - 1,
+              agent,
             ),
           )
           return
@@ -107,9 +119,50 @@ function fetchInsecure(
   })
 }
 
-async function fetchUpstream(target: string, request: UpstreamRequest): Promise<UpstreamResult> {
+async function fetchViaProxyUri(
+  target: string,
+  request: UpstreamRequest,
+  proxyUri: string,
+): Promise<UpstreamResult> {
+  if (proxyUri.startsWith('socks')) {
+    const agent = new SocksProxyAgent(proxyUri)
+    try {
+      return await fetchInsecure(target, request, 8, agent as http.Agent)
+    } finally {
+      agent.destroy()
+    }
+  }
+
+  const dispatcher = new ProxyAgent(proxyUri)
   try {
-    const upstream = await fetch(target, {
+    const upstream = await undiciFetch(target, {
+      method: request.method ?? 'GET',
+      redirect: 'follow',
+      headers: request.headers,
+      body: request.body,
+      dispatcher,
+    })
+    return {
+      status: upstream.status,
+      contentType: upstream.headers.get('content-type'),
+      buffer: Buffer.from(await upstream.arrayBuffer()),
+    }
+  } finally {
+    await dispatcher.close()
+  }
+}
+
+async function fetchUpstream(target: string, request: UpstreamRequest): Promise<UpstreamResult> {
+  const plan = planNodeUpstream(target, activeDevProxyPrefs ?? undefined, request.sourceMeta)
+  const fetchUrl = plan.url
+  const proxyUri = plan.proxyUri
+
+  try {
+    if (proxyUri) {
+      return await fetchViaProxyUri(fetchUrl, request, proxyUri)
+    }
+
+    const upstream = await fetch(fetchUrl, {
       method: request.method ?? 'GET',
       redirect: 'follow',
       headers: request.headers,
@@ -122,7 +175,15 @@ async function fetchUpstream(target: string, request: UpstreamRequest): Promise<
     }
   } catch (error) {
     if (!isTlsCertError(error)) throw error
-    return fetchInsecure(target, request)
+    if (proxyUri?.startsWith('socks')) {
+      const agent = new SocksProxyAgent(proxyUri)
+      try {
+        return await fetchInsecure(fetchUrl, request, 8, agent as http.Agent)
+      } finally {
+        agent.destroy()
+      }
+    }
+    return fetchInsecure(fetchUrl, request)
   }
 }
 
@@ -219,6 +280,7 @@ function feedProxyPlugin(): Plugin {
             method: wantPost ? 'POST' : 'GET',
             headers,
             body,
+            sourceMeta: { id: source.id, group: source.group },
           })
 
           res.statusCode = upstream.status
@@ -231,6 +293,49 @@ function feedProxyPlugin(): Plugin {
         } catch (error) {
           res.statusCode = 502
           res.end(error instanceof Error ? error.message : 'feed proxy failed')
+        }
+      })
+    },
+  }
+}
+
+/** 开发态：浏览器同步用户代理偏好，供 fetchUpstream 使用 */
+function devProxyPrefsPlugin(): Plugin {
+  return {
+    name: 'newsnook-dev-proxy-prefs',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const pathOnly = req.url?.split('?')[0] ?? ''
+        if (pathOnly !== '/api/dev-proxy-prefs') {
+          next()
+          return
+        }
+
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 204
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+          res.end()
+          return
+        }
+
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end('method not allowed')
+          return
+        }
+
+        try {
+          const raw = await readRequestBody(req)
+          const parsed = JSON.parse(raw || '{}') as unknown
+          activeDevProxyPrefs = normalizeProxyPrefs(parsed)
+          res.statusCode = 204
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.end()
+        } catch (error) {
+          res.statusCode = 400
+          res.end(error instanceof Error ? error.message : 'invalid prefs')
         }
       })
     },
@@ -295,6 +400,10 @@ function upstreamProxy(): Plugin {
             return
           }
 
+          // 微信图床：带他站 / localhost Referer 会返回「未经允许不可引用」占位图；不传 Referer 即可
+          const isWechatImage =
+            isImage &&
+            /(?:^|\.)(?:mmbiz\.qpic\.cn|mmecoa\.qpic\.cn|qlogo\.cn)$/i.test(targetUrl.hostname)
           // 网易 flv CDN：带 localhost Origin 会 403，代理侧不传 Origin，只带站点 Referer
           const headers: Record<string, string> = {
             'User-Agent': isNetease && !isMedia ? 'NewsApp' : requestedUa || BROWSER_UA,
@@ -304,11 +413,13 @@ function upstreamProxy(): Plugin {
                 ? '*/*'
                 : 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            Referer: isMedia
+          }
+          if (!isWechatImage) {
+            headers.Referer = isMedia
               ? 'https://3g.163.com/'
               : targetUrl.hostname.endsWith('.translate.goog')
                 ? 'https://translate.google.com/'
-                : `${targetUrl.origin}/`,
+                : `${targetUrl.origin}/`
           }
 
           const upstream = await fetchUpstream(target, { headers })
@@ -329,15 +440,121 @@ function upstreamProxy(): Plugin {
   }
 }
 
+const staticColorRgb: Record<string, string> = {
+  black: '0 0 0',
+  white: '255 255 255',
+  'rose-300': '255 162 174',
+  'rose-400': '255 102 127',
+  'rose-500': '255 35 87',
+  'rose-600': '231 0 68',
+  'rose-950': '77 2 24',
+  'emerald-500': '0 187 127',
+}
+
+function colorMixToRgb(val: string): string {
+  return val
+    .replace(
+      /color-mix\(\s*in\s+oklab\s*,\s*var\(--color-([a-z0-9-]+)\)\s+([0-9.]+)%\s*,\s*transparent\s*\)/g,
+      (_match, colorName, pct) => {
+        const alpha = Number((Number(pct) / 100).toFixed(4))
+        if (staticColorRgb[colorName]) {
+          return `rgb(${staticColorRgb[colorName]} / ${alpha})`
+        }
+        if (colorName === 'haze') {
+          return `rgb(var(--tone-paper-rgb) / ${Number((alpha * 0.08).toFixed(4))})`
+        }
+        return `rgb(var(--tone-${colorName}-rgb) / ${alpha})`
+      },
+    )
+    .replace(
+      /color-mix\(\s*in\s+oklab\s*,\s*var\(--color-([a-z0-9-]+)\)\s*,\s*transparent\s*\)/g,
+      (_match, colorName) => {
+        if (staticColorRgb[colorName]) {
+          return `rgb(${staticColorRgb[colorName]})`
+        }
+        return `rgb(var(--tone-${colorName}-rgb))`
+      },
+    )
+}
+
+function unlayerCssPlugin(): Plugin {
+  const unlayer = {
+    postcssPlugin: 'postcss-unlayer-plugin',
+    AtRule: {
+      layer(atRule: any) {
+        if (atRule.nodes && atRule.nodes.length > 0) {
+          atRule.replaceWith(atRule.nodes)
+        } else {
+          atRule.remove()
+        }
+      },
+      supports(atRule: any) {
+        if (typeof atRule.params === 'string' && atRule.params.includes('color-mix')) {
+          atRule.walkDecls((decl: any) => {
+            decl.value = colorMixToRgb(decl.value)
+          })
+          if (atRule.nodes && atRule.nodes.length > 0) {
+            atRule.replaceWith(atRule.nodes)
+          } else {
+            atRule.remove()
+          }
+        }
+      },
+    },
+    Declaration(decl: any) {
+      if (typeof decl.value === 'string') {
+        if (decl.value.includes('color-mix')) {
+          decl.value = colorMixToRgb(decl.value)
+        }
+        // 移除渐变中的 in oklab，防止 Chrome < 111 无法解析渐变
+        if (decl.value.includes('in oklab')) {
+          decl.value = decl.value.replace(/\s+in\s+oklab/g, '')
+        }
+        // 补充 -webkit-backdrop-filter 前缀以兼容旧版 WebView 毛玻璃
+        if (decl.prop === 'backdrop-filter') {
+          decl.cloneBefore({ prop: '-webkit-backdrop-filter' })
+        }
+      }
+    },
+  }
+
+  return {
+    name: 'vite-plugin-unlayer-css',
+    enforce: 'post',
+    async generateBundle(_, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (
+          file.type === 'asset' &&
+          file.fileName.endsWith('.css') &&
+          typeof file.source === 'string'
+        ) {
+          const res = await postcss([unlayer]).process(file.source, { from: undefined })
+          file.source = res.css
+        }
+      }
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), feedProxyPlugin(), upstreamProxy()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    unlayerCssPlugin(),
+    feedProxyPlugin(),
+    upstreamProxy(),
+    devProxyPrefsPlugin(),
+  ],
   // 与 Android Gradle 同源：打包时把 package.json version 写进前端常量
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __APP_BUILD__: JSON.stringify(buildStamp()),
   },
   build: {
+    target: ['chrome80', 'es2020'],
+    cssTarget: 'chrome80',
     // hls.js is loaded only when an HLS video is opened; keep first paint lean.
     chunkSizeWarningLimit: 550,
   },
 })
+

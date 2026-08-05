@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { applyNativeChrome } from '../lib/nativeChrome'
 import { isLocalTranslationAvailable } from '../features/translation/native'
+import { setRuntimeProxyPrefs } from '../lib/http'
 import { loadPreferences, savePreferences } from '../lib/storage'
 import { applyTheme, resolveTheme, watchSystemTheme, type ResolvedTheme } from '../lib/theme'
 import {
@@ -59,6 +60,7 @@ export function usePreferences(): PreferencesApi {
   useEffect(() => {
     savePreferences(prefs)
     applyTypography(prefs)
+    setRuntimeProxyPrefs(prefs.proxy)
   }, [prefs])
 
   useEffect(() => {

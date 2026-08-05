@@ -11,6 +11,11 @@ import {
   normalizeTranslationPrefs,
 } from '../features/translation/config'
 import type { TranslationPrefs } from '../features/translation/types'
+import {
+  DEFAULT_PROXY_PREFS,
+  normalizeProxyPrefs,
+} from '../features/proxy/config'
+import type { ProxyPrefs } from '../features/proxy/types'
 import { CATEGORIES, findCategory, PORTAL_VISIBLE_CATEGORY_IDS, type CategoryId, type NewsCategory } from './categories'
 import { SOURCES, findSource } from './registry'
 
@@ -38,6 +43,7 @@ export interface Preferences {
   typography: TypographyPrefs
   theme: ThemeMode
   translation: TranslationPrefs
+  proxy: ProxyPrefs
 }
 
 export const DEFAULT_TYPOGRAPHY: TypographyPrefs = {
@@ -86,6 +92,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   typography: DEFAULT_TYPOGRAPHY,
   theme: DEFAULT_THEME_MODE,
   translation: DEFAULT_TRANSLATION_PREFS,
+  proxy: DEFAULT_PROXY_PREFS,
 }
 
 /** 综合分类跟随「频道」页启用状态，不参与逐分类信源编辑 */
@@ -194,6 +201,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     customCategories,
     theme: isThemeMode(input.theme) ? input.theme : DEFAULT_THEME_MODE,
     translation: normalizeTranslationPrefs(input.translation),
+    proxy: normalizeProxyPrefs(input.proxy),
     typography: {
       fontScale: clamp(typography.fontScale, DEFAULT_TYPOGRAPHY.fontScale, 0.8, 1.4),
       lineHeight: clamp(typography.lineHeight, DEFAULT_TYPOGRAPHY.lineHeight, 1.4, 2.4),
@@ -535,4 +543,15 @@ export function updateTypography(
 
 export function resetTypography(prefs: Preferences): Preferences {
   return { ...prefs, typography: DEFAULT_TYPOGRAPHY }
+}
+
+export function updateProxyPrefs(
+  prefs: Preferences,
+  patch: Partial<ProxyPrefs>,
+): Preferences {
+  return { ...prefs, proxy: normalizeProxyPrefs({ ...prefs.proxy, ...patch }) }
+}
+
+export function resetProxyPrefs(prefs: Preferences): Preferences {
+  return { ...prefs, proxy: DEFAULT_PROXY_PREFS }
 }

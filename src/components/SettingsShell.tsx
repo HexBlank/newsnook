@@ -17,40 +17,44 @@ export function SettingsShell({ title, caption, action, onBack, children }: Prop
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col bg-ink pt-[env(safe-area-inset-top)]"
+      className="absolute inset-0 z-30 flex flex-col bg-ink pt-[var(--sat)]"
       style={{ animation: reduced ? undefined : 'settings-in 320ms var(--ease-ink) both' }}
     >
       <style>{`@keyframes settings-in { from { opacity: 0; transform: translateX(18px) } to { opacity: 1; transform: none } }`}</style>
 
-      <header className="page-x shrink-0 pt-2 pb-3">
-        <div className="flex items-start gap-2">
-          <button type="button" onClick={onBack} aria-label="返回" className="-ml-1.5 shrink-0 p-1.5">
-            <ArrowLeft size={19} strokeWidth={1.6} className="text-paper" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h1 className="truncate font-display text-[22px] leading-none text-paper sm:text-[24px] md:text-[28px]">
-                  {title}
-                </h1>
-                {caption && (
-                  <p className="mt-1.5 line-clamp-2 font-mono text-[10px] tracking-[0.14em] text-paper-faint">
-                    {caption}
-                  </p>
-                )}
+      <header className="shrink-0 pt-2 pb-3">
+        <div className="page-x lg:px-8 max-w-4xl mx-auto w-full">
+          <div className="flex items-start gap-2">
+            <button type="button" onClick={onBack} aria-label="返回" className="-ml-1.5 shrink-0 p-1.5 hover:text-paper">
+              <ArrowLeft size={19} strokeWidth={1.6} className="text-paper" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h1 className="truncate font-display text-[22px] leading-none text-paper sm:text-[24px] md:text-[28px]">
+                    {title}
+                  </h1>
+                  {caption && (
+                    <p className="mt-1.5 line-clamp-2 font-mono text-[10px] lg:text-[11px] tracking-[0.14em] text-paper-faint">
+                      {caption}
+                    </p>
+                  )}
+                </div>
+                {action ? <div className="shrink-0">{action}</div> : null}
               </div>
-              {action ? <div className="shrink-0">{action}</div> : null}
             </div>
           </div>
+          <div className="mt-3 h-px w-full bg-haze" />
         </div>
-        <div className="mt-3 h-px w-full bg-haze" />
       </header>
 
       <div
         data-settings-scroll
-        className="scroll-hidden min-h-0 flex-1 overflow-y-auto pb-[max(env(safe-area-inset-bottom),24px)]"
+        className="scroll-hidden min-h-0 flex-1 overflow-y-auto pb-[max(var(--sab),24px)]"
       >
-        {children}
+        <div className="max-w-4xl mx-auto w-full">
+          {children}
+        </div>
       </div>
     </div>
   )

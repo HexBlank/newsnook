@@ -10,11 +10,11 @@ interface Props {
  */
 export function AppShell({ children }: Props) {
   return (
-    <div className="ink-grain relative flex h-dvh w-full flex-col overflow-hidden bg-ink pt-[env(safe-area-inset-top,0px)]">
+    <div className="ink-grain relative flex h-full h-dvh w-full flex-col overflow-hidden bg-ink pt-[var(--sat)]">
       <div
         aria-hidden
         className="pointer-events-none fixed inset-x-0 top-0 z-[60] bg-ink"
-        style={{ height: 'env(safe-area-inset-top, 0px)' }}
+        style={{ height: 'var(--sat)' }}
       />
       {children}
     </div>

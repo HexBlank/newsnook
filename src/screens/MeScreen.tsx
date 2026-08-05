@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Contrast,
   Database,
+  Globe,
   History,
   Info,
   Languages,
@@ -23,6 +24,7 @@ interface Props {
   typographySummary: string
   appearanceSummary: string
   translationSummary: string
+  proxySummary: string
   storageSummary: string
   onOpenLater: () => void
   onOpenHistory: () => void
@@ -30,6 +32,7 @@ interface Props {
   onOpenTypographySettings: () => void
   onOpenAppearanceSettings: () => void
   onOpenTranslationSettings: () => void
+  onOpenProxySettings: () => void
   onOpenStorageSettings: () => void
   onOpenAbout: () => void
 }
@@ -78,6 +81,7 @@ export function MeScreen({
   typographySummary,
   appearanceSummary,
   translationSummary,
+  proxySummary,
   storageSummary,
   onOpenLater,
   onOpenHistory,
@@ -85,6 +89,7 @@ export function MeScreen({
   onOpenTypographySettings,
   onOpenAppearanceSettings,
   onOpenTranslationSettings,
+  onOpenProxySettings,
   onOpenStorageSettings,
   onOpenAbout,
 }: Props) {
@@ -97,19 +102,22 @@ export function MeScreen({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <header className="page-x shrink-0 pt-2 pb-3">
-        <h1 className="font-display text-[26px] leading-none text-paper md:text-[30px]">我的</h1>
-        <p className="mt-1.5 font-mono text-[10px] tracking-[0.16em] text-paper-faint">
-          稍后读 {later.length} · 已读 {readCount}
-        </p>
-        <div className="mt-3 h-px w-full bg-haze" />
+      <header className="shrink-0 pt-2 pb-3">
+        <div className="page-x lg:px-8 max-w-4xl mx-auto w-full">
+          <h1 className="font-display text-[26px] leading-none text-paper md:text-[30px]">我的</h1>
+          <p className="mt-1.5 font-mono text-[10px] tracking-[0.16em] text-paper-faint">
+            稍后读 {later.length} · 已读 {readCount}
+          </p>
+          <div className="mt-3 h-px w-full bg-haze" />
+        </div>
       </header>
 
       <div ref={rootRef} className="scroll-hidden min-h-0 flex-1 overflow-y-auto pb-8">
-        <div className="page-x flex items-center gap-3 pt-6 pb-2">
-          <span className="font-mono text-[10px] tracking-[0.28em] text-paper-faint">阅读与收藏</span>
-          <span className="h-px flex-1 bg-haze" aria-hidden />
-        </div>
+        <div className="max-w-4xl mx-auto w-full">
+          <div className="page-x lg:px-8 flex items-center gap-3 pt-6 pb-2">
+            <span className="font-mono text-[10px] tracking-[0.28em] text-paper-faint">阅读与收藏</span>
+            <span className="h-px flex-1 bg-haze" aria-hidden />
+          </div>
 
         <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze">
           <SettingsRow
@@ -158,6 +166,12 @@ export function MeScreen({
             onClick={onOpenTranslationSettings}
           />
           <SettingsRow
+            icon={Globe}
+            title="网络与代理"
+            caption={proxySummary}
+            onClick={onOpenProxySettings}
+          />
+          <SettingsRow
             icon={Database}
             title="离线存储"
             caption={storageSummary}
@@ -179,12 +193,13 @@ export function MeScreen({
           />
         </ul>
 
-        <div data-reveal className="page-x max-w-2xl pt-8">
+        <div data-reveal className="page-x lg:px-8 max-w-2xl pt-8">
           <p className="font-display text-[15px] text-paper">权利和免责</p>
           <p className="mt-2 text-[11.5px] leading-relaxed text-paper-faint">
             新闻内容的著作权及其他相关权利归原发布方所有；本应用仅为本地阅读客户端，不托管、不转载、不运营内容库。
             列表与正文由本机直接请求来源站点获取，稍后读与已读状态仅保存在本地。
           </p>
+        </div>
         </div>
       </div>
     </section>

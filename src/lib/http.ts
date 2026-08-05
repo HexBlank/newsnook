@@ -1,7 +1,57 @@
+/**
+ * 抓取上游原文与任意 URL。
+ *
+ * App：CapacitorHttp 或 ProxiedHttp（用户 HTTP/SOCKS 隧道）。
+ * 浏览器开发态：Vite `/api/*`（可跟用户代理）；Web 反代则直连包装 URL。
+ */
+
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 
 import { offsetPageRequest, proxyPathFor, userAgentFor, type NewsSource } from '../sources/registry'
+import { DEFAULT_PROXY_PREFS, normalizeProxyPrefs } from '../features/proxy/config'
+import { decodeBase64ToArrayBuffer, nativeProxiedRequest } from '../features/proxy/nativeHttp'
+import { currentProxyRuntime } from '../features/proxy/runtime'
+import { resolveProxyTransport, type NativeTunnelProxy } from '../features/proxy/transport'
+import type { ProxyPrefs } from '../features/proxy/types'
 import { decodeResponseBytes } from './textEncoding'
+
+let activeProxyPrefs: ProxyPrefs = (() => {
+  try {
+    const raw = localStorage.getItem('newsnook:preferences')
+    if (raw) {
+      const parsed = JSON.parse(raw) as { proxy?: unknown }
+      return normalizeProxyPrefs(parsed.proxy)
+    }
+  } catch {
+    // 忽略解析异常
+  }
+  return DEFAULT_PROXY_PREFS
+})()
+
+function syncDevProxyPrefs(prefs: ProxyPrefs): void {
+  if (typeof fetch !== 'function') return
+  if (Capacitor.isNativePlatform()) return
+  if (!(import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV) return
+  void fetch('/api/dev-proxy-prefs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(prefs),
+  }).catch(() => {
+    // 开发服务器未起或已关时忽略
+  })
+}
+
+// 启动时把已持久化的偏好同步到 Vite（若在开发态）
+syncDevProxyPrefs(activeProxyPrefs)
+
+export function setRuntimeProxyPrefs(prefs: ProxyPrefs): void {
+  activeProxyPrefs = prefs
+  syncDevProxyPrefs(prefs)
+}
+
+export function getRuntimeProxyPrefs(): ProxyPrefs {
+  return activeProxyPrefs
+}
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -17,12 +67,15 @@ export type FetchSourceOptions = {
   requestForm?: Record<string, string | number>
 }
 
+function transportFor(
+  targetUrl: string,
+  sourceMeta?: { id?: string; group?: string },
+) {
+  return resolveProxyTransport(targetUrl, sourceMeta, activeProxyPrefs, currentProxyRuntime())
+}
+
 /**
  * 抓取上游原文。
- *
- * App 内使用 Capacitor 原生 HTTP，直连上游，行为等价于旧版 OkHttp。
- * 浏览器开发态退回 Vite 代理，绕开 CORS。
- * `url` / `page` 用于分页等非默认地址。
  */
 export async function fetchSourceText(
   source: NewsSource,
@@ -32,19 +85,47 @@ export async function fetchSourceText(
   const page = options?.page
   const paged =
     page != null ? offsetPageRequest(source, page) : { url: source.url, requestForm: source.requestForm }
-  const url = options?.url ?? paged.url
+  const rawUrl = options?.url ?? paged.url
+  const transport = transportFor(rawUrl, { id: source.id, group: source.group })
   const method = source.requestMethod ?? 'GET'
   const form = options?.requestForm ?? paged.requestForm
   const extraHeaders = source.requestHeaders
+  const ua = userAgentFor(source)
 
   if (Capacitor.isNativePlatform()) {
+    const url = transport.kind === 'web-wrap' ? transport.requestUrl : rawUrl
+    const tunnel = transport.kind === 'native-tunnel' ? transport.tunnel : undefined
     if (method === 'POST') {
-      return nativePost(url, userAgentFor(source), form, extraHeaders, signal)
+      return nativePost(url, ua, form, extraHeaders, signal, tunnel)
     }
-    return nativeGet(url, userAgentFor(source), signal, extraHeaders)
+    return nativeGet(url, ua, signal, extraHeaders, tunnel)
   }
 
-  // 浏览器：带 page 的请求统一走 feed 代理（保留 UA / Referer / POST body）
+  // 浏览器 + Web 反代：直连包装 URL（保留 POST body）
+  if (transport.kind === 'web-wrap') {
+    if (method === 'POST') {
+      const response = await fetch(transport.requestUrl, {
+        method: 'POST',
+        signal,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': ua,
+          ...(extraHeaders ?? {}),
+        },
+        body: encodeFormBody(form),
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return decodeBrowserResponse(response)
+    }
+    const response = await fetch(transport.requestUrl, {
+      signal,
+      headers: { 'User-Agent': ua, ...(extraHeaders ?? {}) },
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return decodeBrowserResponse(response)
+  }
+
+  // 浏览器：带 page 的请求统一走 feed 代理（dev-vite / direct / unsupported）
   if (page != null) {
     const init: RequestInit = { signal }
     if (method === 'POST') {
@@ -61,7 +142,7 @@ export async function fetchSourceText(
   }
 
   if (options?.url && options.url !== source.url) {
-    return fetchAbsoluteText(options.url, { userAgent: userAgentFor(source), signal })
+    return fetchAbsoluteText(options.url, { userAgent: ua, signal })
   }
 
   const init: RequestInit = { signal }
@@ -95,11 +176,24 @@ export async function fetchAbsoluteText(
   options?: { userAgent?: string; signal?: AbortSignal },
 ): Promise<string> {
   const ua = options?.userAgent ?? BROWSER_UA
+  const transport = transportFor(url)
 
   if (Capacitor.isNativePlatform()) {
-    return nativeGet(url, ua, options?.signal)
+    const targetUrl = transport.kind === 'web-wrap' ? transport.requestUrl : url
+    const tunnel = transport.kind === 'native-tunnel' ? transport.tunnel : undefined
+    return nativeGet(targetUrl, ua, options?.signal, undefined, tunnel)
   }
 
+  if (transport.kind === 'web-wrap') {
+    const response = await fetch(transport.requestUrl, {
+      signal: options?.signal,
+      headers: { 'User-Agent': ua },
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return decodeBrowserResponse(response)
+  }
+
+  // direct / dev-vite / unsupported → 开发态 CORS 代理（unsupported 不宣称已走用户 SOCKS）
   const proxy = `/api/page?url=${encodeURIComponent(url)}&ua=${encodeURIComponent(ua)}`
   const response = await fetch(proxy, { signal: options?.signal })
   if (!response.ok) {
@@ -124,9 +218,29 @@ export async function fetchAbsoluteFormPost(
 ): Promise<string> {
   const ua = options?.userAgent ?? BROWSER_UA
   const extra = options?.headers
+  const transport = transportFor(url)
 
   if (Capacitor.isNativePlatform()) {
-    return nativePost(url, ua, form, extra, options?.signal)
+    const targetUrl = transport.kind === 'web-wrap' ? transport.requestUrl : url
+    const tunnel = transport.kind === 'native-tunnel' ? transport.tunnel : undefined
+    return nativePost(targetUrl, ua, form, extra, options?.signal, tunnel)
+  }
+
+  if (transport.kind === 'web-wrap') {
+    const response = await fetch(transport.requestUrl, {
+      method: 'POST',
+      signal: options?.signal,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'User-Agent': ua,
+        ...(extra ?? {}),
+      },
+      body: encodeFormBody(form),
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const text = await decodeBrowserResponse(response)
+    if (response.status === 204 || !text.trim()) throw new Error(`HTTP ${response.status}`)
+    return text
   }
 
   const proxy = `/api/post?url=${encodeURIComponent(url)}&ua=${encodeURIComponent(ua)}`
@@ -180,15 +294,15 @@ async function nativeGet(
   userAgent: string,
   signal?: AbortSignal,
   extraHeaders?: Record<string, string>,
+  tunnel?: NativeTunnelProxy,
 ): Promise<string> {
-  // 网易正文页常见 http://news.163.com/...；能升 https 就升，失败再靠 cleartext 配置兜底
   const candidates = requestUrlCandidates(url)
   let lastError: unknown
 
   for (const candidate of candidates) {
     if (signal?.aborted) throw abortReason(signal)
     try {
-      return await nativeGetFollowingRedirects(candidate, userAgent, signal, extraHeaders)
+      return await nativeGetFollowingRedirects(candidate, userAgent, signal, extraHeaders, tunnel)
     } catch (error) {
       if (signal?.aborted) throw abortReason(signal)
       lastError = error
@@ -204,32 +318,53 @@ async function nativePost(
   form: Record<string, string | number> | undefined,
   extraHeaders: Record<string, string> | undefined,
   signal?: AbortSignal,
+  tunnel?: NativeTunnelProxy,
 ): Promise<string> {
   if (signal?.aborted) throw abortReason(signal)
 
-  const response = await abortable(
-    CapacitorHttp.post({
-      url,
-      readTimeout: 25000,
-      connectTimeout: 15000,
-      responseType: 'arraybuffer',
-      headers: {
-        'User-Agent': userAgent,
-        Accept: 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        ...(extraHeaders ?? {}),
-      },
-      data: encodeFormBody(form),
-    }),
-    signal,
-  )
+  const headers = {
+    'User-Agent': userAgent,
+    Accept: 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+    ...(extraHeaders ?? {}),
+  }
+  const body = encodeFormBody(form)
+
+  const response = tunnel
+    ? await abortable(
+        nativeProxiedRequest({
+          url,
+          method: 'POST',
+          headers,
+          data: body,
+          proxy: tunnel,
+          readTimeout: 25000,
+          connectTimeout: 15000,
+        }),
+        signal,
+      )
+    : await abortable(
+        CapacitorHttp.post({
+          url,
+          readTimeout: 25000,
+          connectTimeout: 15000,
+          responseType: 'arraybuffer',
+          headers,
+          data: body,
+        }),
+        signal,
+      )
 
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`HTTP ${response.status}`)
   }
 
-  const text = decodeNativeResponse(response.data, headerValue(response.headers, 'content-type'))
+  const data = tunnel
+    ? decodeBase64ToArrayBuffer((response as { data: string }).data)
+    : (response as { data: unknown }).data
+
+  const text = decodeNativeResponse(data, headerValue(response.headers, 'content-type'))
   if (response.status === 204 || !text.trim()) {
     throw new Error(`HTTP ${response.status || 204}`)
   }
@@ -245,36 +380,50 @@ async function nativeGetFollowingRedirects(
   userAgent: string,
   signal?: AbortSignal,
   extraHeaders?: Record<string, string>,
+  tunnel?: NativeTunnelProxy,
 ): Promise<string> {
   let current = url
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     if (signal?.aborted) throw abortReason(signal)
 
-    const response = await abortable(
-      CapacitorHttp.get({
-        url: current,
-        readTimeout: 25000,
-        connectTimeout: 15000,
-        // Android 的 text 模式会在 Java 层提前按错误字符集解码，产生不可恢复的 U+FFFD。
-        responseType: 'arraybuffer',
-        disableRedirects: true,
-        headers: {
-          'User-Agent': userAgent,
-          Accept:
-            'text/html,application/xhtml+xml,application/xml,application/json,text/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-          ...(extraHeaders ?? {}),
-        },
-      }),
-      signal,
-    )
+    const headers = {
+      'User-Agent': userAgent,
+      Accept:
+        'text/html,application/xhtml+xml,application/xml,application/json,text/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      ...(extraHeaders ?? {}),
+    }
+
+    const response = tunnel
+      ? await abortable(
+          nativeProxiedRequest({
+            url: current,
+            method: 'GET',
+            headers,
+            proxy: tunnel,
+            readTimeout: 25000,
+            connectTimeout: 15000,
+            followRedirects: false,
+          }),
+          signal,
+        )
+      : await abortable(
+          CapacitorHttp.get({
+            url: current,
+            readTimeout: 25000,
+            connectTimeout: 15000,
+            responseType: 'arraybuffer',
+            disableRedirects: true,
+            headers,
+          }),
+          signal,
+        )
 
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = headerValue(response.headers, 'location')
       if (!location) throw new Error(`HTTP ${response.status}`)
       const next = resolveRedirectUrl(current, location)
-      // 重定向目标也可能是 http；再走一轮候选归一（升 https / 域名改写）
       current = requestUrlCandidates(next)[0] ?? next
       continue
     }
@@ -283,7 +432,11 @@ async function nativeGetFollowingRedirects(
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const text = decodeNativeResponse(response.data, headerValue(response.headers, 'content-type'))
+    const data = tunnel
+      ? decodeBase64ToArrayBuffer((response as { data: string }).data)
+      : (response as { data: unknown }).data
+
+    const text = decodeNativeResponse(data, headerValue(response.headers, 'content-type'))
     if (response.status === 204 || !text.trim()) {
       throw new Error(`HTTP ${response.status || 204}`)
     }
@@ -298,11 +451,11 @@ async function decodeBrowserResponse(response: Response): Promise<string> {
   return decodeResponseBytes(bytes, response.headers.get('content-type'))
 }
 
-function decodeNativeResponse(data: unknown, contentType?: string): string {
-  // Capacitor 会沿用兼容行为，自动解析 application/json，而不是返回 base64。
-  if (contentType?.toLowerCase().includes('json')) return JSON.stringify(data)
+export function decodeNativeResponse(data: unknown, contentType?: string): string {
+  if (contentType?.toLowerCase().includes('json')) {
+    return typeof data === 'string' ? data : JSON.stringify(data)
+  }
 
-  // Capacitor Android 的 arraybuffer/blob 响应通过 bridge 以 base64 字符串传回。
   if (typeof data === 'string') {
     const binary = atob(data)
     const bytes = new Uint8Array(binary.length)
@@ -351,7 +504,6 @@ export function googleTranslateProxyUrl(url: string, targetLang = 'en'): string 
     if (parsed.hostname === 'translate.google.com' || parsed.hostname === 'translate.googleapis.com') {
       return null
     }
-    // news.google.com 包装链不应走翻译镜像
     if (parsed.hostname === 'news.google.com' || parsed.hostname.endsWith('.google.com')) {
       return null
     }
@@ -393,4 +545,65 @@ export function httpsUpgradeCandidates(url: string): string[] {
     // ignore
   }
   return [url]
+}
+
+/** 原生隧道下拉任意字节（媒体 / 图片 blob） */
+export async function nativeFetchBytes(
+  url: string,
+  headers: Record<string, string>,
+  tunnel?: NativeTunnelProxy,
+  signal?: AbortSignal,
+): Promise<{ data: ArrayBuffer; contentType?: string; status: number; responseHeaders: Record<string, string> }> {
+  if (signal?.aborted) throw abortReason(signal)
+
+  if (tunnel) {
+    const response = await abortable(
+      nativeProxiedRequest({
+        url,
+        method: 'GET',
+        headers,
+        proxy: tunnel,
+        readTimeout: 30000,
+        connectTimeout: 15000,
+        followRedirects: true,
+      }),
+      signal,
+    )
+    return {
+      status: response.status,
+      data: decodeBase64ToArrayBuffer(response.data),
+      contentType: headerValue(response.headers, 'content-type'),
+      responseHeaders: response.headers,
+    }
+  }
+
+  const response = await abortable(
+    CapacitorHttp.get({
+      url,
+      readTimeout: 30000,
+      connectTimeout: 15000,
+      responseType: 'arraybuffer',
+      headers,
+    }),
+    signal,
+  )
+  const data = response.data
+  let buffer: ArrayBuffer
+  if (typeof data === 'string') {
+    buffer = decodeBase64ToArrayBuffer(data)
+  } else if (data instanceof ArrayBuffer) {
+    buffer = data
+  } else if (ArrayBuffer.isView(data)) {
+    const copy = new Uint8Array(data.byteLength)
+    copy.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
+    buffer = copy.buffer
+  } else {
+    throw new Error('无法解析响应字节')
+  }
+  return {
+    status: response.status,
+    data: buffer,
+    contentType: headerValue(response.headers, 'content-type'),
+    responseHeaders: response.headers,
+  }
 }

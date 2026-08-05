@@ -23,7 +23,7 @@ export function SourceFilterChips({
     <div className="relative w-full">
       <div
         ref={containerRef}
-        className="scroll-hidden flex items-center gap-1.5 overflow-x-auto px-4 py-1 select-none"
+        className="scroll-hidden max-w-[2400px] mx-auto flex items-center gap-1.5 overflow-x-auto px-4 lg:px-6 xl:px-8 2xl:px-10 py-1 select-none"
       >
         {/* 全部 (All) Chip */}
         <button

@@ -28,7 +28,7 @@ export function HistoryScreen({ history, onOpen, onBack }: Props) {
           </p>
         </div>
       ) : (
-        <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze">
+        <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 md:gap-px md:divide-y-0 md:bg-haze">
           {history.map((article) => (
             <li
               key={article.id}

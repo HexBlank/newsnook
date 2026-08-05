@@ -3,6 +3,7 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 
 import { AppShell } from './components/AppShell'
+import { DesktopSidebar } from './components/DesktopSidebar'
 import { TabBar, type TabKey } from './components/TabBar'
 import { useFeeds } from './hooks/useFeeds'
 import { usePreferences } from './hooks/usePreferences'
@@ -42,6 +43,8 @@ import { PresetListScreen } from './screens/settings/PresetListScreen'
 import { StorageScreen } from './screens/settings/StorageScreen'
 import { TypographyScreen } from './screens/settings/TypographyScreen'
 import { TranslationScreen } from './screens/settings/TranslationScreen'
+import { ProxyScreen } from './screens/settings/ProxyScreen'
+import { proxyModeLabel } from './features/proxy/config'
 import {
   translationDisplayModeLabel,
   translationLanguageLabel,
@@ -95,6 +98,7 @@ type SettingsRoute =
   | { name: 'appearance' }
   | { name: 'storage' }
   | { name: 'translation' }
+  | { name: 'proxy' }
   | { name: 'later' }
   | { name: 'history' }
   | { name: 'about' }
@@ -477,6 +481,12 @@ export default function App() {
     [prefs.translation],
   )
 
+  const proxySummary = useMemo(() => {
+    const mode = proxyModeLabel(prefs.proxy.mode)
+    if (prefs.proxy.mode === 'off') return '未启用'
+    return `${mode} · ${prefs.proxy.proxyUrl ? '已配置' : '未填写地址'}`
+  }, [prefs.proxy])
+
   const renderSettings = () => {
     if (!settingsRoute) return null
 
@@ -520,6 +530,16 @@ export default function App() {
         <TranslationScreen
           prefs={prefs.translation}
           onChange={(translation) => update((prev) => ({ ...prev, translation }))}
+          onBack={() => setSettingsRoute(null)}
+        />
+      )
+    }
+
+    if (settingsRoute.name === 'proxy') {
+      return (
+        <ProxyScreen
+          prefs={prefs.proxy}
+          onChange={(proxy) => update((prev) => ({ ...prev, proxy }))}
           onBack={() => setSettingsRoute(null)}
         />
       )
@@ -677,6 +697,7 @@ export default function App() {
           typographySummary={typographySummary}
           appearanceSummary={appearanceSummary}
           translationSummary={translationSummary}
+          proxySummary={proxySummary}
           storageSummary={storageSummary}
           onOpenLater={() => setSettingsRoute({ name: 'later' })}
           onOpenHistory={() => setSettingsRoute({ name: 'history' })}
@@ -684,6 +705,7 @@ export default function App() {
           onOpenTypographySettings={() => setSettingsRoute({ name: 'typography' })}
           onOpenAppearanceSettings={() => setSettingsRoute({ name: 'appearance' })}
           onOpenTranslationSettings={() => setSettingsRoute({ name: 'translation' })}
+          onOpenProxySettings={() => setSettingsRoute({ name: 'proxy' })}
           onOpenStorageSettings={() => setSettingsRoute({ name: 'storage' })}
           onOpenAbout={() => setSettingsRoute({ name: 'about' })}
         />
@@ -739,21 +761,64 @@ export default function App() {
 
   return (
     <AppShell>
-      {renderTab()}
-
-      {!focusSource && (
-        <TabBar
-          active={tab}
-          laterCount={later.length}
-          onChange={(key) => {
+      <div className="flex h-full w-full flex-row overflow-hidden">
+        <DesktopSidebar
+          categories={categories}
+          activeCategoryId={categoryId}
+          onCategoryChange={(newId) => {
+            setCategoryId(newId)
+            setCategoryFilterSourceId(null)
+            setTab('today')
+            setSettingsRoute(null)
             setFocusSourceId(null)
-            setFocusReturnRoute(null)
-            setTab(key)
           }}
+          activeTab={tab}
+          settingsRouteName={settingsRoute ? settingsRoute.name : null}
+          laterCount={later.length}
+          historyCount={cachedHistory.length}
+          theme={prefs.theme}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => {
+            update((prev) => setThemeMode(prev, resolvedTheme === 'dark' ? 'light' : 'dark'))
+          }}
+          presetSwitcher={{
+            activeName: presets.activePreset?.name ?? '场景预设',
+            items: presetSwitcherItems,
+            onSelect: (id) => presets.applyPreset(id),
+            onManage: () => setSettingsRoute({ name: 'presets' }),
+          }}
+          onNavigateHome={() => {
+            setTab('today')
+            setSettingsRoute(null)
+            setFocusSourceId(null)
+          }}
+          onNavigateLater={() => setSettingsRoute({ name: 'later' })}
+          onNavigateHistory={() => setSettingsRoute({ name: 'history' })}
+          onNavigateSettings={() => {
+            setTab('me')
+            setSettingsRoute(null)
+          }}
+          onNavigateAbout={() => setSettingsRoute({ name: 'about' })}
         />
-      )}
 
-      {renderSettings()}
+        <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-ink">
+          {renderTab()}
+
+          {!focusSource && (
+            <TabBar
+              active={tab}
+              laterCount={later.length}
+              onChange={(key) => {
+                setFocusSourceId(null)
+                setFocusReturnRoute(null)
+                setTab(key)
+              }}
+            />
+          )}
+
+          {renderSettings()}
+        </main>
+      </div>
 
       {reading && (
         <Suspense
@@ -761,7 +826,7 @@ export default function App() {
             <div
               role="status"
               aria-label="正在打开文章"
-              className="absolute inset-0 z-30 bg-ink pt-[env(safe-area-inset-top)]"
+              className="absolute inset-0 z-30 bg-ink pt-[var(--sat)]"
             />
           }
         >

@@ -1,163 +1,124 @@
-# NewsNook（有所闻）
+# News Nook Web / Android
 
-本地优先的 Android 新闻阅读客户端：无账号、无后端、无推荐算法。订阅源由你配置，列表与正文由客户端直连上游获取，并在应用内阅读。
+News Nook（有所闻）使用 React + Vite 构建 Web 应用，并通过 Capacitor 8 打包为原生 Android 应用。
 
-软件定位是**工具**，不是内容平台。不生产新闻，不做观点输出，不试图留住你的注意力。
+## 环境要求
 
-项目参考已长期停更的「卡片新闻」：简洁、专注阅读。旧版在新 Android 上难以稳定运行，因此重新实现，并补上多信源、站内全文、翻译与离线阅读等能力。
+- Node.js 22 或更高版本
+- Android SDK（API 36、Build Tools 36）
+- JDK 21（Android Studio 内置 JBR 也可以）
 
-## 理念
+构建脚本会依次读取系统环境变量和常见安装目录：
 
-多数新闻 App 以停留时长与点击为目标，用推荐把人留在信息流里。NewsNook 不做这件事。
+- `ANDROID_HOME` / `ANDROID_SDK_ROOT`
+- `JAVA_HOME`
+- Windows 的 Android Studio、Android SDK 和 `%LOCALAPPDATA%\NewsNook\toolchains` 本地工具链目录
 
-- **没有推荐**：不会根据阅读历史「猜你喜欢」，也不会按热度或算法排序强推内容
-- **没有账号与云同步**：偏好、稍后读、阅读记录只存在本机，不上传到任何服务器
-- **没有广告与信息流运营**：界面只展示你启用的源与类别
-- **你配置什么，就看什么**：源、类别、场景预设都是显式配置，而不是黑箱投喂
+## 初始化
 
-如果你需要的是打开就有内容刷的平台体验，本项目可能不合适。如果你希望软件只负责把选定来源的文章读顺，合上就结束，那就是本项目的目标。
-
-## 它不是 FreshRSS
-
-FreshRSS 是成熟的开源 RSS 聚合器，也支持通过规则、XPath / CSS Selector 等方式提取网页元素；对于愿意自建服务、维护订阅体系、自己编排抓取规则的人，它是很强的方案。
-
-但 NewsNook 想解决的不是这个问题。
-
-本项目要做的，不是“给懂技术的用户再造一套自己的信息抓取系统”，而是做一个 **backendless、开箱即用的手机阅读软件**：装到 Android 手机上就能直接用，不需要自建服务，不需要部署，不需要配置抓取规则，也不需要先理解 RSS、FreshRSS 或整套订阅架构。
-
-换句话说，NewsNook 不是“一个不能自定义规则的 FreshRSS”，而是“一个把复杂度预先消化掉的本地优先阅读器”。它把源接入、列表获取、正文提取、缓存、翻译、移动端交互这些环节尽量收敛到应用内部，让用户面对的是“读”，而不是“搭系统”。
-
-两者有交集，但定位不同：
-
-- **FreshRSS 更像基础设施**：适合愿意自己掌控抓取、过滤、规则、部署与订阅编排的人
-- **NewsNook 更像成品应用**：适合只想在手机上直接阅读、不想维护后端或折腾规则的人
-
-如果你的目标是打造一套可自定义、可扩展、可长期维护的个人信息抓取系统，那么 FreshRSS 这类方案通常更合适；如果你的目标是拿起手机就能读、配置负担尽量低、数据尽量只留在本机，那才是 NewsNook 想服务的场景。
-
-## 界面预览
-
-<table>
-  <tr>
-    <td align="center" width="33%"><img src="docs/screenshots/home.jpg" alt="首页信息流" /><br/><sub>首页信息流</sub></td>
-    <td align="center" width="33%"><img src="docs/screenshots/bilingual.jpg" alt="对照翻译" /><br/><sub>对照翻译</sub></td>
-    <td align="center" width="33%"><img src="docs/screenshots/scenes.jpg" alt="切换场景" /><br/><sub>切换场景</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/categories.jpg" alt="分类与信源" /><br/><sub>分类与信源</sub></td>
-    <td align="center"><img src="docs/screenshots/appearance.jpg" alt="外观" /><br/><sub>外观</sub></td>
-    <td align="center"><img src="docs/screenshots/home-dark.jpg" alt="夜读信息流" /><br/><sub>夜读信息流</sub></td>
-  </tr>
-</table>
-
-更多界面截图见 [`docs/screenshots`](./docs/screenshots)。
-
-## 功能
-
-### 源与类别
-
-应用内置一批可用源，例如：网易各频道、知乎日报、BBC、德国之声，以及少数派、36氪、爱范儿、IT之家等科技媒体，部分 AI 公司官网动态，以及个人博客 RSS。源可以单独开启或关闭。列表由客户端直接拉取 RSS / Atom 或公开接口，无自建业务后端。
-
-源较多时用**类别**组织（如商业、政务、科技、国际等）。每个类别下挂若干源，主界面按类别横向切换，而不是把所有条目混成一锅。类别顺序、是否显示、每个类别包含哪些源，均可在设置中调整；也可以进入某一个源单独浏览，与其它源隔离。
-
-### 场景预设
-
-当前整套配置——分类顺序、显示开关、各类别下的源——可以保存为**场景预设**快照，之后一键切换。
-
-内置预设包括：全景门户、极客与 AI、商业创投、全球视野、慢读智识、摸鱼消遣。也可以在任一预设基础上修改，另存为自己的版本（例如工作日与周末使用不同配置）。
-
-### 站内阅读
-
-点击条目后，在应用内渲染适合手机阅读的正文，包含标题、来源、时间、图片、表格等常见结构。若对排版或内容有疑虑，可随时跳转原网站核对；该入口始终可用。
-
-图片支持放大、缩放、保存与分享。网易视频稿提供播放器，支持全屏；全屏下可通过左侧滑动调节亮度、右侧滑动调节音量。
-
-### 翻译
-
-支持将外文内容译为中文，有两种显示方式：
-
-- **全文替换**：界面只显示译文
-- **对照阅读**：保留原文，译文跟在对应段落下
-
-翻译能力分两路，可按需选用：
-
-- **本地翻译**：语言模型下载到设备，离线可用，请求不经过外网翻译服务
-- **云端翻译**：支持 Google、Azure、DeepL、自建 DeepLX 等。API Key 由用户自行填写并保存在本机；请求直连用户配置的服务地址。应用作者不中转这些请求，也无法查看你翻译了什么
-
-### 稍后读与缓存
-
-加入「稍后读」的文章会预加载正文，便于无网时阅读。最近阅读过的条目有历史记录。完整打开过的正文会缓存在本机，断网后仍可回看；缓存过多时可在设置中手动清理。
-
-### 外观
-
-可调整字体、字号与行高，以及浅色 / 深色 / 跟随系统。相关偏好同样只保存在本机。
-
-## 安装
-
-发布文件见 [Releases](https://github.com/t59688/newsnook/releases)。存在两个变体，**包名与签名相同**，同一设备安装其中一个即可。安装时可能需允许「安装未知应用」。当前仅提供 Android。
-
-| 变体 | 大约体积 | 说明 |
-| --- | --- | --- |
-| 轻量版（cloud） | ~ 2 MB | 功能完整，不含本地离线翻译相关原生库；可使用云端翻译 |
-| 完整版（local） | ~ 60 MB | 额外体积主要为离线翻译相关组件；语言模型仍按需下载 |
-
-不需要离线翻译时安装轻量版即可，其它功能没有缺失。
-
-## 架构（简述）
-
-```text
-公开新闻源 → 客户端请求 → 列表解析 / 正文提取 → 分类 · 缓存 · 翻译 → 本地阅读
+```bash
+npm install
+npm run android:keystore:init
 ```
 
-无自建内容服务器，部署简单，但也受上游接口、页面结构与反爬策略影响；源站改版后解析可能需同步更新。
+`android:keystore:init` 只允许执行一次，会在本机生成：
 
-## 权利声明
+- `.android-signing/newsnook-release.jks`
+- `.env.android.local`
 
-1. **内容版权**  
-   NewsNook 是阅读器，不创作、不编辑、不改写第三方新闻正文。文章及其附属素材的版权归原作者、原媒体或原网站所有。用户通过本应用阅读，不改变上述权利归属。
+二者均已被 Git 忽略。请立即将这两个文件一起备份到安全的密码管理或密钥托管系统。应用发布后，后续版本必须继续使用同一个签名密钥；丢失密钥可能导致无法更新已发布应用。
 
-2. **翻译**  
-   应用内翻译是对原文的机器转译，便于阅读，**不构成新的版权主张**，也不等于对译文准确性或完整性的保证。
+CI 环境不应运行初始化脚本，应从密钥系统注入以下变量，并将 keystore 恢复到构建机：
 
-3. **商标与名称**  
-   应用中出现的媒体名称、品牌标识、产品名称等，均归各自权利人所有。本项目提及它们仅用于说明可订阅的数据源，不表示与权利人存在合作、授权或隶属关系。
+```text
+NEWSNOOK_KEYSTORE_FILE
+NEWSNOOK_KEYSTORE_PASSWORD
+NEWSNOOK_KEY_ALIAS
+NEWSNOOK_KEY_PASSWORD
+```
 
-4. **用户配置的密钥与数据**  
-   云端翻译等功能所使用的 API Key、端点地址，以及阅读偏好、缓存、稍后读等内容，均由用户自行保管于本机。项目维护者不收集、不托管这些数据。
+## 构建 Android
 
-5. **软件许可**  
-   你可以自行下载安装、个人使用；未经许可，请勿再分发、改包上架或用于商业传播。详见 [`LICENSE`](./LICENSE)。问题反馈请通过 [Issue](https://github.com/t59688/newsnook/issues) 提出。
+默认同时生成两种签名 Release APK：
 
-## 免责声明
+```bash
+npm run android:apk
+```
 
-1. **第三方内容**  
-   列表与正文来自用户启用的上游网站或 RSS / 接口。项目维护者**不对**第三方内容的真实性、合法性、时效性、完整性或适用性负责，也不对因阅读或依赖这些内容而产生的任何后果承担责任。
+默认同时生成两种用于 Google Play 发布的签名 Release AAB：
 
-2. **可用性与上游变更**  
-   上游站点改版、接口变更、地区限制、反爬策略或服务中断，可能导致部分源暂时或长期无法获取。本应用会尽力适配，但**不保证**任一源持续可用。
+```bash
+npm run android:aab
+```
 
-3. **解析与展示**  
-   站内排版依赖对上游页面或 feed 的解析。复杂页面、付费墙、动态加载或特殊版式可能导致正文不完整、样式异常或图片缺失。请以「打开原文」所见为准。
+两个命令都会自动完成 Web 生产构建、Capacitor 同步、Gradle Release 构建、R8 压缩、资源裁剪和签名校验。
 
-4. **翻译质量**  
-   本地与云端翻译均由机器完成，可能出现错译、漏译或不当用语。重要信息请核对原文或权威译本。使用云端翻译时，还需遵守你所选用服务商的条款与配额限制；相关费用与合规责任由用户自行承担。
+| 变体 | 本地翻译 | 设置中的 ML Kit 入口 | 用途 |
+|---|---:|---:|---|
+| `cloud` | 不编译 ML Kit SDK 和原生库 | 隐藏 | 默认轻量版，仅使用 DeepLX、Google、Azure、DeepL 等云服务 |
+| `local` | 编译 ML Kit SDK，语言模型仍由用户按需下载 | 显示 | 需要离线/本地翻译的完整版 |
 
-5. **软件状态**  
-   软件按「现状」（as is）提供，在适用法律允许的最大范围内，**不提供**适销性、特定用途适用性或无侵权的明示或默示担保。因使用、无法使用或错误使用本软件而导致的直接或间接损失，项目维护者在法律允许范围内不承担责任。
+最终产物位于：
 
-6. **合规使用**  
-   请在遵守所在地法律法规及上游网站服务条款的前提下使用本软件。用户对其订阅源选择、内容传播与二次使用行为自行负责。
+```text
+artifacts/android/newsnook-<version>-cloud-release.apk
+artifacts/android/newsnook-<version>-local-release.apk
+artifacts/android/newsnook-<version>-cloud-release.aab
+artifacts/android/newsnook-<version>-local-release.aab
+```
 
-7. **非官方关系**  
-   NewsNook 与文中涉及的各新闻媒体、平台、云服务商均无官方附属或背书关系，除非另有书面说明。
+只构建其中一种时使用 `npm run android:apk:cloud`、`npm run android:apk:local`、`npm run android:aab:cloud` 或 `npm run android:aab:local`。两个变体使用相同包名和签名，面向同一应用渠道，不能在同一设备上并存。
 
-## 反馈
+版本号只改一处：`package.json` 的 `"version"`（semver，如 `1.1.0`）。
 
-欢迎通过 Issue 反馈：源失效、正文提取错误、翻译问题、崩溃、新源建议、交互建议。
+- 产物文件名：`newsnook-<version>-<cloud|local>-release.apk|aab`
+- 包内 `versionName`：同一字符串
+- 包内 `versionCode`：由 `X.Y.Z` 推导为 `X*10000 + Y*100 + Z`（例如 `1.2.3` → `10203`）
 
-请尽量附上：Android 版本、应用版本、设备型号、信源名称、文章链接、截图或日志、复现步骤。
+发版时把 `package.json` 的 version 调高即可，再跑 `npm run android:apk` / `android:aab`。上架 Google Play 时 `versionCode` 必须严格递增；正常升 semver 已满足。仅在极少数「不改 versionName、只再提一次 code」时才覆盖：
 
-## 致谢
+```powershell
+$env:NEWSNOOK_VERSION_CODE = "10204"
+npm run android:aab
+```
 
-感谢公开内容、开放接口与开源工具的提供者。
+## 启动闪屏
 
-感谢 [Linux.do](https://linux.do) 社区提供的平台与交流环境，讨论与分享对本项目帮助很大。
+```bash
+npm run assets
+```
+
+只更新 Android 各密度的 `splash.png`（含 night），**不会**改动 Adaptive Icon。
+源图优先 `assets/splash.png` / `assets/splash-dark.png`；没有则用 `assets/logo.svg` 合成。
+启动图标请改 `newsnook_adaptive_icon/` 后复制进 `android/.../res`，旧版 PNG 用 `node scripts/generate-legacy-launcher-icons.mjs`。
+
+## 开发和调试
+
+同步 Web 资源与原生工程：
+
+```bash
+npm run android:sync
+```
+
+连接设备或启动模拟器后运行 Debug 版本。默认运行不带 ML Kit 的轻量版；需要验证本地翻译时运行 `local` 版：
+
+```bash
+npm run android:run
+npm run android:run:local
+```
+
+在 Android Studio 中打开原生工程：
+
+```bash
+npm run android:open
+```
+
+## 发布前检查
+
+1. 确认包名 `com.aizeek.newsnook`。首次上架后不要修改。
+2. 递增 `NEWSNOOK_VERSION_CODE`，设置正确的 `NEWSNOOK_VERSION_NAME`。
+3. 执行 `npm run lint` 和 `npm run android:aab`。
+4. 在至少一台真实 Android 设备上验证启动、新闻加载、正文阅读、外链打开、返回键和持久化设置。
+5. 将 AAB 上传 Google Play，并启用 Play App Signing。
+
+原生工程位于 `android/`，应与 Web 代码一同纳入版本控制；构建产物、本机 SDK 配置和签名材料不得提交。

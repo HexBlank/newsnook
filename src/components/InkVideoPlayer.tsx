@@ -812,7 +812,7 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
         {boosting && (
           <div
             className="pointer-events-none absolute inset-x-0 z-[2] flex justify-center"
-            style={{ top: 'max(12px, calc(env(safe-area-inset-top, 0px) + 8px))' }}
+            style={{ top: 'max(12px, calc(var(--sat, 0px) + 8px))' }}
           >
             <span className="inline-block whitespace-nowrap rounded-full bg-ink-raised/85 px-3 py-1 text-[11px] leading-none text-paper">
               {BOOST_RATE}x 快进中
@@ -853,7 +853,7 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
             }}
             className={`absolute inset-x-0 bottom-0 z-[3] bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3 pt-10 transition-opacity duration-200 ${
               fullscreen
-                ? 'pb-[max(0.625rem,env(safe-area-inset-bottom,0px))]'
+                ? 'pb-[max(0.625rem,var(--sab,0px))]'
                 : 'pb-2.5'
             } ${showChrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           >

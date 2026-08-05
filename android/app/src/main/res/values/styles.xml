@@ -15,9 +15,8 @@
         <!-- DayNight 的默认窗口底色在浅色系统下是白的，WebView 首帧前会闪一帧白屏 -->
         <item name="android:windowBackground">#0E0F12</item>
         <item name="android:colorBackground">#0E0F12</item>
-        <!-- 旧系统仍认这些；Android 15+ 边到边时底色由 Web safe-area 条承担 -->
-        <item name="android:statusBarColor">#0E0F12</item>
-        <item name="android:navigationBarColor">#0E0F12</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
@@ -33,8 +32,8 @@
         <item name="windowSplashScreenIconBackgroundColor">#0E0F12</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_transparent</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
-        <item name="android:statusBarColor">#0E0F12</item>
-        <item name="android:navigationBarColor">#0E0F12</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

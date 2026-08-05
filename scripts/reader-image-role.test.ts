@@ -71,4 +71,16 @@ function imgFrom(html: string): Element {
   assert.doesNotMatch(html, /data-reader-role="badge"/, 'content images must not be stamped badge')
 }
 
+{
+  const html = normalizeContentImages(
+    '<p><img data-src="https://mmbiz.qpic.cn/mmbiz_png/demo/640?wx_fmt=png" /></p>',
+    'https://www.jiqizhixin.com/articles/x',
+  )
+  assert.match(
+    html,
+    /referrerpolicy="no-referrer"/,
+    'WeChat CDN images need no-referrer to skip hotlink placeholder',
+  )
+}
+
 console.log('reader-image-role.test.ts: ok')

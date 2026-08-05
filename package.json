@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.3.6",
+  "version": "1.3.8",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -26,7 +26,10 @@
     "test:typography": "rolldown scripts/paragraph-typography.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/paragraph-typography.test.mjs && node node_modules/.cache/newsnook/paragraph-typography.test.mjs",
     "test:layout-presets": "npx tsx scripts/layout-presets.test.ts",
     "test:google-news-decode": "npx tsx scripts/google-news-decode.test.ts",
+    "test:native-http": "npx tsx scripts/native-http-response.test.ts",
     "test:google-news-parse": "npx tsx scripts/google-news-parse.test.ts",
+    "test:proxy": "npx tsx scripts/proxy-routing.test.ts",
+    "test:comments": "npx tsx scripts/comments-provider.test.ts",
     "preview": "vite preview",
     "assets": "node scripts/generate-android-assets.mjs",
     "android:sync": "npm run build && node scripts/android-cap.mjs sync android",
@@ -73,7 +76,9 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
     "oxlint": "^1.75.0",
+    "socks-proxy-agent": "^10.1.0",
     "typescript": "~6.0.2",
+    "undici": "^8.10.0",
     "vite": "^8.2.0"
   }
 }

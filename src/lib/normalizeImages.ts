@@ -143,11 +143,16 @@ function absolutizeSrcset(srcset: string, baseUrl: string): string {
  * - 提升 lazyload 真实地址（data-original / data-src / data-advance）
  * - 补全相对路径与协议相对路径
  * - Web 开发态可走 /api/image 代理，规避 CDN 防盗链
+ * - Web 反代时可选 transformUrl 改写为包装地址
  */
 export function normalizeContentImages(
   html: string,
   baseUrl: string,
-  options?: { proxyImages?: boolean },
+  options?: {
+    proxyImages?: boolean
+    /** 优先于 /api/image；返回 falsy 则回退默认逻辑 */
+    transformUrl?: (url: string) => string | null | undefined
+  },
 ): string {
   const wrapped = `<div id="newsnook-root">${html}</div>`
   const { document } = parseHTML(wrapped)
@@ -161,16 +166,21 @@ export function normalizeContentImages(
       continue
     }
 
+    const transformed = options?.transformUrl?.(url)
     const finalUrl =
-      options?.proxyImages && url.startsWith('http')
-        ? `/api/image?url=${encodeURIComponent(url)}`
-        : url
+      transformed && transformed.length > 0
+        ? transformed
+        : options?.proxyImages && url.startsWith('http')
+          ? `/api/image?url=${encodeURIComponent(url)}`
+          : url
 
     const role = inferImageDisplayRole(img)
 
     img.setAttribute('src', finalUrl)
     img.setAttribute('loading', 'lazy')
     img.setAttribute('decoding', 'async')
+    // 微信公众号 CDN（mmbiz.qpic.cn）按 Referer 防盗链：带 localhost/他站会返回「未经允许不可引用」占位图；去掉即可
+    img.setAttribute('referrerpolicy', 'no-referrer')
     if (role === 'badge') img.setAttribute('data-reader-role', 'badge')
     else img.removeAttribute('data-reader-role')
 

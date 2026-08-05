@@ -1,5 +1,9 @@
-import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
 import type { HlsConfig, Loader, LoaderCallbacks, LoaderConfiguration, LoaderContext, LoaderStats } from 'hls.js'
+
+import { getRuntimeProxyPrefs, nativeFetchBytes } from './http'
+import { currentProxyRuntime } from '../features/proxy/runtime'
+import { resolveProxyTransport } from '../features/proxy/transport'
 
 const BROWSER_UA =
   'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Mobile Safari/537.36'
@@ -22,32 +26,6 @@ export function browserMediaProxyUrl(url: string): string {
   return `/api/media?url=${encodeURIComponent(url)}`
 }
 
-function headerValue(headers: Record<string, string>, name: string): string | undefined {
-  const target = name.toLowerCase()
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === target) return value
-  }
-  return undefined
-}
-
-function decodeNativeBytes(data: unknown): ArrayBuffer {
-  if (data instanceof ArrayBuffer) return data
-  if (ArrayBuffer.isView(data)) {
-    const copy = new Uint8Array(data.byteLength)
-    copy.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
-    return copy.buffer
-  }
-  if (typeof data === 'string') {
-    const binary = atob(data)
-    const bytes = new Uint8Array(binary.length)
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index)
-    }
-    return bytes.buffer
-  }
-  throw new Error('无法解析媒体响应')
-}
-
 function emptyStats(): LoaderStats {
   return {
     aborted: false,
@@ -63,33 +41,46 @@ function emptyStats(): LoaderStats {
 }
 
 /**
- * 拉取媒体字节：App 内 CapacitorHttp（无 WebView Origin）；
- * 浏览器走 /api/media，由开发代理带 163 Referer。
+ * 拉取媒体字节：App 内 CapacitorHttp / ProxiedHttp；
+ * 浏览器 Web 反代直连包装 URL，否则走 /api/media。
  */
 export async function fetchMediaBytes(
   url: string,
   signal?: AbortSignal,
 ): Promise<{ data: ArrayBuffer; contentType?: string }> {
+  const transport = resolveProxyTransport(
+    url,
+    undefined,
+    getRuntimeProxyPrefs(),
+    currentProxyRuntime(),
+  )
+
   if (Capacitor.isNativePlatform()) {
-    const response = await CapacitorHttp.get({
-      url,
-      readTimeout: 30000,
-      connectTimeout: 15000,
-      responseType: 'arraybuffer',
-      headers: {
+    const targetUrl = transport.kind === 'web-wrap' ? transport.requestUrl : url
+    const tunnel = transport.kind === 'native-tunnel' ? transport.tunnel : undefined
+    const result = await nativeFetchBytes(
+      targetUrl,
+      {
         'User-Agent': BROWSER_UA,
         Accept: '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         Referer: 'https://3g.163.com/',
       },
-    })
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`HTTP ${response.status}`)
+      tunnel,
+      signal,
+    )
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(`HTTP ${result.status}`)
     }
+    return { data: result.data, contentType: result.contentType }
+  }
+
+  if (transport.kind === 'web-wrap') {
+    const response = await fetch(transport.requestUrl, { signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return {
-      data: decodeNativeBytes(response.data),
-      contentType: headerValue(response.headers, 'content-type'),
+      data: await response.arrayBuffer(),
+      contentType: response.headers.get('content-type') ?? undefined,
     }
   }
 

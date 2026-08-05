@@ -1,14 +1,22 @@
 import { Capacitor } from '@capacitor/core'
 import { parseHTML } from 'linkedom'
 
-import { fetchAbsoluteFormPost, fetchAbsoluteText, googleTranslateProxyUrl } from './http'
+import { hydrateNativeTunnelImages } from '../features/proxy/hydrateImages'
+import { currentProxyRuntime } from '../features/proxy/runtime'
+import { resolveProxyTransport } from '../features/proxy/transport'
+import { findSource, userAgentFor } from '../sources/registry'
+import {
+  fetchAbsoluteFormPost,
+  fetchAbsoluteText,
+  getRuntimeProxyPrefs,
+  googleTranslateProxyUrl,
+} from './http'
 import { decodeGoogleNewsUrl, isGoogleNewsArticleUrl } from './googleNewsDecode'
 import { normalizeContentImages } from './normalizeImages'
 import { buildPageLeadHtml, isSoftNotFoundHtml } from './pageLead'
 import { sanitizeArticleHtml } from './sanitize'
 import type { Article } from './types'
 import { hasBrokenTextEncoding } from './textEncoding'
-import { findSource, userAgentFor } from '../sources/registry'
 
 export type BodySource = 'feed' | 'readability' | 'netease' | 'video'
 
@@ -124,15 +132,28 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function prepareHtml(html: string, baseUrl: string): string {
-  const normalized = normalizeContentImages(html, baseUrl, {
-    // 浏览器开发态走图片代理；原生 App 直连并带站点 Referer 由系统处理
-    proxyImages: !Capacitor.isNativePlatform(),
-  })
-  return sanitizeArticleHtml(normalized)
+function imageUrlTransform(url: string): string | null {
+  const transport = resolveProxyTransport(
+    url,
+    undefined,
+    getRuntimeProxyPrefs(),
+    currentProxyRuntime(),
+  )
+  if (transport.kind === 'web-wrap') return transport.requestUrl
+  return null
 }
 
-function absolutizeHtml(html: string, baseUrl: string): string {
+async function prepareHtml(html: string, baseUrl: string): Promise<string> {
+  const normalized = normalizeContentImages(html, baseUrl, {
+    // 浏览器开发态走图片代理；原生 App 直连（隧道图稍后 hydrate 成 blob）
+    proxyImages: !Capacitor.isNativePlatform(),
+    transformUrl: imageUrlTransform,
+  })
+  const sanitized = sanitizeArticleHtml(normalized)
+  return hydrateNativeTunnelImages(sanitized)
+}
+
+async function absolutizeHtml(html: string, baseUrl: string): Promise<string> {
   return prepareHtml(html, baseUrl)
 }
 
@@ -181,11 +202,11 @@ function collectYoutubeEmbedHtml(pageHtml: string): string {
  * 正文常在 streaming 槽（#S:*）里，空的 <main> 没有段落，故扫整个 body。
  * YouTube 用原站 iframe，不改 src、不二次封装。
  */
-function extractMainContentFallback(
+async function extractMainContentFallback(
   pageHtml: string,
   pageUrl: string,
   title?: string,
-): ResolvedBody | undefined {
+): Promise<ResolvedBody | undefined> {
   const { document } = parseHTML(pageHtml)
   const root = document.body
   if (!root) return undefined
@@ -240,7 +261,7 @@ function extractMainContentFallback(
   if (textLen < 200 && !embeds) return undefined
 
   return {
-    contentHtml: absolutizeHtml(html, pageUrl),
+    contentHtml: await absolutizeHtml(html, pageUrl),
     title,
     bodySource: 'readability',
   }
@@ -261,7 +282,7 @@ async function extractWithReadability(
   const isVideoPage = /\/video\//i.test(pageUrl)
 
   if (!article?.content || stripTags(article.content).length < 80) {
-    const fallback = extractMainContentFallback(
+    const fallback = await extractMainContentFallback(
       pageHtml,
       pageUrl,
       article?.title ?? undefined,
@@ -272,7 +293,7 @@ async function extractWithReadability(
   }
 
   if (isSoftNotFoundHtml(article.content)) {
-    const fallback = extractMainContentFallback(
+    const fallback = await extractMainContentFallback(
       pageHtml,
       pageUrl,
       article.title ?? undefined,
@@ -282,7 +303,7 @@ async function extractWithReadability(
     const lead = buildPageLeadHtml(pageHtml)
     if (lead) {
       return {
-        contentHtml: absolutizeHtml(lead, pageUrl),
+        contentHtml: await absolutizeHtml(lead, pageUrl),
         title: article.title || undefined,
         bodySource: 'readability',
       }
@@ -296,9 +317,9 @@ async function extractWithReadability(
     ? `${embeds}${article.content}`
     : article.content
 
-  const absolute = absolutizeHtml(merged, pageUrl)
+  const absolute = await absolutizeHtml(merged, pageUrl)
   if (stripTags(absolute).length < 80 || isSoftNotFoundHtml(absolute)) {
-    const fallback = extractMainContentFallback(
+    const fallback = await extractMainContentFallback(
       pageHtml,
       pageUrl,
       article.title ?? undefined,
@@ -479,7 +500,7 @@ async function resolveNetEaseArticleBody(
 
       const body = expandNeteaseMediaPlaceholders(rawBody, record)
       return {
-        contentHtml: absolutizeHtml(body, article.originUrl || api),
+        contentHtml: await absolutizeHtml(body, article.originUrl || api),
         bodySource: 'netease',
       }
     } catch {
@@ -509,7 +530,7 @@ async function resolveZhihuBody(
   // 知乎正文是片段 HTML，补一层容器便于排版
   const wrapped = `<div class="zhihu-entry">${body}</div>`
   return {
-    contentHtml: absolutizeHtml(wrapped, article.originUrl || 'https://daily.zhihu.com/'),
+    contentHtml: await absolutizeHtml(wrapped, article.originUrl || 'https://daily.zhihu.com/'),
     image: typeof data.image === 'string' ? data.image : undefined,
     bodySource: 'feed',
     title: typeof data.title === 'string' ? data.title : undefined,
@@ -536,7 +557,7 @@ async function resolveJiqizhixinBody(
   if (!body || stripTags(body).length < 40) return null
 
   return {
-    contentHtml: absolutizeHtml(body, article.originUrl || 'https://www.jiqizhixin.com/'),
+    contentHtml: await absolutizeHtml(body, article.originUrl || 'https://www.jiqizhixin.com/'),
     image:
       typeof data.cover_image_url === 'string'
         ? data.cover_image_url
@@ -565,7 +586,7 @@ export async function resolveArticleBody(
     !hasBrokenTextEncoding(article.contentHtml!)
   ) {
     return {
-      contentHtml: absolutizeHtml(
+      contentHtml: await absolutizeHtml(
         article.contentHtml!,
         article.originUrl || 'https://local.invalid/',
       ),

@@ -97,7 +97,7 @@ function parseDate(raw: string): number | undefined {
   const retry = Date.parse(normalized)
   if (!Number.isNaN(retry)) return retry
 
-  // 晚点等："08月08日" / "2026/08/03 17:24"
+  // 晚点等："08月04日" / "2026/08/03 17:24"
   const slash = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/)
   if (slash) {
     const year = Number(slash[1])
@@ -127,6 +127,61 @@ function parseDate(raw: string): number | undefined {
   }
 
   return undefined
+}
+
+/**
+ * 晚点列表接口 `release_time` 的已知缺陷：把月份写成「日」，
+ * 只会出现「06月06日 / 07月07日 / 08月08日」这类月=日字符串，不是真实发稿日。
+ * 详情页才有可信值，形如 `release_time = '2026/08/04'`。
+ */
+export function isBogusLatepostListDate(raw: string): boolean {
+  const match = raw.trim().match(/^(\d{1,2})月(\d{1,2})日$/)
+  return Boolean(match && match[1] === match[2])
+}
+
+/** 从晚点详情页 HTML 取出真实发稿时间 */
+export function extractLatepostReleaseTime(html: string): string | undefined {
+  const match = html.match(/release_time\s*=\s*'([^']+)'/)
+  const value = match?.[1]?.trim()
+  return value || undefined
+}
+
+/**
+ * 用详情页补全晚点列表里被丢弃的日期。
+ * `fetchHtml` 由调用方注入（浏览器走 /api/page，原生直连），避免 parseFeed 依赖 http。
+ */
+export async function enrichLatepostDates(
+  articles: Article[],
+  fetchHtml: (url: string, signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
+  options?: { concurrency?: number },
+): Promise<Article[]> {
+  const concurrency = Math.max(1, options?.concurrency ?? 5)
+  const next = articles.slice()
+  let cursor = 0
+
+  async function worker(): Promise<void> {
+    while (cursor < next.length) {
+      if (signal?.aborted) return
+      const index = cursor
+      cursor += 1
+      const article = next[index]
+      if (!article || article.hasRealDate || !article.originUrl) continue
+      try {
+        const html = await fetchHtml(article.originUrl, signal)
+        if (signal?.aborted) return
+        const published = parseDate(extractLatepostReleaseTime(html) ?? '')
+        if (published == null) continue
+        next[index] = { ...article, publishedAt: published, hasRealDate: true }
+      } catch {
+        // 单条详情失败不影响整页列表
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, next.length) }, () => worker())
+  await Promise.all(workers)
+  return next
 }
 
 function hashId(input: string): string {
@@ -686,6 +741,8 @@ function parseJiqizhixin(source: NewsSource, payload: string, fetchedAt: number)
 
 /**
  * 晚点 LatePost：POST /site/index 返回 JSON 列表。
+ * 列表 `release_time` 常为「08月08日」这类月=日伪日期，不可直接用；
+ * 真实发稿日在详情页 `release_time = '2026/08/04'`，由 enrichLatepostDates 补全。
  * 正文在详情页 HTML，走 Readability。
  */
 function parseLatepost(source: NewsSource, payload: string, fetchedAt: number): Article[] {
@@ -715,6 +772,7 @@ function parseLatepost(source: NewsSource, payload: string, fetchedAt: number): 
       ? preferHttpsAsset(cover.startsWith('http') ? cover : `https://www.latepost.com${cover}`)
       : undefined
 
+    const releaseTime = text(post.release_time)
     const article = buildArticle(
       source,
       {
@@ -722,7 +780,8 @@ function parseLatepost(source: NewsSource, payload: string, fetchedAt: number): 
         link,
         html: '',
         summaryText: text(post.abstract) || text(post.intro),
-        dateRaw: text(post.release_time),
+        // 列表「08月08日」不可信，留给 enrichLatepostDates 用详情页补全
+        dateRaw: isBogusLatepostListDate(releaseTime) ? '' : releaseTime,
         image,
       },
       fetchedAt,

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Browser } from '@capacitor/browser'
-import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, MessageSquare, RefreshCw } from 'lucide-react'
 
 import { ImageLightbox } from '../components/ImageLightbox'
 import { InkImage } from '../components/InkImage'
@@ -21,6 +21,8 @@ import {
   translationProviderLabel,
 } from '../features/translation/config'
 import type { TranslatedArticleContent, TranslationPrefs } from '../features/translation/types'
+import { fetchCommentCount, supportsComments } from '../features/comments/service'
+import { CommentsDrawer } from '../features/comments/components/CommentsDrawer'
 
 interface Props {
   article: Article
@@ -57,16 +59,128 @@ export function ReaderScreen({
   const [fromCache, setFromCache] = useState(false)
   const [retryToken, setRetryToken] = useState(0)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [commentCount, setCommentCount] = useState<number | undefined>()
   const [translated, setTranslated] = useState<TranslatedArticleContent | null>(null)
   const [showTranslation, setShowTranslation] = useState(false)
   const [translationState, setTranslationState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [translationError, setTranslationError] = useState('')
   const translationAbortRef = useRef<AbortController | null>(null)
   const translationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const canComment = useMemo(
+    () => supportsComments({ ...article, originUrl: resolvedOriginUrl || article.originUrl }),
+    [article, resolvedOriginUrl],
+  )
+
+  useEffect(() => {
+    if (!canComment) return
+    const controller = new AbortController()
+    void fetchCommentCount(
+      { ...article, originUrl: resolvedOriginUrl || article.originUrl },
+      controller.signal,
+    ).then((count) => {
+      if (typeof count === 'number') {
+        setCommentCount(count)
+      }
+    })
+    return () => controller.abort()
+  }, [article, resolvedOriginUrl, canComment])
+
+  useEffect(() => {
+    if (!overlayCloserRef) return
+    if (commentsOpen) {
+      const prev = overlayCloserRef.current
+      overlayCloserRef.current = () => {
+        setCommentsOpen(false)
+        return true
+      }
+      return () => {
+        overlayCloserRef.current = prev
+      }
+    }
+  }, [commentsOpen, overlayCloserRef])
+
+  const [pillVisible, setPillVisible] = useState(true)
+  const lastScrollTopRef = useRef(0)
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleScroll = useCallback(() => {
+    const el = rootRef.current
+    if (!el) return
+    const currentScrollTop = el.scrollTop
+    const delta = currentScrollTop - lastScrollTopRef.current
+
+    if (currentScrollTop < 50 || delta < -8) {
+      setPillVisible(true)
+    } else if (delta > 15 && currentScrollTop > 80) {
+      setPillVisible(false)
+    }
+    lastScrollTopRef.current = currentScrollTop
+
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+    scrollTimeoutRef.current = setTimeout(() => {
+      setPillVisible(true)
+    }, 450)
+  }, [])
+
+  // 屏幕右侧边缘向左滑动手势拉出跟贴
+  useEffect(() => {
+    const element = shellRef.current
+    if (!element || !canComment || commentsOpen || lightbox) return
+
+    let startX = 0
+    let startY = 0
+    let isTracking = false
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return
+      const touch = e.touches[0]
+      if (window.innerWidth - touch.clientX <= 38) {
+        startX = touch.clientX
+        startY = touch.clientY
+        isTracking = true
+      }
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isTracking || e.touches.length !== 1) return
+      const touch = e.touches[0]
+      const deltaX = touch.clientX - startX
+      const deltaY = touch.clientY - startY
+
+      if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5 && Math.abs(deltaY) > 15) {
+        isTracking = false
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!isTracking) return
+      isTracking = false
+      const touch = e.changedTouches[0]
+      const deltaX = touch.clientX - startX
+      const deltaY = touch.clientY - startY
+
+      if (deltaX <= -36 && Math.abs(deltaX) > Math.abs(deltaY) * 1.1) {
+        setCommentsOpen(true)
+      }
+    }
+
+    element.addEventListener('touchstart', onTouchStart, { passive: true })
+    element.addEventListener('touchmove', onTouchMove, { passive: true })
+    element.addEventListener('touchend', onTouchEnd, { passive: true })
+
+    return () => {
+      element.removeEventListener('touchstart', onTouchStart)
+      element.removeEventListener('touchmove', onTouchMove)
+      element.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [canComment, commentsOpen, lightbox])
+
   useEdgeSwipeBack({
     containerRef: shellRef,
     onBack: onClose,
-    disabled: Boolean(lightbox),
+    disabled: Boolean(lightbox || commentsOpen),
     reduced,
   })
 
@@ -288,7 +402,7 @@ export function ReaderScreen({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col pt-[env(safe-area-inset-top)]"
+      className="absolute inset-0 z-30 flex flex-col pt-[var(--sat)]"
       style={{
         animation: reduced ? undefined : 'reader-in 360ms var(--ease-ink) both',
       }}
@@ -299,72 +413,88 @@ export function ReaderScreen({
         ref={shellRef}
         className="reader-swipe-surface flex min-h-0 flex-1 flex-col bg-ink"
       >
-        <header className="page-x flex shrink-0 items-center justify-between gap-2 pt-1 pb-1">
-          <button type="button" onClick={onClose} aria-label="返回列表" className="flex h-9 w-9 shrink-0 items-center justify-center">
-            <ArrowLeft size={18} strokeWidth={1.6} className="text-paper" />
-          </button>
-          <span className="min-w-0 flex-1 truncate text-center font-mono text-[10px] tracking-[0.18em] text-paper-faint">
-            {article.sourceName}
-          </span>
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              disabled={loadState !== 'ready' || translationState === 'loading'}
-              onClick={() => void toggleTranslation()}
-              aria-pressed={showTranslation}
-              aria-label={showTranslation ? '显示原文' : '翻译文章'}
-              className="flex h-9 items-center gap-1 px-1 transition-colors duration-200 disabled:opacity-40"
-            >
-              {translationState === 'loading' ? (
-                <LoaderCircle size={14} strokeWidth={1.7} className="animate-spin text-cinnabar-soft" />
-              ) : (
-                <Languages size={14} strokeWidth={1.7} className={showTranslation ? 'text-cinnabar' : 'text-paper-muted'} />
+        <header className="shrink-0 pt-1 pb-1 border-b border-haze/30 bg-ink/90 backdrop-blur-md sticky top-0 z-20">
+          <div className="page-x lg:px-8 max-w-4xl mx-auto w-full flex items-center justify-between gap-2">
+            <button type="button" onClick={onClose} aria-label="返回列表" className="flex h-9 w-9 shrink-0 items-center justify-center hover:text-paper">
+              <ArrowLeft size={18} strokeWidth={1.6} className="text-paper" />
+            </button>
+            <span className="min-w-0 flex-1 truncate text-center font-mono text-[10px] lg:text-[11px] tracking-[0.18em] text-paper-faint">
+              {article.sourceName}
+            </span>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                disabled={loadState !== 'ready' || translationState === 'loading'}
+                onClick={() => void toggleTranslation()}
+                aria-pressed={showTranslation}
+                aria-label={showTranslation ? '显示原文' : '翻译文章'}
+                className="flex h-9 items-center gap-1 px-1 transition-colors duration-200 disabled:opacity-40"
+              >
+                {translationState === 'loading' ? (
+                  <LoaderCircle size={14} strokeWidth={1.7} className="animate-spin text-cinnabar-soft" />
+                ) : (
+                  <Languages size={14} strokeWidth={1.7} className={showTranslation ? 'text-cinnabar' : 'text-paper-muted'} />
+                )}
+                <span className={`font-mono text-[10px] tracking-[0.08em] ${showTranslation ? 'text-cinnabar-soft' : 'text-paper-muted'}`}>
+                  {translationState === 'loading'
+                    ? '翻译中'
+                    : translationState === 'error'
+                      ? '重试'
+                      : showTranslation
+                        ? '原文'
+                        : '翻译'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggleLater(article)}
+                aria-pressed={saved}
+                aria-label={saved ? '取消收藏' : '收藏'}
+                className="flex h-9 items-center gap-1 px-1 transition-colors duration-200"
+              >
+                {saved ? (
+                  <BookmarkCheck size={14} strokeWidth={1.7} className="text-cinnabar" />
+                ) : (
+                  <BookmarkPlus size={14} strokeWidth={1.7} className="text-paper-muted" />
+                )}
+                <span className={`hidden font-mono text-[10px] tracking-[0.08em] min-[390px]:inline ${saved ? 'text-cinnabar-soft' : 'text-paper-muted'}`}>
+                  {saved ? '已收藏' : '收藏'}
+                </span>
+              </button>
+              {canComment && (
+                <button
+                  type="button"
+                  onClick={() => setCommentsOpen(true)}
+                  aria-label="查看跟贴与评论"
+                  className="flex h-9 items-center gap-1 px-1 text-paper-muted hover:text-cinnabar transition-colors duration-200"
+                >
+                  <MessageSquare size={14} strokeWidth={1.7} className={commentsOpen ? 'text-cinnabar' : 'text-paper-muted'} />
+                  <span className={`font-mono text-[10px] tracking-[0.08em] ${commentsOpen ? 'text-cinnabar-soft' : 'text-paper-muted'}`}>
+                    {commentCount != null && commentCount > 0 ? commentCount : '跟贴'}
+                  </span>
+                </button>
               )}
-              <span className={`font-mono text-[10px] tracking-[0.08em] ${showTranslation ? 'text-cinnabar-soft' : 'text-paper-muted'}`}>
-                {translationState === 'loading'
-                  ? '翻译中'
-                  : translationState === 'error'
-                    ? '重试'
-                    : showTranslation
-                      ? '原文'
-                      : '翻译'}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onToggleLater(article)}
-              aria-pressed={saved}
-              aria-label={saved ? '取消收藏' : '收藏'}
-              className="flex h-9 items-center gap-1 px-1 transition-colors duration-200"
-            >
-              {saved ? (
-                <BookmarkCheck size={14} strokeWidth={1.7} className="text-cinnabar" />
-              ) : (
-                <BookmarkPlus size={14} strokeWidth={1.7} className="text-paper-muted" />
-              )}
-              <span className={`hidden font-mono text-[10px] tracking-[0.08em] min-[390px]:inline ${saved ? 'text-cinnabar-soft' : 'text-paper-muted'}`}>
-                {saved ? '已收藏' : '收藏'}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => void openOriginal()}
-              disabled={!resolvedOriginUrl && !article.originUrl}
-              aria-label="在浏览器核对原文"
-              className="flex h-9 w-9 shrink-0 items-center justify-center disabled:opacity-40"
-            >
-              <Globe size={14} strokeWidth={1.7} className="text-paper-muted" />
-            </button>
+              <button
+                type="button"
+                onClick={() => void openOriginal()}
+                disabled={!resolvedOriginUrl && !article.originUrl}
+                aria-label="在浏览器核对原文"
+                className="flex h-9 w-9 shrink-0 items-center justify-center disabled:opacity-40 hover:text-paper"
+              >
+                <Globe size={14} strokeWidth={1.7} className="text-paper-muted" />
+              </button>
+            </div>
           </div>
         </header>
 
         <div
           ref={rootRef}
+          onScroll={handleScroll}
           className="scroll-hidden min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
         >
-          <div className="mx-auto w-full max-w-3xl">
+          <div className="mx-auto w-full max-w-3xl lg:max-w-4xl">
             {/* 标题在正文抽取期间就已就位，不随加载状态闪烁 */}
-            <div className="page-x pt-4">
+            <div className="page-x lg:px-8 pt-4">
               <span className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] text-cinnabar-soft">
                 <span className="h-px w-5 bg-cinnabar" aria-hidden />
                 {articleRelativeTime(article)}
@@ -399,12 +529,12 @@ export function ReaderScreen({
             </div>
 
             {article.image && article.contentType !== 'video' && (
-              <div className="mt-5">
+              <div className="mt-5 page-x lg:px-8">
                 <InkImage
                   src={article.image}
                   eager
                   collapseOnError
-                  className="h-[200px] w-full md:h-[280px] lg:h-[320px]"
+                  className="h-[220px] w-full sm:h-[300px] md:h-[380px] lg:h-[420px] rounded-xl overflow-hidden"
                   onOpen={(src) => setLightbox({ src, alt: article.title })}
                 />
               </div>
@@ -420,7 +550,7 @@ export function ReaderScreen({
               </div>
             )}
 
-            <div className="page-x pt-6 pb-[max(env(safe-area-inset-bottom),40px)]">
+            <div className="page-x pt-6 pb-[max(var(--sab),40px)]">
               {loadState === 'loading' && <ReaderSkeleton />}
 
               {loadState === 'error' && (
@@ -486,10 +616,74 @@ export function ReaderScreen({
                   </p>
                 </div>
               )}
+
+              {loadState === 'ready' && canComment && (
+                <div data-reader-block className="mt-8">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setCommentsOpen(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') setCommentsOpen(true)
+                    }}
+                    className="group flex w-full cursor-pointer items-center justify-between rounded-2xl border border-haze bg-ink-raised/80 p-4.5 transition hover:border-cinnabar/50 hover:bg-ink-raised"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-cinnabar/15 text-cinnabar group-hover:bg-cinnabar group-hover:text-white transition">
+                        <MessageSquare size={20} />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <h3 className="text-[14px] font-semibold text-paper group-hover:text-cinnabar transition">
+                          网友精彩跟贴与讨论
+                        </h3>
+                        <p className="mt-0.5 font-mono text-[11px] text-paper-faint truncate">
+                          {commentCount != null && commentCount > 0
+                            ? `共 ${commentCount} 条跟贴互动 · 点击展开热评与盖楼`
+                            : '点击展开网友观点与最新讨论'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-haze bg-ink px-3 py-1.5 font-mono text-[11px] font-medium text-paper-muted group-hover:border-cinnabar/40 group-hover:text-cinnabar transition">
+                      展开讨论 →
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* 底部右下角悬浮跟贴胶囊（随时一触即达） */}
+      {canComment && !commentsOpen && (
+        <div
+          className={`fixed bottom-[max(var(--sab),20px)] right-4 z-40 transition-all duration-300 pointer-events-auto ${
+            pillVisible
+              ? 'opacity-100 translate-y-0 scale-100'
+              : 'opacity-0 translate-y-6 scale-90 pointer-events-none'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setCommentsOpen(true)}
+            aria-label="查看跟贴讨论"
+            className="group flex items-center gap-2 rounded-full border border-haze bg-ink/95 px-3.5 py-2 text-paper shadow-xl shadow-black/35 backdrop-blur-md transition hover:scale-105 hover:border-cinnabar/60 active:scale-95"
+          >
+            <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-cinnabar/15 text-cinnabar group-hover:bg-cinnabar group-hover:text-white transition">
+              <MessageSquare size={13} strokeWidth={2} />
+            </div>
+            <span className="font-mono text-[12px] font-medium tracking-[0.03em] text-paper">
+              {commentCount != null && commentCount > 0 ? (
+                <>
+                  <span className="text-cinnabar font-semibold">{commentCount}</span> 跟贴
+                </>
+              ) : (
+                '看跟贴'
+              )}
+            </span>
+          </button>
+        </div>
+      )}
 
       {lightbox && (
         <ImageLightbox
@@ -499,6 +693,18 @@ export function ReaderScreen({
           overlayCloserRef={overlayCloserRef}
         />
       )}
+
+      <CommentsDrawer
+        open={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        article={{
+          id: article.id,
+          title: displayedTitle || article.title,
+          sourceId: article.sourceId,
+          originUrl: resolvedOriginUrl || article.originUrl,
+          neteaseDocId: article.neteaseDocId,
+        }}
+      />
     </div>
   )
 }

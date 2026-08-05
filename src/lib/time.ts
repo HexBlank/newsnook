@@ -35,8 +35,10 @@ export function clockTime(timestamp: number): string {
 export function dayBucket(timestamp: number, now = Date.now()): string {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
-  if (timestamp >= start.getTime()) return '今天'
-  if (timestamp >= start.getTime() - DAY) return '昨天'
+  const todayStart = start.getTime()
+  // 必须限制在 [今天 0 点, 明天 0 点)，否则未来时间戳会被误标成「今天」
+  if (timestamp >= todayStart && timestamp < todayStart + DAY) return '今天'
+  if (timestamp >= todayStart - DAY && timestamp < todayStart) return '昨天'
   return '更早'
 }
 

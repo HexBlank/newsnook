@@ -27,8 +27,10 @@ export async function applyNativeChrome(theme: ResolvedTheme): Promise<void> {
   }
 
   try {
-    await StatusBar.setOverlaysWebView({ overlay: true })
+    if (typeof (window as any).NewsNookNative?.setSystemTheme === 'function') {
+      ;(window as any).NewsNookNative.setSystemTheme(theme)
+    }
   } catch {
-    // Android 16+ 可能不可用；保持边到边，由 CSS 画安全区
+    // ignore
   }
 }
