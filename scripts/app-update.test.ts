@@ -8,6 +8,7 @@ import {
 import {
   buildApkFileName,
   pickReleaseAsset,
+  releaseTagUrl,
   truncateReleaseNotes,
 } from '../src/features/appUpdate/github'
 import {
@@ -49,6 +50,9 @@ assert.deepEqual(pickReleaseAsset(assets, '1.3.9', 'local'), {
 })
 assert.equal(pickReleaseAsset(assets, '1.3.9', 'cloud')?.fileName, 'newsnook-1.3.9-cloud-release.apk')
 assert.equal(pickReleaseAsset([], '1.3.9', 'cloud'), null)
+
+assert.equal(releaseTagUrl('1.3.9'), 'https://github.com/t59688/newsnook/releases/tag/v1.3.9')
+assert.equal(releaseTagUrl('v1.3.9'), 'https://github.com/t59688/newsnook/releases/tag/v1.3.9')
 
 const notes = truncateReleaseNotes('a\nb\nc\nd\ne\nf\ng\nh\ni\nj')
 assert.equal(notes.split('\n').length, 9)

@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Layers,
   RefreshCw,
+  ScrollText,
   ShieldCheck,
   Sparkles,
   Zap,
@@ -19,6 +20,7 @@ interface Props {
   updateSupported?: boolean
   updateCaption?: string
   onCheckUpdate?: () => void
+  onOpenChangelog?: () => void
 }
 
 const ABOUT_CONFIG = {
@@ -65,6 +67,7 @@ export function AboutScreen({
   updateSupported = false,
   updateCaption,
   onCheckUpdate,
+  onOpenChangelog,
 }: Props) {
   const [copiedRepo, setCopiedRepo] = useState(false)
 
@@ -113,10 +116,9 @@ export function AboutScreen({
         </div>
       </div>
 
-      {/* 官方渠道与文章 */}
-      {updateSupported ? (
-        <SettingsSection title="更新">
-          <ul className="divide-y divide-haze border-y border-haze bg-ink">
+      <SettingsSection title="更新">
+        <ul className="divide-y divide-haze border-y border-haze bg-ink">
+          {updateSupported ? (
             <li className="transition-colors hover:bg-ink-raised/30 active:bg-ink-raised/50">
               <button
                 type="button"
@@ -134,9 +136,26 @@ export function AboutScreen({
                 </div>
               </button>
             </li>
-          </ul>
-        </SettingsSection>
-      ) : null}
+          ) : null}
+          <li className="transition-colors hover:bg-ink-raised/30 active:bg-ink-raised/50">
+            <button
+              type="button"
+              onClick={() => onOpenChangelog?.()}
+              className="page-x flex w-full items-center gap-3.5 py-4 text-left"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-raised/60 text-paper">
+                <ScrollText size={18} strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-[14px] font-medium text-paper">更新日志</span>
+                <p className="mt-0.5 truncate font-mono text-[11px] text-paper-faint">
+                  查看 v{ABOUT_CONFIG.version} 发布说明
+                </p>
+              </div>
+            </button>
+          </li>
+        </ul>
+      </SettingsSection>
 
       <SettingsSection title="项目与文档">
         <ul className="divide-y divide-haze border-y border-haze bg-ink">

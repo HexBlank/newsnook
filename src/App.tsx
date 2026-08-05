@@ -33,6 +33,7 @@ import { ChannelsScreen } from './screens/ChannelsScreen'
 import { FeedScreen } from './screens/FeedScreen'
 import { MeScreen } from './screens/MeScreen'
 import { AboutScreen } from './screens/settings/AboutScreen'
+import { ChangelogScreen } from './screens/settings/ChangelogScreen'
 import { AppearanceScreen } from './screens/settings/AppearanceScreen'
 import { CategorySettingsScreen } from './screens/settings/CategorySettingsScreen'
 import { CategorySourcesScreen } from './screens/settings/CategorySourcesScreen'
@@ -105,6 +106,7 @@ type SettingsRoute =
   | { name: 'later' }
   | { name: 'history' }
   | { name: 'about' }
+  | { name: 'changelog' }
 
 interface BodyPrefetchTask {
   article: Article
@@ -282,6 +284,10 @@ export default function App() {
       }
       if (settingsRoute?.name === 'categories') {
         setSettingsRoute({ name: 'presets' })
+        return
+      }
+      if (settingsRoute?.name === 'changelog') {
+        setSettingsRoute({ name: 'about' })
         return
       }
       if (settingsRoute) {
@@ -652,8 +658,13 @@ export default function App() {
           updateSupported={appUpdate.supported}
           updateCaption={appUpdate.manualCaption}
           onCheckUpdate={() => void appUpdate.promptManualCheck()}
+          onOpenChangelog={() => setSettingsRoute({ name: 'changelog' })}
         />
       )
+    }
+
+    if (settingsRoute.name === 'changelog') {
+      return <ChangelogScreen onBack={() => setSettingsRoute({ name: 'about' })} />
     }
 
     return (
