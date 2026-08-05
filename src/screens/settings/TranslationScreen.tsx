@@ -150,12 +150,12 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   const downloadModel = async () => {
     if (!source) return
     setModelAction('working')
-    setModelMessage('正在通过 Wi‑Fi 下载语言包（通常约 30 MB），请保持页面开启…')
+    setModelMessage('正在下载语言包（通常约 30 MB），请保持页面开启…')
     try {
       const state = await MlKitTranslation.downloadModel({
         sourceLanguage: source,
         targetLanguage: target,
-        wifiOnly: true,
+        wifiOnly: false,
       })
       setModelState(state)
       setModelAction('success')
@@ -357,7 +357,7 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
                 className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full border border-cinnabar/50 bg-cinnabar/12 px-4 text-[12.5px] text-paper disabled:opacity-35"
               >
                 {modelAction === 'working' ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
-                {autoSource ? '请先指定原文' : modelState?.ready ? '已下载' : '使用 Wi‑Fi 下载'}
+                {autoSource ? '请先指定原文' : modelState?.ready ? '已下载' : '下载语言包'}
               </button>
               {!autoSource && modelState?.ready && (
                 <button type="button" aria-label="删除语言包" disabled={modelAction === 'working'} onClick={() => setConfirmDeleteModel(true)} className="flex h-12 w-12 items-center justify-center rounded-full border border-haze disabled:opacity-35">

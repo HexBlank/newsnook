@@ -41,7 +41,7 @@ public class MlKitTranslationPlugin extends Plugin {
 
         Translator translator = createTranslator(pair);
         DownloadConditions.Builder conditions = new DownloadConditions.Builder();
-        if (call.getBoolean("wifiOnly", true)) conditions.requireWifi();
+        if (call.getBoolean("wifiOnly", false)) conditions.requireWifi();
         translator
             .downloadModelIfNeeded(conditions.build())
             .addOnSuccessListener(ignored -> {
