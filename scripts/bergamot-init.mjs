@@ -144,23 +144,23 @@ endif()`,
       },
       {
         label: 'pcre2 make program',
-        before: `    ${PCRE2_JIT_OPTION}
-    -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
-    -DCMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
-        after: `    ${PCRE2_JIT_OPTION}
-    -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
-    -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
-    -DCMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
+        before: `    \${PCRE2_JIT_OPTION}
+    -DCMAKE_TOOLCHAIN_FILE=\${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
+    -DCMAKE_CROSSCOMPILING_EMULATOR=\${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
+        after: `    \${PCRE2_JIT_OPTION}
+    -DCMAKE_TOOLCHAIN_FILE=\${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
+    -DCMAKE_MAKE_PROGRAM=\${CMAKE_MAKE_PROGRAM}
+    -DCMAKE_CROSSCOMPILING_EMULATOR=\${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation`,
       },
       {
         label: 'pcre2 dedicated binary dir',
-        before: `    DOWNLOAD_DIR ${PCRE2_SRC_DIR}
-    SOURCE_DIR ${PCRE2_SRC_DIR}
-    CONFIGURE_COMMAND ${CMAKE_COMMAND} ${PCRE2_SRC_DIR} ${PCRE2_CONFIGURE_OPTIONS}`,
-        after: `    DOWNLOAD_DIR ${PCRE2_SRC_DIR}
-    SOURCE_DIR ${PCRE2_SRC_DIR}
-    BINARY_DIR ${CMAKE_BINARY_DIR}/pcre2/src/pcre2-build-android
-    CONFIGURE_COMMAND ${CMAKE_COMMAND} ${PCRE2_SRC_DIR} ${PCRE2_CONFIGURE_OPTIONS}`,
+        before: `    DOWNLOAD_DIR \${PCRE2_SRC_DIR}
+    SOURCE_DIR \${PCRE2_SRC_DIR}
+    CONFIGURE_COMMAND \${CMAKE_COMMAND} \${PCRE2_SRC_DIR} \${PCRE2_CONFIGURE_OPTIONS}`,
+        after: `    DOWNLOAD_DIR \${PCRE2_SRC_DIR}
+    SOURCE_DIR \${PCRE2_SRC_DIR}
+    BINARY_DIR \${CMAKE_BINARY_DIR}/pcre2/src/pcre2-build-android
+    CONFIGURE_COMMAND \${CMAKE_COMMAND} \${PCRE2_SRC_DIR} \${PCRE2_CONFIGURE_OPTIONS}`,
       },
     ],
   )
