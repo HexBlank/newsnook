@@ -1,3 +1,5 @@
+import { MarkdownBody } from '../../components/MarkdownBody'
+
 import type { LatestReleaseInfo } from './types'
 
 const DIALOG_CANCEL_CLASS =
@@ -40,9 +42,7 @@ export function UpdateDialog({ open, release, localVersion, onUpdate, onLater, o
             当前 v{localVersion} → 新版 v{release.version}
           </p>
           {release.notes ? (
-            <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-[12px] text-paper-faint">
-              {release.notes}
-            </pre>
+            <MarkdownBody markdown={release.notes} className="mt-2 max-h-40 overflow-y-auto text-[12px]" />
           ) : null}
         </div>
         <div className="mt-5 flex items-center justify-end gap-2.5">

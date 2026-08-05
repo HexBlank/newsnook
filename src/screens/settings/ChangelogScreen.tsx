@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { Browser } from '@capacitor/browser'
 
+import { MarkdownBody } from '../../components/MarkdownBody'
 import { SettingsHint, SettingsShell } from '../../components/SettingsShell'
 import { fetchReleaseNotes, releaseTagUrl } from '../../features/appUpdate/github'
 
@@ -56,11 +57,7 @@ export function ChangelogScreen({ onBack }: Props) {
           <p className="font-mono text-[12px] text-paper-faint">正在加载…</p>
         ) : null}
 
-        {state.status === 'ok' ? (
-          <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-paper-muted">
-            {state.body}
-          </pre>
-        ) : null}
+        {state.status === 'ok' ? <MarkdownBody markdown={state.body} /> : null}
 
         {state.status === 'empty' ? (
           <p className="text-[13px] leading-relaxed text-paper-muted">该版本暂无发布说明。</p>
