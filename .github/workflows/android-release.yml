@@ -42,7 +42,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0'
+          packages: 'tools platform-tools platforms;android-36 build-tools;36.0.0 cmake;3.22.1'
 
       - name: Verify tag matches package.json version
         run: |
@@ -75,6 +75,9 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Initialize Bergamot native engine
+        run: npm run bergamot:init
 
       - name: Build signed APKs (cloud + local)
         run: npm run android:apk
