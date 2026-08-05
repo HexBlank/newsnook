@@ -6,6 +6,7 @@ import {
   isPartialFeedTeaser,
   isScrapeNoticeBody,
   isSubstantialHtml,
+  preferPublisherFetchUrl,
 } from '../src/lib/resolveBody'
 
 assert.equal(
@@ -29,6 +30,28 @@ assert.equal(
     '<html><title>Real Article</title><body><p>Walnuts are healthy nuts with omega-3.</p></body></html>',
   ),
   false,
+)
+
+/** 36kr 裸域反爬壳：无 title + 混淆脚本 + spinner */
+assert.equal(
+  isBlockedPublisherHtml(
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>.spinner{animation:spin 1s} @keyframes spin{} .x{background:conic-gradient(#165dff,#fff)}</style><script>function _0x4cb6(a,b){return a+b}</script></head><body><div class="spinner"></div></body></html>',
+  ),
+  true,
+  '36kr 式 JS 挑战页应判为拦截',
+)
+
+assert.equal(
+  preferPublisherFetchUrl('https://36kr.com/p/123?f=rss'),
+  'https://www.36kr.com/p/123?f=rss',
+)
+assert.equal(
+  preferPublisherFetchUrl('https://www.36kr.com/p/123'),
+  'https://www.36kr.com/p/123',
+)
+assert.equal(
+  preferPublisherFetchUrl('https://sspai.com/post/123'),
+  'https://sspai.com/post/123',
 )
 
 /** Ars Technica 订阅源实际摘要：两段正文 + Read full article */

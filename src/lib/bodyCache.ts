@@ -165,12 +165,13 @@ export function loadCachedBody(articleId: string): CachedBody | null {
   if (!raw) return null
 
   const body = parseBody(raw)
-  // 旧摘要 Feed / YouTube 占位文案缓存，丢弃后重新抽取
+  // 旧摘要 Feed / YouTube 占位文案 / 误判付费墙兜底缓存，丢弃后重新抽取
   const stale =
     Boolean(body) &&
     ((body!.bodySource === 'feed' && isPartialFeedTeaser(body!.html)) ||
       hasEmbedNoise(body!.html) ||
-      /站内无法嵌入\s*YouTube/i.test(body!.html))
+      /站内无法嵌入\s*YouTube/i.test(body!.html) ||
+      /原站暂不支持站内阅读/i.test(body!.html))
   if (!body || stale) {
     removeLocalKeys([key])
     const index = loadIndex()

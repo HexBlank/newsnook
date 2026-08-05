@@ -152,7 +152,8 @@ export const SOURCES: NewsSource[] = [
   // —— 中文媒体 ——
   { id: 'sspai', name: '少数派', label: '少数派', group: 'tech', kind: 'feed', url: 'https://sspai.com/feed', enabled: true },
   { id: 'ifanr', name: '爱范儿', label: '爱范儿', group: 'tech', kind: 'feed', url: 'https://www.ifanr.com/feed', enabled: true },
-  { id: 'kr36', name: '36 氪', label: '36氪', group: 'cn', kind: 'feed', url: 'https://36kr.com/feed-article', enabled: true },
+  // 裸域 36kr.com 对无 JS 客户端返回反爬壳；www 才有真实 RSS
+  { id: 'kr36', name: '36 氪', label: '36氪', group: 'cn', kind: 'feed', url: 'https://www.36kr.com/feed-article', enabled: true },
   { id: 'ithome', name: 'IT 之家', label: 'IT之家', group: 'tech', kind: 'feed', url: 'https://www.ithome.com/rss/', enabled: true },
   { id: 'huxiu', name: '虎嗅', label: '虎嗅', group: 'cn', kind: 'feed', url: 'https://rss.huxiu.com/', enabled: true },
   { id: 'geekpark', name: '极客公园', label: '极客公园', group: 'tech', kind: 'feed', url: 'https://www.geekpark.net/rss', enabled: true },

@@ -80,7 +80,32 @@ export function isBlockedPublisherHtml(html: string): boolean {
   if (/just a moment\.\.\./i.test(head) && /cf-browser-verification|challenge-platform/i.test(head)) {
     return true
   }
+  // 36kr 等站裸域常见：无 <title> 的 JS 挑战壳（浏览器能过，站内 fetch 不行）
+  if (
+    !/<title[\s>]/i.test(head) &&
+    /_0x[0-9a-f]{3,}\s*\(/i.test(head) &&
+    /spinner|conic-gradient/i.test(head)
+  ) {
+    return true
+  }
   return false
+}
+
+/**
+ * 部分站点裸域对无 JS 客户端返回反爬壳，www 才有正文/RSS。
+ * 正文抓取前先规范化，避免误判成「付费墙」。
+ */
+export function preferPublisherFetchUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname === '36kr.com') {
+      parsed.hostname = 'www.36kr.com'
+      return parsed.toString()
+    }
+  } catch {
+    // 非法 URL 保持原样
+  }
+  return url
 }
 
 function buildBlockedPublisherFallback(
@@ -607,7 +632,7 @@ export async function resolveArticleBody(
     throw new Error('缺少原文地址，无法抽取正文')
   }
 
-  let originUrl = article.originUrl
+  let originUrl = preferPublisherFetchUrl(article.originUrl)
   let resolvedOriginUrl: string | undefined
 
   if (isGoogleNewsArticleUrl(originUrl)) {
@@ -624,6 +649,7 @@ export async function resolveArticleBody(
         },
         signal,
       )
+      originUrl = preferPublisherFetchUrl(originUrl)
       resolvedOriginUrl = originUrl
     } catch (error) {
       throw new Error(
@@ -644,6 +670,7 @@ export async function resolveArticleBody(
     )
   }
   candidates.push(originUrl)
+  // 历史缓存可能仍是裸域链接；www 优先已由 preferPublisherFetchUrl 处理，再兜底试一次裸域无意义
   if (originUrl.includes('/trad')) {
     candidates.push(originUrl.replace('/trad', '/simp'))
   }
