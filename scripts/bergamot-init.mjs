@@ -17,7 +17,9 @@ mkdirSync(parent, { recursive: true })
 
 if (existsSync(join(dest, 'CMakeLists.txt'))) {
   console.log('bergamot-translator already present:', dest)
-  console.log('To refresh: delete the folder and re-run npm run bergamot:init')
+  console.log('Ensuring Android compatibility patches are applied…')
+  applyAndroidPatches()
+  console.log('OK. Ready.')
   process.exit(0)
 }
 
@@ -25,8 +27,15 @@ if (existsSync(dest)) {
   rmSync(dest, { recursive: true, force: true })
 }
 
+if (process.platform === 'win32') {
+  spawnSync('git', ['config', '--global', 'core.longpaths', 'true'], {
+    shell: true,
+  })
+}
+
 function run(args, label) {
-  const result = spawnSync('git', args, {
+  const gitArgs = process.platform === 'win32' ? ['-c', 'core.longpaths=true', ...args] : args
+  const result = spawnSync('git', gitArgs, {
     stdio: 'inherit',
     shell: process.platform === 'win32',
   })
@@ -35,19 +44,28 @@ function run(args, label) {
   process.exit(result.status ?? 1)
 }
 
+function normalizeNewlines(str) {
+  return str.replace(/\r\n/g, '\n')
+}
+
 function patchFile(path, replacements) {
-  let text = readFileSync(path, 'utf8')
+  const rawText = readFileSync(path, 'utf8')
+  const isCrlf = rawText.includes('\r\n')
+  let text = normalizeNewlines(rawText)
   let changed = false
   for (const { before, after, label } of replacements) {
-    if (text.includes(after)) continue
-    if (!text.includes(before)) {
+    const normBefore = normalizeNewlines(before)
+    const normAfter = normalizeNewlines(after)
+    if (text.includes(normAfter)) continue
+    if (!text.includes(normBefore)) {
       throw new Error(`Patch anchor not found for ${label}: ${path}`)
     }
-    text = text.replace(before, after)
+    text = text.replace(normBefore, normAfter)
     changed = true
   }
   if (changed) {
-    writeFileSync(path, text, 'utf8')
+    const outputText = isCrlf ? text.replace(/\n/g, '\r\n') : text
+    writeFileSync(path, outputText, 'utf8')
     console.log('Patched:', path)
   }
 }
