@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.3.11",
+  "version": "1.3.12",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -34,6 +34,7 @@
     "test:app-update": "npx tsx scripts/app-update.test.ts",
     "test:markdown": "npx tsx scripts/markdown-safe.test.ts",
     "test:jazzyear-dates": "npx tsx scripts/jazzyear-dates.test.ts",
+    "bergamot:init": "node scripts/bergamot-init.mjs",
     "preview": "vite preview",
     "assets": "node scripts/generate-android-assets.mjs",
     "android:sync": "npm run build && node scripts/android-cap.mjs sync android",

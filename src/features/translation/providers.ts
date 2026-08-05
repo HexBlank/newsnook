@@ -1,8 +1,14 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 
-import { isLocalTranslationAvailable, MlKitTranslation } from './native'
+import {
+  BergamotTranslation,
+  isBergamotTranslationAvailable,
+  isLocalTranslationAvailable,
+  MlKitTranslation,
+} from './native'
 import type {
   CloudTranslationConfig,
+  CloudTranslationProviderId,
   TranslationLanguage,
   TranslationProvider,
   TranslationProviderId,
@@ -15,6 +21,16 @@ const LANGUAGE_MAP: Record<
   Record<TranslationLanguage, string>
 > = {
   mlkit: {
+    en: 'en',
+    'zh-Hans': 'zh',
+    'zh-Hant': 'zh',
+    ja: 'ja',
+    ko: 'ko',
+    fr: 'fr',
+    de: 'de',
+    es: 'es',
+  },
+  bergamot: {
     en: 'en',
     'zh-Hans': 'zh',
     'zh-Hant': 'zh',
@@ -82,7 +98,7 @@ function requireConcreteSource(
 
 /** 云端 auto：省略原文语言字段，交给服务商识别。 */
 function cloudSourceLanguage(
-  provider: Exclude<TranslationProviderId, 'mlkit'>,
+  provider: CloudTranslationProviderId,
   sourceLanguage: TranslationSourceLanguage,
 ): string | undefined {
   if (sourceLanguage === 'auto') return undefined
@@ -256,8 +272,39 @@ export class MlKitProvider implements TranslationProvider {
   }
 }
 
+export class BergamotProvider implements TranslationProvider {
+  readonly id = 'bergamot' as const
+
+  async translate(request: TranslationRequest): Promise<string[]> {
+    if (!isBergamotTranslationAvailable()) {
+      throw new Error('当前安装包不包含 Bergamot 离线翻译')
+    }
+    const engine = await BergamotTranslation.getEngineState()
+    if (!engine.engineReady) {
+      throw new Error(engine.engineError ?? 'Bergamot 引擎未就绪')
+    }
+    const sourceLanguage = requireConcreteSource(this.id, request.sourceLanguage)
+    const response = await inBatches(
+      request.texts,
+      4,
+      3000,
+      async (texts) =>
+        (
+          await BergamotTranslation.translate({
+            texts,
+            sourceLanguage: language(this.id, sourceLanguage) as TranslationLanguage,
+            targetLanguage: language(this.id, request.targetLanguage) as TranslationLanguage,
+          })
+        ).translations,
+      request.signal,
+      request.onBatch,
+    )
+    return response
+  }
+}
+
 abstract class CloudProvider implements TranslationProvider {
-  abstract readonly id: Exclude<TranslationProviderId, 'mlkit'>
+  abstract readonly id: CloudTranslationProviderId
   protected readonly config: CloudTranslationConfig
 
   constructor(config: CloudTranslationConfig) {
@@ -468,6 +515,7 @@ export function createTranslationProvider(
   config?: CloudTranslationConfig,
 ): TranslationProvider {
   if (providerId === 'mlkit') return new MlKitProvider()
+  if (providerId === 'bergamot') return new BergamotProvider()
   if (!config) throw new Error('翻译服务配置缺失')
   if (providerId === 'google') return new GoogleProvider(config)
   if (providerId === 'azure') return new AzureProvider(config)

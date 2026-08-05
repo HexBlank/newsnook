@@ -10,6 +10,7 @@ import type {
   TranslationProviderId,
   TranslationSourceLanguage,
 } from './types'
+import { isLocalTranslationProviderId } from './types'
 
 const SKIP_PARENTS = new Set(['CODE', 'PRE', 'SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG'])
 const COMPARISON_BLOCK_SELECTOR =
@@ -46,7 +47,7 @@ export function resolveSourceLanguage(
   if (sourceLanguage !== 'auto') {
     return { sourceLanguage, usedFallback: false }
   }
-  if (providerId !== 'mlkit') {
+  if (!isLocalTranslationProviderId(providerId)) {
     return { sourceLanguage: 'auto', usedFallback: false }
   }
   const detected = detectLanguage(sample)
@@ -235,6 +236,8 @@ export class TranslationService {
 }
 
 export function createTranslationService(prefs: TranslationPrefs): TranslationService {
-  const config = prefs.provider === 'mlkit' ? undefined : prefs.cloud[prefs.provider]
+  const config = isLocalTranslationProviderId(prefs.provider)
+    ? undefined
+    : prefs.cloud[prefs.provider]
   return new TranslationService(createTranslationProvider(prefs.provider, config))
 }

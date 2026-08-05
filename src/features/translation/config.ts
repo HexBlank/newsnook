@@ -37,6 +37,7 @@ export const TRANSLATION_PROVIDERS: {
   caption: string
 }[] = [
   { id: 'mlkit', label: 'Android 本地翻译', caption: '下载语言包后离线使用，不需要密钥' },
+  { id: 'bergamot', label: 'Bergamot 离线翻译', caption: 'Marian 专用模型；按语对下载，适合无 GMS 离线' },
   { id: 'google', label: 'Google Translate', caption: 'Cloud Translation Basic API' },
   { id: 'azure', label: 'Microsoft Translator', caption: 'Azure AI Translator Text API' },
   { id: 'deepl', label: 'DeepL', caption: '支持 Free 与 Pro API 地址' },

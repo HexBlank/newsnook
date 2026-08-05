@@ -1,0 +1,5 @@
+# 原生第三方源码不进 git；用 npm run bergamot:init 拉取。
+bergamot-translator/
+llama.cpp/
+*
+!.gitignore

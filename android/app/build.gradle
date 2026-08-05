@@ -35,13 +35,21 @@ android {
     compileSdk = rootProject.ext.compileSdkVersion
     flavorDimensions += "translation"
     productFlavors {
-        // 不链接 ML Kit：适合默认分发，保留 Google / Azure / DeepL / DeepLX 云翻译。
+        // 不链接 ML Kit / Bergamot：适合默认分发，保留云翻译。
         cloud {
             dimension "translation"
         }
-        // 链接 ML Kit 与四套 ABI 的 JNI 引擎：提供模型下载和完全离线翻译。
+        // 链接 ML Kit + Bergamot/Marian：提供模型下载和完全离线翻译。
         local {
             dimension "translation"
+            // Bergamot/Marian 依赖 bionic iconv（API 28+）
+            minSdkVersion 28
+            externalNativeBuild {
+                cmake {
+                    abiFilters "arm64-v8a"
+                    arguments "-DANDROID_STL=c++_shared"
+                }
+            }
         }
     }
     defaultConfig {
@@ -55,6 +63,12 @@ android {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path = file("src/local/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
     signingConfigs {
@@ -76,6 +90,16 @@ android {
             shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+// cloud flavor 不需要原生引擎；禁用其 CMake/Ninja 任务以免空跑。
+afterEvaluate {
+    tasks.matching { task ->
+        def name = task.name.toLowerCase()
+        name.contains("externalnativebuild") && name.contains("cloud")
+    }.configureEach { task ->
+        task.enabled = false
     }
 }
 

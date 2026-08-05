@@ -1,4 +1,8 @@
-export type TranslationProviderId = 'mlkit' | 'google' | 'azure' | 'deepl' | 'deeplx'
+export type LocalTranslationProviderId = 'mlkit' | 'bergamot'
+
+export type CloudTranslationProviderId = 'google' | 'azure' | 'deepl' | 'deeplx'
+
+export type TranslationProviderId = LocalTranslationProviderId | CloudTranslationProviderId
 
 export type TranslationDisplayMode = 'compare' | 'replace'
 
@@ -27,7 +31,7 @@ export interface TranslationPrefs {
   displayMode: TranslationDisplayMode
   sourceLanguage: TranslationSourceLanguage
   targetLanguage: TranslationLanguage
-  cloud: Record<Exclude<TranslationProviderId, 'mlkit'>, CloudTranslationConfig>
+  cloud: Record<CloudTranslationProviderId, CloudTranslationConfig>
 }
 
 export interface TranslationRequest {
@@ -61,5 +65,11 @@ export interface TranslateArticleOptions {
   signal?: AbortSignal
   onProgress?: (progress: TranslationProgress) => void
   onPartial?: (content: TranslatedArticleContent) => void
+}
+
+export function isLocalTranslationProviderId(
+  id: TranslationProviderId,
+): id is LocalTranslationProviderId {
+  return id === 'mlkit' || id === 'bergamot'
 }
 

@@ -8,6 +8,7 @@ final class TranslationPluginRegistrar {
 
     static void register(BridgeActivity activity) {
         activity.registerPlugin(MlKitTranslationPlugin.class);
+        activity.registerPlugin(BergamotTranslationPlugin.class);
     }
 }
 

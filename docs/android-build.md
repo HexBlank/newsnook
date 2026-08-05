@@ -55,10 +55,26 @@ npm run android:aab
 
 两个命令都会自动完成 Web 生产构建、Capacitor 同步、Gradle Release 构建、R8 压缩、资源裁剪和签名校验。
 
-| 变体 | 本地翻译 | 设置中的 ML Kit 入口 | 用途 |
-|---|---:|---:|---|
-| `cloud` | 不编译 ML Kit SDK 和原生库 | 隐藏 | 默认轻量版，仅使用 DeepLX、Google、Azure、DeepL 等云服务 |
-| `local` | 编译 ML Kit SDK，语言模型仍由用户按需下载 | 显示 | 需要离线/本地翻译的完整版 |
+| 变体 | 本地翻译 | 设置中的离线入口 | 用途 |
+|---|---|---|---|
+| `cloud` | 不编译 ML Kit / Bergamot 原生库 | 隐藏 | 默认轻量版，仅使用 DeepLX、Google、Azure、DeepL 等云服务 |
+| `local` | 编译 ML Kit + Bergamot JNI；语言模型/语对仍按需下载 | 显示 | 需要离线翻译的完整版（minSdk 28，Bergamot 当前仅 `arm64-v8a`） |
+
+构建可翻译的 Bergamot 引擎（而非 stub）前，先拉取第三方源码：
+
+```bash
+npm run bergamot:init
+npm run android:apk:local
+```
+
+`bergamot:init` 不只是 clone；它还会自动对 `bergamot-translator` / `marian-dev` / `ssplit-cpp` 应用当前需要的 Android 兼容补丁。因此如果你删除了 `android/app/src/local/cpp/third_party/bergamot-translator`，重新执行同一命令即可恢复到可编译状态。
+
+未执行 `bergamot:init` 时，local 包仍可编译（stub 引擎），设置页可下载 Mozilla 语对模型，但翻译会提示引擎未链接。
+
+需要注意：
+
+- Bergamot 目前只为 `arm64-v8a` 编入原生库；32 位 ARM、x86 / x86_64 模拟器不支持
+- 在这些不支持设备上，应用会自动把 `bergamot` 视为不可用并回退到其它翻译 provider
 
 最终产物位于：
 

@@ -23,8 +23,11 @@ import {
   translationProviderLabel,
 } from '../../features/translation/config'
 import {
+  BergamotTranslation,
+  isBergamotTranslationAvailable,
   isLocalTranslationAvailable,
   MlKitTranslation,
+  type BergamotModelState,
   type MlKitModelState,
 } from '../../features/translation/native'
 import { createTranslationProvider, mlKitLanguage } from '../../features/translation/providers'
@@ -35,6 +38,7 @@ import type {
   TranslationProviderId,
   TranslationSourceLanguage,
 } from '../../features/translation/types'
+import { isLocalTranslationProviderId } from '../../features/translation/types'
 
 interface Props {
   prefs: TranslationPrefs
@@ -46,6 +50,7 @@ type AsyncState = 'idle' | 'working' | 'success' | 'error'
 
 const PROVIDER_ICONS: Record<TranslationProviderId, typeof Cloud> = {
   mlkit: Smartphone,
+  bergamot: Smartphone,
   google: Languages,
   azure: CloudCog,
   deepl: Cloud,
@@ -91,7 +96,9 @@ function Field({
 
 export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   const localTranslationAvailable = isLocalTranslationAvailable()
+  const bergamotAvailable = isBergamotTranslationAvailable()
   const [modelState, setModelState] = useState<MlKitModelState | null>(null)
+  const [bergamotState, setBergamotState] = useState<BergamotModelState | null>(null)
   const [modelAction, setModelAction] = useState<AsyncState>('idle')
   const [modelMessage, setModelMessage] = useState('')
   const [showKey, setShowKey] = useState(false)
@@ -106,7 +113,7 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   useEffect(() => {
     let disposed = false
     setModelState(null)
-    if (!localTranslationAvailable || !source) return
+    if (prefs.provider !== 'mlkit' || !localTranslationAvailable || !source) return
     void MlKitTranslation.getModelState({ sourceLanguage: source, targetLanguage: target })
       .then((state) => {
         if (!disposed) setModelState(state)
@@ -117,12 +124,41 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
     return () => {
       disposed = true
     }
-  }, [localTranslationAvailable, source, target])
+  }, [prefs.provider, localTranslationAvailable, source, target])
 
-  const activeCloud = prefs.provider === 'mlkit' ? null : prefs.cloud[prefs.provider]
+  useEffect(() => {
+    let disposed = false
+    setBergamotState(null)
+    if (prefs.provider !== 'bergamot' || !bergamotAvailable || !source) return
+    void BergamotTranslation.getModelState({
+      sourceLanguage: source,
+      targetLanguage: target,
+    })
+      .then((state) => {
+        if (!disposed) setBergamotState(state)
+      })
+      .catch((error) => {
+        if (!disposed) {
+          setBergamotState({
+            ready: false,
+            engineReady: false,
+            engineError: error instanceof Error ? error.message : '无法读取 Bergamot 状态',
+          })
+        }
+      })
+    return () => {
+      disposed = true
+    }
+  }, [prefs.provider, bergamotAvailable, source, target])
+
+  const activeCloud = isLocalTranslationProviderId(prefs.provider)
+    ? null
+    : prefs.cloud[prefs.provider]
   const providerName = translationProviderLabel(prefs.provider)
   const availableProviders = TRANSLATION_PROVIDERS.filter(
-    (provider) => provider.id !== 'mlkit' || localTranslationAvailable,
+    (provider) =>
+      (provider.id !== 'mlkit' || localTranslationAvailable) &&
+      (provider.id !== 'bergamot' || (bergamotAvailable && bergamotState?.engineReady !== false)),
   )
   const apiKeyOptional = prefs.provider === 'deeplx'
   const modelCaption = useMemo(() => {
@@ -134,8 +170,24 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
     return modelState.ready ? '语言包已就绪，可离线翻译' : '尚未下载这组语言包'
   }, [autoSource, localTranslationAvailable, modelState])
 
+  const bergamotCaption = useMemo(() => {
+    if (!bergamotAvailable) return '当前安装包不包含 Bergamot 离线翻译'
+    if (autoSource) return '自动检测下将先在端侧识别语言；若要预下载，请先指定原文语言'
+    if (!bergamotState) return '正在检查 Bergamot 引擎状态…'
+    if (bergamotState.ready && bergamotState.engineReady) {
+      return '语对模型与引擎均已就绪，可离线翻译'
+    }
+    if (bergamotState.ready && !bergamotState.engineReady) {
+      return (
+        bergamotState.engineError ??
+        '模型已下载，但原生引擎未链接。请执行 npm run bergamot:init 后重编 local 包。'
+      )
+    }
+    return '尚未下载该语对（首版支持 en↔zh；约 40–50 MB）'
+  }, [autoSource, bergamotAvailable, bergamotState])
+
   const updateCloud = (patch: Partial<CloudTranslationConfig>) => {
-    if (prefs.provider === 'mlkit') return
+    if (isLocalTranslationProviderId(prefs.provider)) return
     onChange({
       ...prefs,
       cloud: {
@@ -184,8 +236,49 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
     }
   }
 
+  const downloadBergamot = async () => {
+    if (!source) return
+    setModelAction('working')
+    setModelMessage('正在下载 Bergamot 语对模型（约 40–50 MB）…')
+    try {
+      const state = await BergamotTranslation.downloadModel({
+        sourceLanguage: source,
+        targetLanguage: target,
+        wifiOnly: false,
+      })
+      setBergamotState(state)
+      setModelAction('success')
+      setModelMessage(
+        state.engineReady
+          ? '语对模型下载完成，现在可以离线翻译。'
+          : state.engineError ?? '语对模型已下载，但当前设备上的 Bergamot 引擎不可用。',
+      )
+    } catch (error) {
+      setModelAction('error')
+      setModelMessage(error instanceof Error ? error.message : 'Bergamot 模型下载失败')
+    }
+  }
+
+  const deleteBergamot = async () => {
+    if (!source) return
+    setModelAction('working')
+    setModelMessage('正在删除 Bergamot 语对模型…')
+    try {
+      const state = await BergamotTranslation.deleteModel({
+        sourceLanguage: source,
+        targetLanguage: target,
+      })
+      setBergamotState(state)
+      setModelAction('idle')
+      setModelMessage('Bergamot 语对模型已删除。')
+    } catch (error) {
+      setModelAction('error')
+      setModelMessage(error instanceof Error ? error.message : 'Bergamot 模型删除失败')
+    }
+  }
+
   const testCloud = async () => {
-    if (prefs.provider === 'mlkit') return
+    if (isLocalTranslationProviderId(prefs.provider)) return
     setTestState('working')
     setTestMessage('正在连接…')
     try {
@@ -368,6 +461,65 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
             {modelMessage && <p className={`mt-3 text-[11px] leading-relaxed ${modelAction === 'error' ? 'text-cinnabar-soft' : 'text-paper-faint'}`}>{modelMessage}</p>}
           </div>
         </div>
+      ) : prefs.provider === 'bergamot' ? (
+        <div className="page-x pt-5">
+          <div className="mx-auto max-w-3xl rounded-2xl border border-haze bg-ink-raised p-5 shadow-[var(--shadow-lift)]">
+            <div className="flex items-start gap-3">
+              <span
+                className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                  bergamotState?.ready && bergamotState.engineReady ? 'bg-emerald-500' : 'bg-cinnabar'
+                }`}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block font-display text-[19px] text-paper">Bergamot 语对模型</span>
+                <span className="mt-1 block text-[11.5px] text-paper-faint">{bergamotCaption}</span>
+              </span>
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                disabled={
+                  autoSource ||
+                  !bergamotAvailable ||
+                  bergamotState?.engineReady === false ||
+                  modelAction === 'working' ||
+                  Boolean(bergamotState?.ready)
+                }
+                onClick={() => void downloadBergamot()}
+                className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full border border-cinnabar/50 bg-cinnabar/12 px-4 text-[12.5px] text-paper disabled:opacity-35"
+              >
+                {modelAction === 'working' ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
+                {autoSource
+                  ? '请先指定原文'
+                  : bergamotState?.ready
+                    ? '已下载'
+                    : bergamotState?.engineReady === false
+                      ? '引擎不可用'
+                      : '下载语对'}
+              </button>
+              {!autoSource && bergamotState?.ready && (
+                <button
+                  type="button"
+                  aria-label="删除 Bergamot 语对"
+                  disabled={modelAction === 'working'}
+                  onClick={() => setConfirmDeleteModel(true)}
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-haze disabled:opacity-35"
+                >
+                  <Trash2 size={15} className="text-paper-faint" />
+                </button>
+              )}
+            </div>
+            {modelMessage && (
+              <p className={`mt-3 text-[11px] leading-relaxed ${modelAction === 'error' ? 'text-cinnabar-soft' : 'text-paper-faint'}`}>
+                {modelMessage}
+              </p>
+            )}
+            <p className="mt-3 text-[10.5px] leading-relaxed text-paper-faint">
+              模型来自 Mozilla Firefox Translations（GCS）；首版语对 en↔zh。引擎需
+              `npm run bergamot:init` 后编入 local 包。
+            </p>
+          </div>
+        </div>
       ) : activeCloud ? (
         <div className="page-x pt-5">
           <div className="mx-auto max-w-3xl space-y-4 rounded-2xl border border-haze bg-ink-raised p-5 shadow-[var(--shadow-lift)]">
@@ -416,19 +568,25 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
       ) : null}
 
       <SettingsHint>
-        云服务的费用与配额由你的服务商账号承担，密钥只保存在本机并直接发往所填 API 地址。
+        云服务的费用与配额由你的服务商账号承担，密钥只保存在本机并直接发往所填 API 地址。ML Kit
+        需 Google 服务；Bergamot 使用 Mozilla 专用翻译模型，适合无 GMS 离线。
       </SettingsHint>
 
       <ConfirmDialog
         open={confirmDeleteModel}
-        title="删除语言包？"
-        message="删除当前原文与译文语言包后，本地翻译需要重新下载才能使用。"
+        title={prefs.provider === 'bergamot' ? '删除 Bergamot 语对？' : '删除语言包？'}
+        message={
+          prefs.provider === 'bergamot'
+            ? '删除当前语对模型后，Bergamot 离线翻译需要重新下载才能使用。'
+            : '删除当前原文与译文语言包后，本地翻译需要重新下载才能使用。'
+        }
         confirmLabel="删除"
         danger
         onCancel={() => setConfirmDeleteModel(false)}
         onConfirm={() => {
           setConfirmDeleteModel(false)
-          void deleteModel()
+          if (prefs.provider === 'bergamot') void deleteBergamot()
+          else void deleteModel()
         }}
       />
     </SettingsShell>

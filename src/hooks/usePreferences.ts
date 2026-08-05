@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { applyNativeChrome } from '../lib/nativeChrome'
-import { isLocalTranslationAvailable } from '../features/translation/native'
+import {
+  BergamotTranslation,
+  isBergamotTranslationAvailable,
+  isLocalTranslationAvailable,
+} from '../features/translation/native'
+import { isLocalTranslationProviderId } from '../features/translation/types'
 import { setRuntimeProxyPrefs } from '../lib/http'
 import { loadPreferences, savePreferences } from '../lib/storage'
 import { applyTheme, resolveTheme, watchSystemTheme, type ResolvedTheme } from '../lib/theme'
@@ -31,26 +36,35 @@ export interface PreferencesApi {
   update: (updater: (prev: Preferences) => Preferences) => void
 }
 
+function resolveFallbackProvider(prefs: Preferences): Preferences['translation']['provider'] {
+  const { cloud } = prefs.translation
+  return cloud.deeplx.endpoint
+    ? 'deeplx'
+    : cloud.google.apiKey
+      ? 'google'
+      : cloud.azure.apiKey
+        ? 'azure'
+        : cloud.deepl.apiKey
+          ? 'deepl'
+          : 'deeplx'
+}
+
 export function usePreferences(): PreferencesApi {
   const [prefs, setPrefs] = useState<Preferences>(() => {
     const normalized = normalizePreferences(loadPreferences())
-    if (normalized.translation.provider !== 'mlkit' || isLocalTranslationAvailable()) {
+    const provider = normalized.translation.provider
+    if (!isLocalTranslationProviderId(provider)) {
       return normalized
     }
+    if (provider === 'mlkit' && isLocalTranslationAvailable()) return normalized
+    if (provider === 'bergamot' && isBergamotTranslationAvailable()) return normalized
 
-    const { cloud } = normalized.translation
-    const provider = cloud.deeplx.endpoint
-      ? 'deeplx'
-      : cloud.google.apiKey
-        ? 'google'
-        : cloud.azure.apiKey
-          ? 'azure'
-          : cloud.deepl.apiKey
-            ? 'deepl'
-            : 'deeplx'
     return {
       ...normalized,
-      translation: { ...normalized.translation, provider },
+      translation: {
+        ...normalized.translation,
+        provider: resolveFallbackProvider(normalized),
+      },
     }
   })
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(prefs.theme))
@@ -62,6 +76,31 @@ export function usePreferences(): PreferencesApi {
     applyTypography(prefs)
     setRuntimeProxyPrefs(prefs.proxy)
   }, [prefs])
+
+  useEffect(() => {
+    if (prefs.translation.provider !== 'bergamot' || !isBergamotTranslationAvailable()) return
+    let cancelled = false
+
+    void BergamotTranslation.getEngineState()
+      .then((state) => {
+        if (cancelled || state.engineReady) return
+        setPrefs((prev) => {
+          if (prev.translation.provider !== 'bergamot') return prev
+          return {
+            ...prev,
+            translation: {
+              ...prev.translation,
+              provider: resolveFallbackProvider(prev),
+            },
+          }
+        })
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [prefs.translation.provider])
 
   useEffect(() => {
     const sync = () => {
