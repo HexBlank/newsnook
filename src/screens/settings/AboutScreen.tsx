@@ -5,6 +5,7 @@ import {
   Copy,
   ExternalLink,
   Layers,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Zap,
@@ -15,6 +16,9 @@ import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 
 interface Props {
   onBack: () => void
+  updateSupported?: boolean
+  updateCaption?: string
+  onCheckUpdate?: () => void
 }
 
 const ABOUT_CONFIG = {
@@ -56,7 +60,12 @@ async function openExternalUrl(url: string) {
   }
 }
 
-export function AboutScreen({ onBack }: Props) {
+export function AboutScreen({
+  onBack,
+  updateSupported = false,
+  updateCaption,
+  onCheckUpdate,
+}: Props) {
   const [copiedRepo, setCopiedRepo] = useState(false)
 
   const copyRepo = async (e: React.MouseEvent) => {
@@ -105,6 +114,30 @@ export function AboutScreen({ onBack }: Props) {
       </div>
 
       {/* 官方渠道与文章 */}
+      {updateSupported ? (
+        <SettingsSection title="更新">
+          <ul className="divide-y divide-haze border-y border-haze bg-ink">
+            <li className="transition-colors hover:bg-ink-raised/30 active:bg-ink-raised/50">
+              <button
+                type="button"
+                onClick={() => onCheckUpdate?.()}
+                className="page-x flex w-full items-center gap-3.5 py-4 text-left"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-raised/60 text-paper">
+                  <RefreshCw size={18} strokeWidth={1.75} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[14px] font-medium text-paper">检查更新</span>
+                  <p className="mt-0.5 truncate font-mono text-[11px] text-paper-faint">
+                    {updateCaption ?? `当前 v${ABOUT_CONFIG.version}`}
+                  </p>
+                </div>
+              </button>
+            </li>
+          </ul>
+        </SettingsSection>
+      ) : null}
+
       <SettingsSection title="项目与文档">
         <ul className="divide-y divide-haze border-y border-haze bg-ink">
           {/* 开源仓库 */}

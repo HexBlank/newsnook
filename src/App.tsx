@@ -44,7 +44,10 @@ import { StorageScreen } from './screens/settings/StorageScreen'
 import { TypographyScreen } from './screens/settings/TypographyScreen'
 import { TranslationScreen } from './screens/settings/TranslationScreen'
 import { ProxyScreen } from './screens/settings/ProxyScreen'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { proxyModeLabel } from './features/proxy/config'
+import { UpdateDialog } from './features/appUpdate/UpdateDialog'
+import { useAppUpdate } from './features/appUpdate/useAppUpdate'
 import {
   translationDisplayModeLabel,
   translationLanguageLabel,
@@ -167,6 +170,7 @@ export default function App() {
     () => visibleCategories(prefs)[0]?.id ?? 'mix',
   )
   const [settingsRoute, setSettingsRoute] = useState<SettingsRoute | null>(null)
+  const appUpdate = useAppUpdate({ settingsOpen: settingsRoute != null })
   const [focusReturnRoute, setFocusReturnRoute] = useState<SettingsRoute | null>(null)
   const [enabledIds, setEnabledIds] = useState<string[]>(() => loadEnabledSources() ?? DEFAULT_ENABLED)
   const presets = usePresets({
@@ -642,7 +646,14 @@ export default function App() {
     }
 
     if (settingsRoute.name === 'about') {
-      return <AboutScreen onBack={() => setSettingsRoute(null)} />
+      return (
+        <AboutScreen
+          onBack={() => setSettingsRoute(null)}
+          updateSupported={appUpdate.supported}
+          updateCaption={appUpdate.manualCaption}
+          onCheckUpdate={() => void appUpdate.promptManualCheck()}
+        />
+      )
     }
 
     return (
@@ -841,6 +852,24 @@ export default function App() {
           />
         </Suspense>
       )}
+
+      <UpdateDialog
+        open={appUpdate.dialogOpen}
+        release={appUpdate.dialogRelease}
+        localVersion={appUpdate.localVersion}
+        onUpdate={appUpdate.onUpdate}
+        onLater={appUpdate.onLater}
+        onSkip={appUpdate.onSkip}
+      />
+      <ConfirmDialog
+        open={appUpdate.installPermissionOpen}
+        title="需要安装权限"
+        message="更新需要允许安装未知应用。请在系统设置中开启后返回继续。"
+        confirmLabel="去设置"
+        cancelLabel="取消"
+        onConfirm={appUpdate.onConfirmInstallPermission}
+        onCancel={appUpdate.onCancelInstallPermission}
+      />
     </AppShell>
   )
 }

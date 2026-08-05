@@ -188,7 +188,7 @@ export function MeScreen({
           <SettingsRow
             icon={Info}
             title="关于有所闻"
-            caption="v1.3.6 · 开源仓库与专栏文章"
+            caption={`v${__APP_VERSION__} · 开源仓库与专栏文章`}
             onClick={onOpenAbout}
           />
         </ul>

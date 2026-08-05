@@ -59,6 +59,7 @@ public class MainActivity extends BridgeActivity {
         TranslationPluginRegistrar.register(this);
         registerPlugin(DeviceMediaControlsPlugin.class);
         registerPlugin(ProxiedHttpPlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
         bridgeBuilder.addWebViewListener(
             new WebViewListener() {
                 @Override

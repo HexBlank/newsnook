@@ -186,6 +186,14 @@ export function savePreferences(prefs: unknown): void {
   write('preferences', prefs)
 }
 
+export function loadAppUpdatePrefs(): unknown {
+  return read('appUpdate', {})
+}
+
+export function saveAppUpdatePrefs(prefs: unknown): void {
+  write('appUpdate', prefs)
+}
+
 export function loadPresetsState(): unknown {
   return read<unknown>('presets', null)
 }
