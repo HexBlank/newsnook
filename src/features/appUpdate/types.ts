@@ -4,6 +4,7 @@ export type AppUpdatePrefs = {
   skippedVersion?: string
   snoozeUntil?: number
   lastCheckAt?: number
+  availableVersion?: string
 }
 
 export type LatestReleaseInfo = {

@@ -699,6 +699,8 @@ export default function App() {
           onBack={() => setSettingsRoute(null)}
           updateSupported={appUpdate.supported}
           updateCaption={appUpdate.manualCaption}
+          hasUpdate={appUpdate.hasUpdate}
+          availableVersion={appUpdate.availableVersion}
           onCheckUpdate={() => void appUpdate.promptManualCheck()}
           onOpenChangelog={() => setSettingsRoute({ name: 'changelog' })}
           onOpenLicenses={() => setSettingsRoute({ name: 'licenses' })}
@@ -768,6 +770,8 @@ export default function App() {
           translationSummary={translationSummary}
           proxySummary={proxySummary}
           storageSummary={storageSummary}
+          hasUpdate={appUpdate.hasUpdate}
+          availableVersion={appUpdate.availableVersion}
           onOpenLater={() => setSettingsRoute({ name: 'later' })}
           onOpenHistory={() => setSettingsRoute({ name: 'history' })}
           onOpenPresets={() => setSettingsRoute({ name: 'presets' })}
@@ -839,6 +843,7 @@ export default function App() {
           historyCount={cachedHistory.length}
           theme={prefs.theme}
           resolvedTheme={resolvedTheme}
+          hasUpdate={appUpdate.hasUpdate}
           onToggleTheme={() => {
             update((prev) => setThemeMode(prev, resolvedTheme === 'dark' ? 'light' : 'dark'))
           }}
@@ -869,6 +874,7 @@ export default function App() {
             <TabBar
               active={tab}
               laterCount={later.length}
+              hasUpdate={appUpdate.hasUpdate}
               onChange={(key) => {
                 setFocusSourceId(null)
                 setFocusReturnRoute(null)

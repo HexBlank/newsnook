@@ -11,13 +11,14 @@ const TABS: { key: TabKey; label: string; Icon: typeof Newspaper }[] = [
 interface Props {
   active: TabKey
   laterCount: number
+  hasUpdate?: boolean
   onChange: (key: TabKey) => void
 }
 
 /**
  * 底栏导航：经典竖向图文布局，朱砂色彩点睛，配色温润纯净，无多余胶囊或杂质。
  */
-export const TabBar = memo(function TabBar({ active, laterCount, onChange }: Props) {
+export const TabBar = memo(function TabBar({ active, laterCount, hasUpdate, onChange }: Props) {
   return (
     <nav className="relative z-20 shrink-0 border-t border-haze/50 bg-ink/92 pb-[var(--sab)] backdrop-blur-xl transition-colors duration-300 lg:hidden">
       <ul className="flex h-13 items-stretch">
@@ -41,10 +42,14 @@ export const TabBar = memo(function TabBar({ active, laterCount, onChange }: Pro
                         : 'text-paper-muted/75 group-hover:text-paper group-active:scale-95'
                     }`}
                   />
-                  {key === 'me' && laterCount > 0 && (
-                    <span className="absolute -top-1 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cinnabar px-1 font-mono text-[9px] font-medium leading-none text-white shadow-sm">
-                      {laterCount > 99 ? '99+' : laterCount}
-                    </span>
+                  {key === 'me' && (
+                    laterCount > 0 ? (
+                      <span className="absolute -top-1 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cinnabar px-1 font-mono text-[9px] font-medium leading-none text-white shadow-sm">
+                        {laterCount > 99 ? '99+' : laterCount}
+                      </span>
+                    ) : hasUpdate ? (
+                      <span className="absolute -top-0.5 -right-1 flex h-2 w-2 rounded-full bg-cinnabar ring-2 ring-ink shadow-xs" />
+                    ) : null
                   )}
                 </span>
                 <span

@@ -1,7 +1,13 @@
 import { App as CapacitorApp } from '@capacitor/app'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { saveSkippedVersion, saveSnooze } from './prefs'
+import { shouldShowUpdateBadge } from './gate'
+import {
+  loadAppUpdatePrefsNormalized,
+  saveSkippedVersion,
+  saveSnooze,
+} from './prefs'
+import { isNewerVersion } from './semver'
 import {
   beginUpdate,
   checkForAutoUpdate,
@@ -23,6 +29,7 @@ type Options = {
 }
 
 const AUTO_CHECK_DELAY_MS = 800
+const RETRY_DELAYS_MS = [4000, 12000]
 const SUPPRESS_AUTO_CHECK_MS = 2500
 
 export function useAppUpdate({ settingsOpen }: Options) {
@@ -36,6 +43,18 @@ export function useAppUpdate({ settingsOpen }: Options) {
   const [manualHint, setManualHint] = useState<string | undefined>()
   const [downloading, setDownloading] = useState(() => getAppUpdateUiState().downloading)
 
+  const [availableVersion, setAvailableVersion] = useState<string | undefined>(() => {
+    const prefs = loadAppUpdatePrefsNormalized()
+    if (
+      prefs.availableVersion &&
+      isNewerVersion(prefs.availableVersion, __APP_VERSION__) &&
+      shouldShowUpdateBadge({ remoteVersion: prefs.availableVersion, prefs })
+    ) {
+      return prefs.availableVersion
+    }
+    return undefined
+  })
+
   const pendingWhileSettings = useRef<LatestReleaseInfo | null>(null)
   const latestPromptRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const awaitingSettingsReturn = useRef(false)
@@ -48,6 +67,13 @@ export function useAppUpdate({ settingsOpen }: Options) {
 
   settingsOpenRef.current = settingsOpen
   downloadingRef.current = downloading
+
+  const hasUpdate = useMemo(() => {
+    if (!supported || !availableVersion) return false
+    if (!isNewerVersion(availableVersion, __APP_VERSION__)) return false
+    const prefs = loadAppUpdatePrefsNormalized()
+    return shouldShowUpdateBadge({ remoteVersion: availableVersion, prefs })
+  }, [supported, availableVersion])
 
   useEffect(() => {
     if (!supported) return
@@ -82,26 +108,79 @@ export function useAppUpdate({ settingsOpen }: Options) {
     }
   }, [settingsOpen, supported])
 
-  const runAutoCheck = useCallback(async () => {
-    if (!supported) return
-    if (Date.now() < suppressAutoCheckUntil.current) return
-    if (downloadingRef.current || getActiveDownloadId() != null) return
-    if (awaitingSettingsReturn.current) return
-    try {
-      const result = await checkForAutoUpdate()
-      if (result?.status === 'available') showReleaseRef.current(result.release)
-    } catch {
-      // 启动静默忽略
-    }
-  }, [supported])
+  const runAutoCheck = useCallback(
+    async (isColdStart = false): Promise<boolean> => {
+      if (!supported) return false
+      if (Date.now() < suppressAutoCheckUntil.current) return false
+      if (downloadingRef.current || getActiveDownloadId() != null) return false
+      if (awaitingSettingsReturn.current) return false
+      try {
+        const outcome = await checkForAutoUpdate({ isColdStart })
+        if (!outcome) return false
+        const { result, shouldPrompt } = outcome
+        if (result.status === 'error') {
+          return false
+        }
+        if (result.status === 'available') {
+          const prefs = loadAppUpdatePrefsNormalized()
+          if (shouldShowUpdateBadge({ remoteVersion: result.release.version, prefs })) {
+            setAvailableVersion(result.release.version)
+          } else {
+            setAvailableVersion(undefined)
+          }
+          if (shouldPrompt) {
+            showReleaseRef.current(result.release)
+          }
+        } else if (result.status === 'up-to-date') {
+          setAvailableVersion(undefined)
+        }
+        return true
+      } catch {
+        return false
+      }
+    },
+    [supported],
+  )
 
-  // 冷启动只调度一次，避免 downloading / settings 变化反复重置定时器
+  // 冷启动检查与阶梯失败重试机制（支持断网恢复立即补充检查）
   useEffect(() => {
     if (!supported) return
-    const timer = window.setTimeout(() => {
-      void runAutoCheck()
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryIndex = 0
+    let isSuccess = false
+
+    const triggerColdStartCheck = async () => {
+      if (isSuccess) return
+      const ok = await runAutoCheck(true)
+      if (ok) {
+        isSuccess = true
+        return
+      }
+      if (retryIndex < RETRY_DELAYS_MS.length) {
+        const delay = RETRY_DELAYS_MS[retryIndex]!
+        retryIndex += 1
+        retryTimer = window.setTimeout(() => {
+          void triggerColdStartCheck()
+        }, delay)
+      }
+    }
+
+    const initialTimer = window.setTimeout(() => {
+      void triggerColdStartCheck()
     }, AUTO_CHECK_DELAY_MS)
-    return () => window.clearTimeout(timer)
+
+    const handleOnline = () => {
+      if (!isSuccess) {
+        void triggerColdStartCheck()
+      }
+    }
+    window.addEventListener('online', handleOnline)
+
+    return () => {
+      window.clearTimeout(initialTimer)
+      if (retryTimer) window.clearTimeout(retryTimer)
+      window.removeEventListener('online', handleOnline)
+    }
   }, [supported, runAutoCheck])
 
   useEffect(() => {
@@ -133,7 +212,7 @@ export function useAppUpdate({ settingsOpen }: Options) {
         return
       }
 
-      if (!settingsOpenRef.current) void runAutoCheck()
+      if (!settingsOpenRef.current) void runAutoCheck(false)
     }).then((listener) => {
       handle = listener
     })
@@ -152,7 +231,10 @@ export function useAppUpdate({ settingsOpen }: Options) {
   }, [closeDialog])
 
   const onSkip = useCallback(() => {
-    if (dialogRelease) saveSkippedVersion(dialogRelease.version)
+    if (dialogRelease) {
+      saveSkippedVersion(dialogRelease.version)
+      setAvailableVersion(undefined)
+    }
     closeDialog()
   }, [closeDialog, dialogRelease])
 
@@ -207,10 +289,12 @@ export function useAppUpdate({ settingsOpen }: Options) {
     const result = await checkForUpdate()
     if (result.status === 'available') {
       setManualStatus('idle')
+      setAvailableVersion(result.release.version)
       showRelease(result.release, { force: true })
       return
     }
     if (result.status === 'up-to-date') {
+      setAvailableVersion(undefined)
       setManualStatus('latest')
       if (latestPromptRef.current) window.clearTimeout(latestPromptRef.current)
       latestPromptRef.current = window.setTimeout(() => {
@@ -232,14 +316,17 @@ export function useAppUpdate({ settingsOpen }: Options) {
     if (manualStatus === 'downloading' || downloading) return '正在下载…'
     if (manualStatus === 'latest') return '已是最新'
     if (manualStatus === 'error') return manualHint || '检查失败，点按重试'
+    if (hasUpdate && availableVersion) return `发现新版本 v${availableVersion} · 点按更新`
     return `当前 v${__APP_VERSION__}`
-  }, [manualStatus, manualHint, downloading])
+  }, [manualStatus, manualHint, downloading, hasUpdate, availableVersion])
 
   return {
     supported,
     dialogRelease,
     dialogOpen: dialogRelease != null,
     localVersion: __APP_VERSION__,
+    hasUpdate,
+    availableVersion,
     onUpdate,
     onLater,
     onSkip,

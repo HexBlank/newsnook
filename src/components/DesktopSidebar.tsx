@@ -26,6 +26,7 @@ interface Props {
   theme: ThemeMode
   resolvedTheme: 'light' | 'dark'
   onToggleTheme: () => void
+  hasUpdate?: boolean
   presetSwitcher?: {
     activeName: string
     items: PresetSwitcherItem[]
@@ -49,6 +50,7 @@ export const DesktopSidebar = memo(function DesktopSidebar({
   historyCount,
   resolvedTheme,
   onToggleTheme,
+  hasUpdate,
   presetSwitcher,
   onNavigateHome,
   onNavigateLater,
@@ -219,6 +221,11 @@ export const DesktopSidebar = memo(function DesktopSidebar({
                   />
                   <span className="text-[13.5px] tracking-wide">偏好与设置</span>
                 </div>
+                {hasUpdate && (
+                  <span className="flex h-4 items-center justify-center rounded-full bg-cinnabar px-1.5 font-mono text-[9px] font-semibold text-white shadow-xs">
+                    NEW
+                  </span>
+                )}
               </button>
             </li>
           </ul>
@@ -298,13 +305,16 @@ export const DesktopSidebar = memo(function DesktopSidebar({
             type="button"
             onClick={onNavigateAbout}
             aria-label="关于有所闻"
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
+            className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
               isAboutActive
                 ? 'bg-ink-raised text-cinnabar border border-haze'
                 : 'text-paper-faint hover:bg-ink-raised hover:text-paper'
             }`}
           >
             <Info size={15} strokeWidth={1.7} />
+            {hasUpdate && (
+              <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-cinnabar ring-2 ring-ink shadow-xs" />
+            )}
           </button>
         </div>
       </div>

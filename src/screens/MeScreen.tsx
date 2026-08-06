@@ -26,6 +26,8 @@ interface Props {
   translationSummary: string
   proxySummary: string
   storageSummary: string
+  hasUpdate?: boolean
+  availableVersion?: string
   onOpenLater: () => void
   onOpenHistory: () => void
   onOpenPresets: () => void
@@ -83,6 +85,8 @@ export function MeScreen({
   translationSummary,
   proxySummary,
   storageSummary,
+  hasUpdate,
+  availableVersion,
   onOpenLater,
   onOpenHistory,
   onOpenPresets,
@@ -188,7 +192,12 @@ export function MeScreen({
           <SettingsRow
             icon={Info}
             title="关于有所闻"
-            caption={`v${__APP_VERSION__} · 开源仓库与专栏文章`}
+            caption={
+              hasUpdate && availableVersion
+                ? `发现新版本 v${availableVersion} · 开源仓库与专栏文章`
+                : `v${__APP_VERSION__} · 开源仓库与专栏文章`
+            }
+            badge={hasUpdate ? (availableVersion ? `v${availableVersion}` : 'NEW') : null}
             onClick={onOpenAbout}
           />
         </ul>

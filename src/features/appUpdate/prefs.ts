@@ -22,6 +22,8 @@ export function loadAppUpdatePrefsNormalized(): AppUpdatePrefs {
   if (snoozeUntil != null) prefs.snoozeUntil = snoozeUntil
   const lastCheckAt = asFiniteNumber(record.lastCheckAt)
   if (lastCheckAt != null) prefs.lastCheckAt = lastCheckAt
+  const availableVersion = asNonEmptyString(record.availableVersion)
+  if (availableVersion) prefs.availableVersion = availableVersion
   return prefs
 }
 
@@ -41,4 +43,8 @@ export function saveSnooze(now: number): AppUpdatePrefs {
 
 export function touchLastCheck(now: number): AppUpdatePrefs {
   return persist({ lastCheckAt: now })
+}
+
+export function saveAvailableVersion(version: string | undefined): AppUpdatePrefs {
+  return persist({ availableVersion: version })
 }

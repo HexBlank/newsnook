@@ -20,6 +20,8 @@ interface Props {
   onBack: () => void
   updateSupported?: boolean
   updateCaption?: string
+  hasUpdate?: boolean
+  availableVersion?: string
   onCheckUpdate?: () => void
   onOpenChangelog?: () => void
   onOpenLicenses?: () => void
@@ -68,6 +70,8 @@ export function AboutScreen({
   onBack,
   updateSupported = false,
   updateCaption,
+  hasUpdate = false,
+  availableVersion: _availableVersion,
   onCheckUpdate,
   onOpenChangelog,
   onOpenLicenses,
@@ -128,11 +132,21 @@ export function AboutScreen({
                 onClick={() => onCheckUpdate?.()}
                 className="page-x flex w-full items-center gap-3.5 py-4 text-left"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-raised/60 text-paper">
+                <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-raised/60 text-paper">
                   <RefreshCw size={18} strokeWidth={1.75} />
+                  {hasUpdate && (
+                    <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-cinnabar ring-2 ring-ink" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[14px] font-medium text-paper">检查更新</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-medium text-paper">检查更新</span>
+                    {hasUpdate && (
+                      <span className="inline-flex h-4 items-center justify-center rounded-full bg-cinnabar px-1.5 font-mono text-[9px] font-semibold leading-none text-white shadow-xs">
+                        NEW
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-0.5 truncate font-mono text-[11px] text-paper-faint">
                     {updateCaption ?? `当前 v${ABOUT_CONFIG.version}`}
                   </p>

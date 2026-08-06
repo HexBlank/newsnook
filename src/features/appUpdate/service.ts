@@ -6,6 +6,7 @@ import { fetchLatestRelease } from './github'
 import { AppUpdateNative } from './native'
 import {
   loadAppUpdatePrefsNormalized,
+  saveAvailableVersion,
   touchLastCheck,
 } from './prefs'
 import type { AppUpdateChannel, LatestReleaseInfo, UpdateCheckResult } from './types'
@@ -13,6 +14,11 @@ import type { AppUpdateChannel, LatestReleaseInfo, UpdateCheckResult } from './t
 export type AppUpdateUiState = {
   downloading: boolean
   lastManualMessage?: string
+}
+
+export type AutoCheckOutcome = {
+  result: UpdateCheckResult
+  shouldPrompt: boolean
 }
 
 type BeginUpdateResult =
@@ -78,30 +84,44 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
   }
   await ensureNativeListeners()
   const result = await fetchLatestRelease(__APP_VERSION__, resolveChannel())
-  if (result.status !== 'error') touchLastCheck(Date.now())
+  if (result.status !== 'error') {
+    touchLastCheck(Date.now())
+    if (result.status === 'available') {
+      saveAvailableVersion(result.release.version)
+    } else if (result.status === 'up-to-date') {
+      saveAvailableVersion(undefined)
+    }
+  }
   return result
 }
 
-export async function checkForAutoUpdate(): Promise<
-  Extract<UpdateCheckResult, { status: 'available' }> | null
-> {
+export async function checkForAutoUpdate(options?: {
+  isColdStart?: boolean
+}): Promise<AutoCheckOutcome | null> {
   if (!isAppUpdateSupported()) return null
   if (activeDownloadId != null) return null
   const prefs = loadAppUpdatePrefsNormalized()
-  if (!shouldFetchForAutoCheck({ prefs, now: Date.now(), downloading: false })) return null
-  const result = await checkForUpdate()
-  if (result.status !== 'available') return null
   if (
-    !shouldAutoPrompt({
-      remoteVersion: result.release.version,
+    !shouldFetchForAutoCheck({
       prefs,
       now: Date.now(),
       downloading: false,
+      isColdStart: options?.isColdStart,
     })
   ) {
     return null
   }
-  return result
+  const result = await checkForUpdate()
+  if (result.status !== 'available') {
+    return { result, shouldPrompt: false }
+  }
+  const shouldPrompt = shouldAutoPrompt({
+    remoteVersion: result.release.version,
+    prefs: loadAppUpdatePrefsNormalized(),
+    now: Date.now(),
+    downloading: false,
+  })
+  return { result, shouldPrompt }
 }
 
 export async function beginUpdate(release: LatestReleaseInfo): Promise<BeginUpdateResult> {

@@ -14,8 +14,9 @@ import {
 import {
   shouldAutoPrompt,
   shouldFetchForAutoCheck,
+  shouldShowUpdateBadge,
   SNOOZE_MS,
-  CHECK_INTERVAL_MS,
+  RESUME_CHECK_INTERVAL_MS,
 } from '../src/features/appUpdate/gate'
 
 console.log('--- app-update semver ---')
@@ -59,23 +60,40 @@ assert.equal(notes.split('\n').length, 9)
 assert.ok(notes.endsWith('…'))
 
 assert.equal(SNOOZE_MS, 2 * 60 * 60 * 1000)
-assert.equal(CHECK_INTERVAL_MS, 12 * 60 * 60 * 1000)
+assert.equal(RESUME_CHECK_INTERVAL_MS, 15 * 60 * 1000)
 
 const now = 1_000_000
 assert.equal(shouldFetchForAutoCheck({ prefs: {}, now, downloading: false }), true)
+
+// 冷启动：即便刚刚检查过，也必须放行检查
 assert.equal(
   shouldFetchForAutoCheck({
     prefs: { lastCheckAt: now - 1000 },
     now,
     downloading: false,
+    isColdStart: true,
+  }),
+  true,
+)
+
+// 前台切回（非冷启动）：在 15 分钟内拦截
+assert.equal(
+  shouldFetchForAutoCheck({
+    prefs: { lastCheckAt: now - 1000 },
+    now,
+    downloading: false,
+    isColdStart: false,
   }),
   false,
 )
+
+// 前台切回：超过 15 分钟放行
 assert.equal(
   shouldFetchForAutoCheck({
-    prefs: { lastCheckAt: now - CHECK_INTERVAL_MS - 1 },
+    prefs: { lastCheckAt: now - RESUME_CHECK_INTERVAL_MS - 1 },
     now,
     downloading: false,
+    isColdStart: false,
   }),
   true,
 )
@@ -105,6 +123,22 @@ assert.equal(
 )
 assert.equal(
   shouldAutoPrompt({ remoteVersion: '1.3.9', prefs: {}, now, downloading: true }),
+  false,
+)
+
+// 红点逻辑：只要没跳过，即便稍后中也应该显示红点
+assert.equal(
+  shouldShowUpdateBadge({
+    remoteVersion: '1.3.9',
+    prefs: { snoozeUntil: now + 1000 },
+  }),
+  true,
+)
+assert.equal(
+  shouldShowUpdateBadge({
+    remoteVersion: '1.3.9',
+    prefs: { skippedVersion: '1.3.9' },
+  }),
   false,
 )
 
