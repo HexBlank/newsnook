@@ -22,6 +22,7 @@ interface Props {
   presetLabel?: string
   onReorder: (order: CategoryId[]) => void
   onToggleVisible: (categoryId: CategoryId) => void
+  onToggleAutoRefresh?: (enabled: boolean) => void
   onEditSources: (categoryId: CategoryId) => void
   onEditCategory: (categoryId: CategoryId) => void
   onNewCategory: () => void
@@ -81,6 +82,7 @@ export function CategorySettingsScreen({
   presetLabel,
   onReorder,
   onToggleVisible,
+  onToggleAutoRefresh,
   onEditSources,
   onEditCategory,
   onNewCategory,
@@ -516,6 +518,29 @@ export function CategorySettingsScreen({
         </button>
       }
     >
+      <div className="page-x pt-4">
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-haze bg-ink-raised p-4 shadow-[var(--shadow-lift)]">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-display text-[15px] font-medium text-paper">切换分类时自动刷新</span>
+              <span className="rounded-full bg-paper/5 px-2 py-0.5 font-mono text-[10px] text-paper-muted border border-haze/60">
+                {prefs.autoRefreshOnCategorySwitch !== false ? '已开启' : '已关闭'}
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] leading-relaxed text-paper-muted">
+              开启时切换或滑动分类将自动拉取最新内容；关闭时保留在各分类之前的阅读位置，仅在手动下拉或点击刷新时同步。
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={prefs.autoRefreshOnCategorySwitch !== false}
+            label="切换分类时自动刷新"
+            onChange={() =>
+              onToggleAutoRefresh?.(prefs.autoRefreshOnCategorySwitch === false)
+            }
+          />
+        </div>
+      </div>
+
       <div
         ref={gridRef}
         className={`page-x grid grid-cols-2 gap-2.5 pt-4 sm:grid-cols-3 lg:grid-cols-4 ${

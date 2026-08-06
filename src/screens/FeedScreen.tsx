@@ -16,7 +16,7 @@ import type { PaginationViewState } from '../lib/feedPagination'
 import { chineseDate, dayBucket, relativeTime } from '../lib/time'
 import type { Article, RefreshProgress, SourceStatus } from '../lib/types'
 import type { CategoryId, NewsCategory } from '../sources/categories'
-import type { NewsSource } from '../sources/registry'
+import { findSource, type NewsSource } from '../sources/registry'
 
 interface Props {
   title: string
@@ -595,14 +595,40 @@ export const FeedScreen = memo(function FeedScreen({
           </div>
         )}
 
+        {refreshing && refreshProgress && phase === 'idle' && (
+          <div className="page-x lg:px-6 xl:px-8 pt-1.5 pb-0.5 animate-fade-in">
+            <div className="flex items-center justify-between gap-2 font-mono text-[10.5px] leading-tight text-paper-muted">
+              <span className="min-w-0 truncate">
+                {(() => {
+                  const currentSource = refreshProgress.pendingSourceIds
+                    .map((id) => findSource(id))
+                    .find((source) => Boolean(source))
+                  const pendingCount = refreshProgress.pendingSourceIds.length
+                  return currentSource
+                    ? `正在同步 ${currentSource.name}${pendingCount > 1 ? ` · 另 ${pendingCount - 1} 个` : ''}`
+                    : '正在同步信源…'
+                })()}
+              </span>
+              <span className="shrink-0 tabular-nums text-cinnabar-soft font-medium">
+                已同步 {refreshProgress.synced} / {refreshProgress.total}
+              </span>
+            </div>
+          </div>
+        )}
+
         <div className="page-x lg:px-6 xl:px-8 mt-1 h-px w-full">
           <div className="relative h-px w-full overflow-hidden bg-haze">
             <div
               ref={inkLineRef}
-              className="h-px origin-left bg-gradient-to-r from-cinnabar/80 via-paper/30 to-transparent"
-              style={{ transform: 'scaleX(0.12)' }}
+              className="h-px origin-left bg-gradient-to-r from-cinnabar/80 via-paper/30 to-transparent transition-[transform,width] duration-300 ease-out"
+              style={{
+                transform:
+                  refreshing && refreshProgress && refreshProgress.total > 0
+                    ? `scaleX(${Math.max(0.12, refreshProgress.completed / refreshProgress.total)})`
+                    : 'scaleX(0.12)',
+              }}
             />
-            {refreshing && (
+            {refreshing && (!refreshProgress || refreshProgress.total === 0) && (
               <span className="ink-progress absolute inset-y-0 left-0 block w-1/3" aria-hidden />
             )}
           </div>

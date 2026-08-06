@@ -189,6 +189,11 @@ async function postJson(
 }
 
 function errorMessage(provider: string, response: JsonResponse): Error {
+  if (response.status === 429) {
+    return new Error(
+      `${provider}：触发速率限制（429 Too Many Requests），请求过于频繁，请稍候重试或在设置中降低并发。`,
+    )
+  }
   const data = response.data as {
     error?: { message?: string; code?: string | number }
     message?: string
@@ -525,6 +530,9 @@ export class DeepLXProvider extends CloudProvider {
         if (response.status < 200 || response.status >= 300) throw errorMessage('DeepLX', response)
         const data = response.data as DeepLxResponse
         if (typeof data.code === 'number' && data.code !== 200) {
+          if (data.code === 429) {
+            throw new Error('DeepLX：触发速率限制（429 Too Many Requests），请求过于频繁，请稍候重试。')
+          }
           throw new Error(`DeepLX：${data.message ?? `服务返回错误码 ${data.code}`}`)
         }
         if (typeof data.data === 'string') return data.data

@@ -8,6 +8,7 @@ import {
   History,
   Info,
   Languages,
+  LayoutGrid,
   LayoutTemplate,
   Type,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ interface Props {
   later: Article[]
   history: Article[]
   readCount: number
+  categoriesSummary?: string
   presetsSummary: string
   typographySummary: string
   appearanceSummary: string
@@ -30,6 +32,7 @@ interface Props {
   availableVersion?: string
   onOpenLater: () => void
   onOpenHistory: () => void
+  onOpenCategories: () => void
   onOpenPresets: () => void
   onOpenTypographySettings: () => void
   onOpenAppearanceSettings: () => void
@@ -79,6 +82,7 @@ export function MeScreen({
   later,
   history,
   readCount,
+  categoriesSummary,
   presetsSummary,
   typographySummary,
   appearanceSummary,
@@ -89,6 +93,7 @@ export function MeScreen({
   availableVersion,
   onOpenLater,
   onOpenHistory,
+  onOpenCategories,
   onOpenPresets,
   onOpenTypographySettings,
   onOpenAppearanceSettings,
@@ -145,6 +150,12 @@ export function MeScreen({
         </div>
 
         <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze">
+          <SettingsRow
+            icon={LayoutGrid}
+            title="分类与自动刷新"
+            caption={categoriesSummary ?? '管理分类顺序、信源及切换自动刷新'}
+            onClick={onOpenCategories}
+          />
           <SettingsRow
             icon={LayoutTemplate}
             title="场景预设"

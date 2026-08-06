@@ -64,6 +64,7 @@ import {
   resetCategoryLayout,
   resetCategorySources,
   resetTypography,
+  setAutoRefreshOnCategorySwitch,
   setCategoryOrder,
   setThemeMode,
   sourceIdsForCategoryWithPrefs,
@@ -103,7 +104,7 @@ function readCacheSnapshot() {
 
 type SettingsRoute =
   | { name: 'presets' }
-  | { name: 'categories' }
+  | { name: 'categories'; returnTo?: 'presets' | 'me' }
   | { name: 'category-sources'; categoryId: CategoryId }
   | { name: 'category-edit'; categoryId?: CategoryId }
   | { name: 'channels' }
@@ -361,14 +362,30 @@ export default function App() {
 
   const runRefresh = useCallback(() => refresh(listScopeIds), [refresh, listScopeIds])
 
-  // 进入分类 / 信源集合变化时，预拉该分类已开启的源（不受单源筛选影响）
+  // 进入分类 / 信源集合变化时，预拉该分类已开启的源（受 autoRefreshOnCategorySwitch 开关控制）
   const bootstrapKey = fetchIds.join('|')
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
+  const isInitialMountRef = useRef(true)
+  const prevCategoryIdRef = useRef(categoryId)
+
   useEffect(() => {
     if (!fetchIds.length) return
+    const isCategoryChange = prevCategoryIdRef.current !== categoryId
+    prevCategoryIdRef.current = categoryId
+
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false
+      void refreshRef.current(fetchIds)
+      return
+    }
+
+    if (isCategoryChange && prefs.autoRefreshOnCategorySwitch === false) {
+      return
+    }
+
     void refreshRef.current(fetchIds)
-  }, [bootstrapKey, fetchIds.length])
+  }, [bootstrapKey, categoryId, fetchIds, prefs.autoRefreshOnCategorySwitch])
 
   const categorySourceSet = useMemo(() => new Set(categorySourceIds), [categorySourceIds])
   const articles = useMemo(
@@ -611,9 +628,9 @@ export default function App() {
             if (presets.state.activePresetId !== id) {
               presets.applyPreset(id)
             }
-            setSettingsRoute({ name: 'categories' })
+            setSettingsRoute({ name: 'categories', returnTo: 'presets' })
           }}
-          onEditLayout={() => setSettingsRoute({ name: 'categories' })}
+          onEditLayout={() => setSettingsRoute({ name: 'categories', returnTo: 'presets' })}
           onSaveAs={(name) => presets.saveAs(name)}
           onRename={(id, name) => presets.rename(id, name)}
           onDelete={(id) => presets.remove(id)}
@@ -723,12 +740,21 @@ export default function App() {
         presetLabel={presets.activePreset?.name}
         onReorder={(order) => update((prev) => setCategoryOrder(prev, order))}
         onToggleVisible={(id) => update((prev) => toggleCategoryVisible(prev, id))}
+        onToggleAutoRefresh={(enabled) =>
+          update((prev) => setAutoRefreshOnCategorySwitch(prev, enabled))
+        }
         onEditSources={(id) => setSettingsRoute({ name: 'category-sources', categoryId: id })}
         onEditCategory={(id) => setSettingsRoute({ name: 'category-edit', categoryId: id })}
         onNewCategory={() => setSettingsRoute({ name: 'category-edit' })}
         onOpenChannels={() => setSettingsRoute({ name: 'channels' })}
         onResetLayout={(opts) => update((prev) => resetCategoryLayout(prev, opts))}
-        onBack={() => setSettingsRoute({ name: 'presets' })}
+        onBack={() =>
+          setSettingsRoute(
+            settingsRoute.name === 'categories' && settingsRoute.returnTo === 'presets'
+              ? { name: 'presets' }
+              : null,
+          )
+        }
       />
     )
   }
@@ -764,6 +790,9 @@ export default function App() {
           later={later}
           history={cachedHistory}
           readCount={readIds.size}
+          categoriesSummary={`${categories.length} 个启用分类 · ${
+            prefs.autoRefreshOnCategorySwitch !== false ? '切换自动刷新开启' : '切换自动刷新已关闭'
+          }`}
           presetsSummary={`${presets.activePreset?.name ?? '未选择'} · ${categories.length} 分类 · ${enabledIds.length} 源`}
           typographySummary={typographySummary}
           appearanceSummary={appearanceSummary}
@@ -774,6 +803,7 @@ export default function App() {
           availableVersion={appUpdate.availableVersion}
           onOpenLater={() => setSettingsRoute({ name: 'later' })}
           onOpenHistory={() => setSettingsRoute({ name: 'history' })}
+          onOpenCategories={() => setSettingsRoute({ name: 'categories', returnTo: 'me' })}
           onOpenPresets={() => setSettingsRoute({ name: 'presets' })}
           onOpenTypographySettings={() => setSettingsRoute({ name: 'typography' })}
           onOpenAppearanceSettings={() => setSettingsRoute({ name: 'appearance' })}

@@ -44,6 +44,8 @@ export interface Preferences {
   theme: ThemeMode
   translation: TranslationPrefs
   proxy: ProxyPrefs
+  /** 切换/滑动到分类页时是否自动刷新（关闭时保留滚动阅读位置） */
+  autoRefreshOnCategorySwitch?: boolean
 }
 
 export const DEFAULT_TYPOGRAPHY: TypographyPrefs = {
@@ -96,6 +98,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   theme: DEFAULT_THEME_MODE,
   translation: DEFAULT_TRANSLATION_PREFS,
   proxy: DEFAULT_PROXY_PREFS,
+  autoRefreshOnCategorySwitch: true,
 }
 
 /** 综合分类跟随「频道」页启用状态，不参与逐分类信源编辑 */
@@ -205,6 +208,10 @@ export function normalizePreferences(raw: unknown): Preferences {
     theme: isThemeMode(input.theme) ? input.theme : DEFAULT_THEME_MODE,
     translation: normalizeTranslationPrefs(input.translation),
     proxy: normalizeProxyPrefs(input.proxy),
+    autoRefreshOnCategorySwitch:
+      typeof input.autoRefreshOnCategorySwitch === 'boolean'
+        ? input.autoRefreshOnCategorySwitch
+        : true,
     typography: {
       fontScale: clamp(typography.fontScale, DEFAULT_TYPOGRAPHY.fontScale, 0.8, 1.4),
       lineHeight: clamp(typography.lineHeight, DEFAULT_TYPOGRAPHY.lineHeight, 1.4, 2.4),
@@ -558,3 +565,13 @@ export function updateProxyPrefs(
 export function resetProxyPrefs(prefs: Preferences): Preferences {
   return { ...prefs, proxy: DEFAULT_PROXY_PREFS }
 }
+
+export function setAutoRefreshOnCategorySwitch(
+  prefs: Preferences,
+  enabled: boolean,
+): Preferences {
+  return prefs.autoRefreshOnCategorySwitch === enabled
+    ? prefs
+    : { ...prefs, autoRefreshOnCategorySwitch: enabled }
+}
+

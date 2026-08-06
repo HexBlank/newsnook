@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Browser } from '@capacitor/browser'
-import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, MessageSquare, RefreshCw } from 'lucide-react'
+import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, MessageSquare, RefreshCw, X } from 'lucide-react'
 
 import { ImageLightbox } from '../components/ImageLightbox'
 import { InkImage } from '../components/InkImage'
@@ -384,16 +384,46 @@ export function ReaderScreen({
     await Browser.open({ url })
   }
 
+  const cancelTranslation = useCallback(() => {
+    translationAbortRef.current?.abort()
+    translationAbortRef.current = null
+    if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current)
+    translationTimeoutRef.current = null
+    if (partialFrameRef.current) {
+      window.cancelAnimationFrame(partialFrameRef.current)
+      partialFrameRef.current = 0
+    }
+    pendingPartialRef.current = null
+  }, [])
+
   const toggleTranslation = async () => {
-    if (translated && translationState === 'idle') {
-      setShowTranslation((value) => !value)
+    if (loadState !== 'ready') return
+
+    // 1. 如果正在翻译中，点击取消本次翻译并切回原文
+    if (translationState === 'loading') {
+      cancelTranslation()
+      setTranslationState('idle')
+      setTranslationError('')
+      setShowTranslation(false)
+      return
+    }
+
+    // 2. 如果当前正在显示译文（或处于报错状态），点击直接切回原文
+    if (showTranslation) {
+      setShowTranslation(false)
       setTranslationError('')
       return
     }
-    if (loadState !== 'ready' || translationState === 'loading') return
 
+    // 3. 如果已有完整译文且空闲，直接切换展示
+    if (translated && translationState === 'idle') {
+      setShowTranslation(true)
+      setTranslationError('')
+      return
+    }
+
+    cancelTranslation()
     const controller = new AbortController()
-    translationAbortRef.current?.abort()
     translationAbortRef.current = controller
     setTranslationState('loading')
     setTranslationError('')
@@ -582,8 +612,46 @@ export function ReaderScreen({
                 </p>
               )}
               {translationError && (
-                <div role="alert" className="mt-3 rounded-xl border border-cinnabar/35 bg-cinnabar/10 px-3.5 py-3 text-[11.5px] leading-relaxed text-cinnabar-soft">
-                  {translationError}
+                <div
+                  role="alert"
+                  className="mt-3.5 flex items-start justify-between gap-3 rounded-2xl border border-cinnabar/35 bg-cinnabar/10 p-3.5 text-[12px] leading-relaxed text-cinnabar-soft shadow-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words font-medium">{translationError}</p>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTranslationState('idle')
+                          setTranslationError('')
+                          void toggleTranslation()
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-cinnabar/50 bg-cinnabar/15 px-2.5 py-1 font-mono text-[11px] font-medium text-cinnabar-soft hover:bg-cinnabar/25 active:scale-95 transition-all"
+                      >
+                        <RefreshCw size={11} strokeWidth={2} />
+                        重新翻译
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowTranslation(false)
+                          setTranslationError('')
+                          setTranslationState('idle')
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-haze bg-ink-raised px-2.5 py-1 font-mono text-[11px] text-paper-muted hover:text-paper active:scale-95 transition-all"
+                      >
+                        显示原文
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTranslationError('')}
+                    aria-label="关闭翻译错误提示"
+                    className="shrink-0 -mr-1 -mt-1 rounded-lg p-1 text-cinnabar-soft/70 hover:bg-cinnabar/20 hover:text-cinnabar-soft active:scale-95 transition-all"
+                  >
+                    <X size={15} strokeWidth={2} />
+                  </button>
                 </div>
               )}
             </div>
@@ -649,9 +717,9 @@ export function ReaderScreen({
                     data-reader-block
                     data-article-lang={isCjkArticle ? 'zh' : 'en'}
                     className={`reader-prose ${
-                      translationState === 'loading'
+                      showTranslation && translationState === 'loading'
                         ? 'translation-pending'
-                        : translationState === 'error'
+                        : showTranslation && translationState === 'error'
                           ? 'translation-failed'
                           : ''
                     }`}
