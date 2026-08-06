@@ -99,11 +99,21 @@ async function checkOffsetSource(id: string) {
   const latepost = findSource('latepost')!
   assert.equal(offsetPageRequest(latepost, 0).requestForm?.page, 1)
   assert.equal(offsetPageRequest(latepost, 2).requestForm?.page, 3)
+
+  const emNews = findSource('eastmoney-news')!
+  assert.match(offsetPageRequest(emNews, 0).url, /[?&]page_index=1(?:&|$)/)
+  assert.match(offsetPageRequest(emNews, 1).url, /[?&]page_index=2(?:&|$)/)
+
+  const emKx = findSource('eastmoney-kx')!
+  assert.match(offsetPageRequest(emKx, 0).url, /_ajaxResult_50_1_\.html/)
+  assert.match(offsetPageRequest(emKx, 1).url, /_ajaxResult_50_2_\.html/)
   console.log('offsetPageRequest mapping: ok')
 }
 
 await checkOffsetSource('aiera')
 await checkOffsetSource('latepost')
+await checkOffsetSource('eastmoney-news')
+await checkOffsetSource('eastmoney-kx')
 
 // RSS / HTML / 机器之心（其 page 参数实际无效）仍应是 client-catalog
 for (const id of [
@@ -114,9 +124,12 @@ for (const id of [
   'jazzyear',
   'tmtpost',
   'jiqizhixin',
+  'cls-telegraph',
+  'wscn-live',
+  'bbc-business',
 ]) {
   assert.equal(pagingStrategyOf(findSource(id)!), 'client-catalog', id)
 }
-console.log('rss/html/jiqizhixin remain client-catalog: ok')
+console.log('rss/html/jiqizhixin/flash remain client-catalog: ok')
 
 console.log('offset-paging: all ok')

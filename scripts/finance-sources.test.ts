@@ -10,7 +10,9 @@ import { isInlineFlashBody, isSubstantialHtml } from '../src/lib/resolveBody'
 import {
   clsSignedListUrl,
   findSource,
+  maxOffsetPages,
   offsetPageRequest,
+  pagingStrategyOf,
 } from '../src/sources/registry'
 
 function nodeClsSign(params: Record<string, string | number>): string {
@@ -71,6 +73,10 @@ assert.equal(isSubstantialHtml(clsArticles[0].contentHtml), false)
 // —— 解析：东方财富快讯 ——
 const emKx = findSource('eastmoney-kx')!
 assert.ok(emKx)
+assert.equal(pagingStrategyOf(emKx), 'upstream-offset')
+assert.ok(maxOffsetPages(emKx) > 1)
+assert.match(offsetPageRequest(emKx, 0).url, /_ajaxResult_50_1_\.html/)
+assert.match(offsetPageRequest(emKx, 2).url, /_ajaxResult_50_3_\.html/)
 const emKxPayload =
   'var ajaxResult={"LivesList":[{"title":"创业板指翻红","digest":"【创业板指翻红】市场低开高走。","newsid":"202608063833617844","showtime":"2026-08-06 10:26:02"}]};'
 const emKxArticles = parseSourcePayload(emKx, emKxPayload)
@@ -83,9 +89,12 @@ assert.equal(isInlineFlashBody(emKxArticles[0].contentHtml, emKx.id), true)
 // —— 解析：东方财富专栏 ——
 const emNews = findSource('eastmoney-news')!
 assert.ok(emNews)
+assert.equal(pagingStrategyOf(emNews), 'upstream-offset')
+assert.ok(maxOffsetPages(emNews) > 1)
 const emNewsReq = offsetPageRequest(emNews, 0)
 assert.match(emNewsReq.url, /req_trace=/)
 assert.match(emNewsReq.url, /page_index=1/)
+assert.match(offsetPageRequest(emNews, 1).url, /page_index=2/)
 const emNewsPayload = JSON.stringify({
   code: '1',
   data: {

@@ -73,7 +73,7 @@ export const CATALOG_PAGE_SIZE = 20
 
 /**
  * 列表分页策略（按能力分流，而不是按具体频道 id）：
- * - upstream-offset：上游按页码/offset 拉更早内容（网易 / WP REST / 晚点）
+ * - upstream-offset：上游按页码/offset 拉更早内容（网易 / WP REST / 晚点 / 东财）
  * - upstream-cursor：上游按游标拉历史（知乎日报）
  * - client-catalog：一次解析完整目录，客户端窗口展示 + 上拉切片（默认；纯 RSS 无翻页）
  */
@@ -84,6 +84,8 @@ export const OFFSET_MAX_PAGES: Partial<Record<SourceKind, number>> = {
   netease: NETEASE_MAX_PAGES,
   wordpress: 40,
   latepost: 30,
+  'eastmoney-news': 40,
+  'eastmoney-kx': 40,
 }
 
 function neteaseList(tid: string): string {
@@ -583,6 +585,7 @@ export function offsetPageRequest(source: NewsSource, page: number): OffsetPageR
   }
 
   if (source.kind === 'cls') {
+    // 财联社电报靠 last_time 游标翻页；页码路径尚未接入，暂始终拉首页
     return { url: clsSignedListUrl({ rn: 20, lastTime: 0 }) }
   }
 
@@ -591,6 +594,15 @@ export function offsetPageRequest(source: NewsSource, page: number): OffsetPageR
     url.searchParams.set('page_index', String(safePage + 1))
     url.searchParams.set('req_trace', String(Date.now()))
     return { url: url.href }
+  }
+
+  if (source.kind === 'eastmoney-kx') {
+    // URL 形如 getlist_102_ajaxResult_50_1_.html，末段数字为 1-based 页码
+    const url = source.url.replace(
+      /(_ajaxResult_\d+_)(\d+)(_\.html(?:\?.*)?)$/i,
+      `$1${safePage + 1}$3`,
+    )
+    return { url }
   }
 
   return { url: source.url, requestForm: source.requestForm }
@@ -610,6 +622,8 @@ export function pagingStrategyOf(source: NewsSource): PagingStrategy {
   if (source.kind === 'netease') return 'upstream-offset'
   if (source.kind === 'wordpress') return 'upstream-offset'
   if (source.kind === 'latepost') return 'upstream-offset'
+  if (source.kind === 'eastmoney-news') return 'upstream-offset'
+  if (source.kind === 'eastmoney-kx') return 'upstream-offset'
   if (source.kind === 'zhihu') return 'upstream-cursor'
   return 'client-catalog'
 }
