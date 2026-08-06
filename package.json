@@ -36,6 +36,7 @@
     "test:markdown": "npx tsx scripts/markdown-safe.test.ts",
     "test:jazzyear-dates": "npx tsx scripts/jazzyear-dates.test.ts",
     "test:finance-sources": "npx tsx scripts/finance-sources.test.ts",
+    "test:high-signal": "npx tsx scripts/high-signal-sources.test.ts",
     "bergamot:init": "node scripts/bergamot-init.mjs",
     "preview": "vite preview",
     "assets": "node scripts/generate-android-assets.mjs",

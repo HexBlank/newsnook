@@ -34,6 +34,10 @@ const BOILERPLATE_PATTERNS = [
 
   // 9. 来源前缀
   /^来源[:：]\s*[^\n，,。]+[，,。\s]+/i,
+
+  // 10. Substack / Newsletter 订阅导语与推广前缀
+  /^(?:Thanks for reading [^\n.!?]+[.!?,]\s*)?(?:Subscribe|Subscribe now|Upgrade to paid|Share this post)[!.,:\s]*/i,
+  /^To receive new posts and support my work, consider becoming a [^\n.!?]+[.!?,]\s*/i,
 ]
 
 export function cleanSummaryText(rawText?: string, title?: string): string {

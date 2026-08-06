@@ -80,6 +80,10 @@ export const DEFAULT_HIDDEN_CATEGORY_IDS: CategoryId[] = [
   'cba',
   'cn-football',
   'zhihu',
+  'astral-codex-ten',
+  'marginalian',
+  'aldaily',
+  'theue',
   'tech-depth',
 ]
 

@@ -1159,6 +1159,70 @@ function parseWscnLive(source: NewsSource, payload: string, fetchedAt: number): 
   return articles
 }
 
+const PG_SKIP_HREFS = new Set([
+  'index.html',
+  'articles.html',
+  'rss.html',
+  'rss.xml',
+  'books.html',
+  'sep.html',
+  'bio.html',
+  'twitter.html',
+  'faq.html',
+  'quo.html',
+  'talks.html',
+  'admin.html',
+  'bel.html',
+  'item',
+])
+
+/**
+ * Paul Graham Essays (paulgraham.com/articles.html 无官方 RSS)。
+ * 列表页为简洁静态 HTML 表格，从中提取所有 <a href="*.html"> 标题与链接。
+ * PG 列表按倒序排列（最新在最前），分配递减时间戳保证倒序置顶。
+ */
+function parsePaulGraham(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const seenHrefs = new Set<string>()
+  const regex = /<a\s+[^>]*href=["']([^"']+\.html)["'][^>]*>([\s\S]*?)<\/a>/gi
+  let match: RegExpExecArray | null
+
+  const items: Array<{ href: string; title: string }> = []
+  while ((match = regex.exec(payload)) !== null) {
+    const rawHref = match[1]?.trim() ?? ''
+    const cleanHref = rawHref.replace(/^https?:\/\/(?:www\.)?paulgraham\.com\//i, '').replace(/^\.?\//, '')
+    if (!cleanHref || PG_SKIP_HREFS.has(cleanHref.toLowerCase()) || cleanHref.includes('/') || seenHrefs.has(cleanHref)) {
+      continue
+    }
+
+    const title = stripTags(match[2]).trim()
+    if (!title || title.length < 2) continue
+
+    seenHrefs.add(cleanHref)
+    items.push({ href: cleanHref, title })
+  }
+
+  const articles: Article[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    const link = `https://www.paulgraham.com/${item.href}`
+    const fakeTimestamp = new Date(fetchedAt - i * 3600_000).toISOString()
+    const article = buildArticle(
+      source,
+      {
+        title: item.title,
+        link,
+        html: '',
+        summaryText: item.title,
+        dateRaw: fakeTimestamp,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
 type SourceParser = (source: NewsSource, payload: string, fetchedAt: number) => Article[]
 
 /**
@@ -1182,6 +1246,7 @@ const PARSERS: Record<SourceKind, SourceParser> = {
   'eastmoney-kx': parseEastmoneyKx,
   'eastmoney-news': parseEastmoneyNews,
   'wscn-live': parseWscnLive,
+  paulgraham: parsePaulGraham,
 }
 
 export function parseSourcePayload(source: NewsSource, payload: string): Article[] {
