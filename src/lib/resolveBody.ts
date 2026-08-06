@@ -149,6 +149,16 @@ export function isSubstantialHtml(html?: string): boolean {
   return text.length >= 800
 }
 
+const INLINE_FLASH_KINDS = new Set(['cls', 'eastmoney-kx', 'wscn-live'])
+
+/** 财经快讯：列表已带正文，即使短于 substantial 阈值也直接渲染 */
+export function isInlineFlashBody(html: string | undefined, sourceId: string): boolean {
+  if (!html) return false
+  const source = findSource(sourceId)
+  if (!source || !INLINE_FLASH_KINDS.has(source.kind)) return false
+  return stripTags(html).length >= 12
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -607,8 +617,8 @@ export async function resolveArticleBody(
   }
 
   if (
-    isSubstantialHtml(article.contentHtml) &&
-    !hasBrokenTextEncoding(article.contentHtml!)
+    isInlineFlashBody(article.contentHtml, article.sourceId) ||
+    (isSubstantialHtml(article.contentHtml) && !hasBrokenTextEncoding(article.contentHtml!))
   ) {
     return {
       contentHtml: await absolutizeHtml(

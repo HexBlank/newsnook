@@ -83,8 +83,7 @@ export async function fetchSourceText(
   options?: FetchSourceOptions,
 ): Promise<string> {
   const page = options?.page
-  const paged =
-    page != null ? offsetPageRequest(source, page) : { url: source.url, requestForm: source.requestForm }
+  const paged = offsetPageRequest(source, page ?? 0)
   const rawUrl = options?.url ?? paged.url
   const transport = transportFor(rawUrl, { id: source.id, group: source.group })
   const method = source.requestMethod ?? 'GET'

@@ -1,3 +1,4 @@
+import { eastmoneyCommentProvider } from './providers/eastmoney'
 import { hackerNewsCommentProvider } from './providers/hackerNews'
 import { jandanCommentProvider } from './providers/jandan'
 import { neteaseCommentProvider } from './providers/netease'
@@ -9,6 +10,8 @@ import type {
 } from './types'
 
 const PROVIDERS: CommentProvider[] = [
+  // 东财须先于网易：误写的 neteaseDocId / 数字 id 不能被网易拦截
+  eastmoneyCommentProvider,
   neteaseCommentProvider,
   zhihuCommentProvider,
   jandanCommentProvider,

@@ -82,17 +82,37 @@ function cleanCommentContent(raw?: string): string {
     .trim()
 }
 
+function isNeteaseCommentForeign(article: {
+  sourceId?: string
+  originUrl?: string
+}): boolean {
+  const id = article.sourceId ?? ''
+  if (
+    id.startsWith('zhihu') ||
+    id.startsWith('jandan') ||
+    id.startsWith('hn') ||
+    id.startsWith('eastmoney') ||
+    id.startsWith('wscn') ||
+    id.startsWith('cls') ||
+    id.startsWith('jiqizhixin')
+  ) {
+    return true
+  }
+  const url = article.originUrl ?? ''
+  return (
+    url.includes('zhihu.com') ||
+    url.includes('eastmoney.com') ||
+    url.includes('wallstreetcn.com') ||
+    url.includes('cls.cn') ||
+    url.includes('jiqizhixin.com')
+  )
+}
+
 export const neteaseCommentProvider: CommentProvider = {
   canHandle(article) {
     if (article.sourceId?.startsWith('netease')) return true
     if (article.originUrl?.includes('163.com')) return true
-    if (
-      article.neteaseDocId &&
-      !article.sourceId?.startsWith('zhihu') &&
-      !article.sourceId?.startsWith('jandan') &&
-      !article.sourceId?.startsWith('hn') &&
-      !article.originUrl?.includes('zhihu.com')
-    ) {
+    if (article.neteaseDocId && !isNeteaseCommentForeign(article)) {
       return true
     }
     return false

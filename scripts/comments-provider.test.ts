@@ -3,6 +3,7 @@ import {
   findCommentProvider,
   supportsComments,
 } from '../src/features/comments/service'
+import { eastmoneyCommentProvider, extractEastmoneyNewsId } from '../src/features/comments/providers/eastmoney'
 import { neteaseCommentProvider } from '../src/features/comments/providers/netease'
 import { zhihuCommentProvider } from '../src/features/comments/providers/zhihu'
 import { jandanCommentProvider } from '../src/features/comments/providers/jandan'
@@ -48,7 +49,43 @@ const hnArticle = {
 assert.equal(supportsComments(hnArticle), true)
 assert.equal(findCommentProvider(hnArticle), hackerNewsCommentProvider)
 
-// 5. 纯 RSS / 国际新闻（无评论接口，应保持纯净）
+// 5. 东方财富：原站股吧跟帖（不得被网易 neteaseDocId 误匹配）
+const eastmoneyArticle = {
+  id: 'em-1',
+  sourceId: 'eastmoney-news',
+  originUrl: 'https://finance.eastmoney.com/a/202608063833574771.html',
+  neteaseDocId: '202608063833574771',
+}
+assert.equal(extractEastmoneyNewsId(eastmoneyArticle), '202608063833574771')
+assert.equal(supportsComments(eastmoneyArticle), true)
+assert.equal(findCommentProvider(eastmoneyArticle), eastmoneyCommentProvider)
+
+const eastmoneyKx = {
+  id: 'em-kx-1',
+  sourceId: 'eastmoney-kx',
+  originUrl: 'https://finance.eastmoney.com/a/202608063833669027.html',
+}
+assert.equal(supportsComments(eastmoneyKx), true)
+assert.equal(findCommentProvider(eastmoneyKx), eastmoneyCommentProvider)
+
+// 6. 华尔街见闻快讯 / 财联社电报：原站无跟帖入口，不展示评论
+const wscnLive = {
+  id: 'wscn-1',
+  sourceId: 'wscn-live',
+  originUrl: 'https://wallstreetcn.com/livenews/12345',
+  neteaseDocId: '12345',
+}
+assert.equal(supportsComments(wscnLive), false)
+assert.equal(findCommentProvider(wscnLive), undefined)
+
+const clsTelegraph = {
+  id: 'cls-1',
+  sourceId: 'cls-telegraph',
+  originUrl: 'https://www.cls.cn/detail/12345',
+}
+assert.equal(supportsComments(clsTelegraph), false)
+
+// 7. 纯 RSS / 国际新闻（无评论接口，应保持纯净）
 const rssArticle = {
   id: 'bbc-1',
   sourceId: 'bbc-zh',

@@ -5,6 +5,8 @@
  * 网易频道 ID 与可用性以 docs/news-sources.md 为准；空列表频道不注册。
  */
 
+import { md5Hex, sha1Hex } from '../lib/hash'
+
 export type SourceGroup = 'cn' | 'intl' | 'tech' | 'ai' | 'special'
 
 export type SourceKind =
@@ -20,6 +22,10 @@ export type SourceKind =
   | 'wordpress'
   | 'guokr'
   | 'jazzyear'
+  | 'cls'
+  | 'eastmoney-kx'
+  | 'eastmoney-news'
+  | 'wscn-live'
 
 export interface NewsSource {
   id: string
@@ -132,7 +138,7 @@ export const SOURCES: NewsSource[] = [
   neteaseChannel('netease-digital', '数码', 'T1348649776727'),
   neteaseChannel('netease-run', '跑步', 'T1411113472760'),
   neteaseChannel('netease-history', '历史', 'T1368497029546'),
-  neteaseChannel('netease-stock', '股票', 'T1473054348939'),
+  neteaseChannel('netease-stock', '股票', 'T1473054348939', { enabled: true }),
   neteaseChannel('netease-cba', 'CBA', 'T1348649475931'),
   neteaseChannel('netease-cn-football', '中国足球', 'T1348649503389'),
   {
@@ -270,6 +276,61 @@ export const SOURCES: NewsSource[] = [
     enabled: true,
   },
 
+  // —— 财经快讯 / 盘面（P0）——
+  {
+    id: 'cls-telegraph',
+    name: '财联社电报',
+    label: '财联社',
+    group: 'cn',
+    kind: 'cls',
+    // 实际请求由 offsetPageRequest → clsSignedListUrl 生成带 sign 的 URL
+    url: 'https://www.cls.cn/v1/roll/get_roll_list',
+    requestHeaders: { Referer: 'https://www.cls.cn/telegraph' },
+    enabled: true,
+  },
+  {
+    id: 'eastmoney-kx',
+    name: '东方财富快讯',
+    label: '东财快讯',
+    group: 'cn',
+    kind: 'eastmoney-kx',
+    url: 'https://newsapi.eastmoney.com/kuaixun/v1/getlist_102_ajaxResult_50_1_.html',
+    requestHeaders: { Referer: 'https://kuaixun.eastmoney.com/' },
+    enabled: true,
+  },
+  {
+    id: 'eastmoney-news',
+    name: '东方财富',
+    label: '东财',
+    group: 'cn',
+    kind: 'eastmoney-news',
+    url: 'https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_size=20&req_from=web_news',
+    requestHeaders: { Referer: 'https://finance.eastmoney.com/' },
+    enabled: true,
+  },
+  {
+    id: 'wscn-live',
+    name: '华尔街见闻快讯',
+    label: '见闻快讯',
+    group: 'cn',
+    kind: 'wscn-live',
+    url: 'https://api-one-wscn.awtmt.com/apiv1/content/lives?channel=global-channel&client=pc&limit=50',
+    requestHeaders: {
+      Accept: 'application/json,text/plain,*/*',
+      Referer: 'https://wallstreetcn.com/live',
+    },
+    enabled: true,
+  },
+  {
+    id: 'bbc-business',
+    name: 'BBC Business',
+    label: 'BBC商业',
+    group: 'intl',
+    kind: 'feed',
+    url: 'https://feeds.bbci.co.uk/news/business/rss.xml',
+    enabled: true,
+  },
+
   // —— 国际 ——
   // BBC 中文简体 RSS 已 301 → 繁体；china/world 旧 index.xml 停在 2011–2014 归档，改用现行 feeds
   { id: 'bbc-zh', name: 'BBC 中文', label: 'BBC中文', group: 'intl', kind: 'feed', url: 'https://feeds.bbci.co.uk/zhongwen/trad/rss.xml', enabled: true },
@@ -292,7 +353,7 @@ export const SOURCES: NewsSource[] = [
     group: 'intl',
     kind: 'google-news',
     url: 'https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en',
-    enabled: false,
+    enabled: true,
   },
   {
     id: 'gnews-tech',
@@ -468,9 +529,38 @@ export type OffsetPageRequest = {
   requestForm?: Record<string, string | number>
 }
 
+function searchParamsFromRecord(params: Record<string, string | number>): URLSearchParams {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    search.set(key, String(value))
+  }
+  return search
+}
+
+/** 财联社 web 签名：参数按 key 排序后 SHA1→MD5（与官网前端一致） */
+export function clsSignParams(params: Record<string, string | number>): string {
+  const search = searchParamsFromRecord(params)
+  search.sort()
+  return md5Hex(sha1Hex(search.toString()))
+}
+
+/** 财联社电报列表 URL（每次请求重新签名） */
+export function clsSignedListUrl(options?: { rn?: number; lastTime?: number }): string {
+  const params: Record<string, string | number> = {
+    app: 'CailianpressWeb',
+    last_time: options?.lastTime ?? 0,
+    os: 'web',
+    refresh_type: 1,
+    rn: options?.rn ?? 20,
+    sv: '8.7.9',
+  }
+  params.sign = clsSignParams(params)
+  return `https://www.cls.cn/v1/roll/get_roll_list?${searchParamsFromRecord(params).toString()}`
+}
+
 /**
  * 0-based 页码 → 上游请求。
- * 页码约定与网易一致：0 为首页；WordPress / 晚点上游是 1-based。
+ * 页码约定与网易一致：0 为首页；WordPress / 晚点 / 东财专栏上游是 1-based。
  */
 export function offsetPageRequest(source: NewsSource, page: number): OffsetPageRequest {
   const safePage = Math.max(0, page)
@@ -490,6 +580,17 @@ export function offsetPageRequest(source: NewsSource, page: number): OffsetPageR
       url: source.url,
       requestForm: { ...(source.requestForm ?? {}), page: safePage + 1 },
     }
+  }
+
+  if (source.kind === 'cls') {
+    return { url: clsSignedListUrl({ rn: 20, lastTime: 0 }) }
+  }
+
+  if (source.kind === 'eastmoney-news') {
+    const url = new URL(source.url)
+    url.searchParams.set('page_index', String(safePage + 1))
+    url.searchParams.set('req_trace', String(Date.now()))
+    return { url: url.href }
   }
 
   return { url: source.url, requestForm: source.requestForm }

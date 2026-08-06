@@ -69,7 +69,6 @@ export const DEFAULT_HIDDEN_CATEGORY_IDS: CategoryId[] = [
   'auto',
   'travel',
   'history',
-  'stock',
   'phone',
   'digital',
   'antique',
