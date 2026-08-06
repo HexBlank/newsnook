@@ -67,7 +67,7 @@ assert.equal(next.typography.fontScale, 1.22)
 console.log('layout-presets core: ok')
 
 // —— Task 2: builtins ——
-assert.equal(BUILTIN_PRESETS.length, 6)
+assert.equal(BUILTIN_PRESETS.length, 7)
 
 const portal = normalizeSnapshot(findBuiltinPreset('builtin-default')!.snapshot)
 assert.deepEqual(portal.categoryOrder, [
@@ -86,7 +86,7 @@ assert.ok(!portal.hiddenCategoryIds.includes('ent'))
 assert.ok(!portal.hiddenCategoryIds.includes('sports'))
 assert.ok(portal.hiddenCategoryIds.includes('ai'))
 assert.ok(portal.hiddenCategoryIds.includes('game'))
-assert.deepEqual(portal.categorySources.intl, ['bbc-zh', 'dw-top', 'scmp-china', 'gnews-world'])
+assert.deepEqual(portal.categorySources.intl, ['bbc-zh', 'dw-top', 'scmp-china', 'theinitium', 'gnews-world'])
 assert.deepEqual(portal.categorySources.hot, ['netease'])
 assert.deepEqual(portal.categorySources.ent, ['netease-ent', 'gnews-ent'])
 assert.ok(!portal.enabledSourceIds.includes('gnews-world'))
@@ -123,44 +123,73 @@ const visible = new Set(
 assert.ok(visible.has('tech') && visible.has('ai'))
 assert.ok(!visible.has('fun'))
 assert.ok(techSnap.categorySources.ai?.includes('qbitai'))
+assert.ok(techSnap.categorySources.ai?.includes('openai-news'))
+assert.ok(techSnap.categorySources.ai?.includes('anthropic'))
+assert.ok(techSnap.categorySources['tech-depth']?.includes('paulgraham'))
+assert.ok(techSnap.categorySources.tech?.includes('v2ex'))
 assert.ok(techSnap.categorySources.tech?.includes('ithome'))
-assert.ok(techSnap.categorySources.tech?.includes('gnews-tech'))
 assert.ok(!techSnap.enabledSourceIds.includes('qbitai'))
 assert.ok(!techSnap.enabledSourceIds.includes('ithome'))
-assert.ok(techSnap.enabledSourceIds.includes('geekpark'))
-assert.deepEqual(techSnap.categorySources.tech?.slice(-1), ['gnews-tech'])
+assert.ok(techSnap.enabledSourceIds.includes('huggingface'))
 
-const world = normalizeSnapshot(findBuiltinPreset('builtin-world')!.snapshot)
-assert.ok(world.categorySources.intl?.includes('bbc-zh'))
-assert.ok(world.categorySources.intl?.includes('gnews-world'))
-assert.ok(world.categorySources.science?.includes('gnews-science'))
-assert.ok(!world.enabledSourceIds.includes('bbc-zh'))
-assert.ok(world.enabledSourceIds.includes('france24'))
-assert.equal(world.categoryOrder[0], 'mix')
-assert.equal(world.categoryOrder[1], 'intl')
-assert.ok(world.categorySources.intl?.includes('gnews-world'))
+const depth = normalizeSnapshot(findBuiltinPreset('builtin-depth')!.snapshot)
+assert.ok(depth.categorySources['tech-depth']?.includes('quanta'))
+assert.ok(depth.categorySources['tech-depth']?.includes('stratechery'))
+assert.ok(depth.categorySources['tech-depth']?.includes('vitalik'))
+assert.ok(depth.categorySources.intl?.includes('foreign-affairs'))
+assert.ok(depth.categorySources.intl?.includes('sinocism'))
+assert.ok(depth.categorySources.intl?.includes('theinitium'))
+assert.ok(depth.categorySources['astral-codex-ten']?.includes('astral-codex-ten'))
+assert.ok(depth.categorySources.marginalian?.includes('marginalian'))
+assert.ok(depth.categorySources.aldaily?.includes('aldaily'))
+assert.ok(depth.categorySources.theue?.includes('theue'))
+assert.ok(depth.categorySources.tech?.includes('v2ex'))
+assert.deepEqual(depth.enabledSourceIds, [])
+assert.deepEqual(
+  depth.categoryOrder.filter((id) => !depth.hiddenCategoryIds.includes(id)),
+  ['tech-depth', 'intl', 'astral-codex-ten', 'marginalian', 'aldaily', 'theue', 'tech'],
+)
+assert.ok(depth.hiddenCategoryIds.includes('mix'))
 
 const biz = normalizeSnapshot(findBuiltinPreset('builtin-biz')!.snapshot)
 assert.ok(biz.categorySources.finance?.includes('latepost'))
 assert.ok(biz.categorySources.finance?.includes('jazzyear'))
-assert.ok(biz.categorySources.finance?.includes('gnews-business'))
+assert.ok(biz.categorySources.finance?.includes('kr36'))
+assert.ok(biz.categorySources.intl?.includes('bloomberg-opinion'))
+assert.ok(biz.categorySources.intl?.includes('theinitium'))
 assert.ok(!biz.enabledSourceIds.includes('latepost'))
-assert.ok(biz.enabledSourceIds.includes('huxiu'))
+assert.ok(biz.enabledSourceIds.includes('eastmoney-news'))
 assert.equal(biz.categoryOrder[1], 'finance')
-assert.deepEqual(biz.categorySources.finance?.slice(-1), ['gnews-business'])
+
+const world = normalizeSnapshot(findBuiltinPreset('builtin-world')!.snapshot)
+assert.ok(world.categorySources.intl?.includes('foreign-affairs'))
+assert.ok(world.categorySources.intl?.includes('theinitium'))
+assert.ok(world.categorySources.intl?.includes('bbc-zh'))
+assert.ok(world.categorySources['tech-depth']?.includes('quanta'))
+assert.ok(world.categorySources.science?.includes('gnews-science'))
+assert.ok(!world.enabledSourceIds.includes('foreign-affairs'))
+assert.ok(world.enabledSourceIds.includes('bbc-zh-china'))
+assert.equal(world.categoryOrder[0], 'mix')
+assert.equal(world.categoryOrder[1], 'intl')
 
 const mindful = normalizeSnapshot(findBuiltinPreset('builtin-mindful')!.snapshot)
 assert.ok(mindful.categorySources.science?.includes('guokr'))
+assert.ok(mindful.categorySources.tech?.includes('v2ex'))
+assert.ok(mindful.categorySources.theue?.includes('theue'))
 assert.ok(mindful.categorySources.zhihu?.includes('zhihu-daily'))
 assert.deepEqual(mindful.enabledSourceIds, [])
 assert.equal(mindful.categoryOrder[0], 'science')
-assert.equal(mindful.categoryOrder[2], 'zhihu')
+assert.equal(mindful.categoryOrder[2], 'theue')
+assert.equal(mindful.categoryOrder[3], 'zhihu')
 assert.ok(mindful.hiddenCategoryIds.includes('mix'))
 
 const fun = normalizeSnapshot(findBuiltinPreset('builtin-fun')!.snapshot)
+assert.ok(fun.categorySources.fun?.includes('netease-fun'))
 assert.ok(fun.categorySources.ent?.includes('netease-ent'))
 assert.ok(fun.categorySources.ent?.includes('gnews-ent'))
+assert.ok(fun.categorySources.game?.includes('netease-game'))
 assert.ok(fun.categorySources.history?.includes('netease-history'))
+assert.ok(fun.categorySources.zhihu?.includes('zhihu-daily'))
 assert.deepEqual(fun.enabledSourceIds, [])
 assert.ok(!fun.categorySources.antique)
 assert.equal(fun.categoryOrder[0], 'fun')
@@ -213,7 +242,14 @@ const worldApply = activatePresetWritable(migrated, 'builtin-world')!
 const worldPrefs = applySnapshotToPrefs(DEFAULT_PREFERENCES, worldApply.snapshot)
 assert.deepEqual(
   visibleCategories(worldPrefs).map((c) => c.id),
-  ['mix', 'intl', 'hot', 'science', 'tech-depth'],
+  ['mix', 'intl', 'hot', 'tech-depth', 'science'],
+)
+
+const depthApply = activatePresetWritable(migrated, 'builtin-depth')!
+const depthPrefs = applySnapshotToPrefs(DEFAULT_PREFERENCES, depthApply.snapshot)
+assert.deepEqual(
+  visibleCategories(depthPrefs).map((c) => c.id),
+  ['tech-depth', 'intl', 'astral-codex-ten', 'marginalian', 'aldaily', 'theue', 'tech'],
 )
 
 const ensured = ensureActiveUserPreset(afterDelete)

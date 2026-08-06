@@ -23,6 +23,7 @@ import { CATEGORIES, type NewsCategory } from '../../sources/categories'
 import {
   BUILTIN_BIZ_ID,
   BUILTIN_DEFAULT_ID,
+  BUILTIN_DEPTH_ID,
   BUILTIN_FUN_ID,
   BUILTIN_MINDFUL_ID,
   BUILTIN_TECH_ID,
@@ -105,6 +106,8 @@ function getBuiltinIcon(id: string) {
       return LayoutGrid
     case BUILTIN_TECH_ID:
       return Cpu
+    case BUILTIN_DEPTH_ID:
+      return Sparkles
     case BUILTIN_BIZ_ID:
       return TrendingUp
     case BUILTIN_WORLD_ID:

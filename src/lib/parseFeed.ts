@@ -593,7 +593,7 @@ function parseArenaBlog(source: NewsSource, payload: string, fetchedAt: number):
   // 若 flight 解析失败，退回 sitemap 的 loc（标题用 slug 可读化）
   if (!found.size) {
     for (const match of payload.matchAll(
-      /<loc>\s*(https:\/\/arena\.ai\/blog\/([a-z0-9\-]+)\/?)\s*<\/loc>/gi,
+      /<loc>\s*(https:\/\/arena\.ai\/blog\/([a-z0-9-]+)\/?)\s*<\/loc>/gi,
     )) {
       const slug = match[2]
       if (!slug || ARENA_SKIP_SLUGS.has(slug)) continue
@@ -655,7 +655,7 @@ function parseAnthropicNews(source: NewsSource, payload: string, fetchedAt: numb
 
   // flight 失败时退回列表页可见的 /news/<slug> 链接
   if (!found.size) {
-    for (const match of payload.matchAll(/href="\/news\/([a-zA-Z0-9\-]+)"/g)) {
+    for (const match of payload.matchAll(/href="\/news\/([a-zA-Z0-9-]+)"/g)) {
       const slug = match[1]
       if (!slug || ANTHROPIC_SKIP_SLUGS.has(slug)) continue
       found.set(slug, { publishedAt: '', title: titleFromSlug(slug), summary: '' })
