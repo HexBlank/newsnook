@@ -189,17 +189,20 @@ async function postJson(
 }
 
 function errorMessage(provider: string, response: JsonResponse): Error {
-  if (response.status === 429) {
-    return new Error(
-      `${provider}：触发速率限制（429 Too Many Requests），请求过于频繁，请稍候重试或在设置中降低并发。`,
-    )
-  }
   const data = response.data as {
     error?: { message?: string; code?: string | number }
     message?: string
   } | null
   const detail = data?.error?.message ?? data?.message
-  return new Error(detail ? `${provider}：${detail}` : `${provider} 请求失败（HTTP ${response.status}）`)
+  if (detail) {
+    return new Error(`${provider}：${detail}`)
+  }
+  if (response.status === 429) {
+    return new Error(
+      `${provider}：触发速率限制（429 Too Many Requests），请求过于频繁，请稍候重试或在设置中降低并发。`,
+    )
+  }
+  return new Error(`${provider} 请求失败（HTTP ${response.status}）`)
 }
 
 /**
@@ -212,15 +215,35 @@ const DEFAULT_BATCH_ITEMS = 10
  */
 const DEFAULT_BATCH_CHARS = 6000
 
-/**
- * 单条请求接口模式（如标准 DeepLX /translate）下的最大并发请求数，避免触发 429 限流
- */
-const DEFAULT_CONCURRENCY_LIMIT = 3
-
 function normalizeOpenAiConcurrency(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) return 2
   if (value < 1 || value > 10) return 2
   return value
+}
+
+function normalizeDeepLxConcurrency(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) return 2
+  if (value < 1 || value > 5) return 2
+  return value
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('翻译已取消', 'AbortError'))
+      return
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      reject(new DOMException('翻译已取消', 'AbortError'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 async function mapConcurrent<T, R>(
@@ -512,33 +535,61 @@ export class DeepLXProvider extends CloudProvider {
       )
     }
 
-    // 单段请求接口模式（/translate）：以滚动窗口按最大并发限制 3 处理，每个段落完成时实时派发
+    // 单段请求接口模式（/translate）：以滚动窗口按配置并发（1~5，默认 2）处理，配合错峰节流与 429 退避重试
+    const concurrency = normalizeDeepLxConcurrency(this.config.concurrency)
     return mapConcurrent(
       request.texts,
-      DEFAULT_CONCURRENCY_LIMIT,
-      async (text) => {
-        const response = await postJson(
-          url.toString(),
-          {
-            text,
-            ...(sourceLang ? { source_lang: sourceLang } : {}),
-            target_lang: language(this.id, request.targetLanguage),
-          },
-          deepLxHeaders(this.config.apiKey),
-          request.signal,
-        )
-        if (response.status < 200 || response.status >= 300) throw errorMessage('DeepLX', response)
-        const data = response.data as DeepLxResponse
-        if (typeof data.code === 'number' && data.code !== 200) {
-          if (data.code === 429) {
-            throw new Error('DeepLX：触发速率限制（429 Too Many Requests），请求过于频繁，请稍候重试。')
-          }
-          throw new Error(`DeepLX：${data.message ?? `服务返回错误码 ${data.code}`}`)
+      concurrency,
+      async (text, index) => {
+        // 请求前平滑错峰：错开并发请求（每段间隔 120ms）
+        if (index > 0) {
+          await sleep(120, request.signal)
         }
-        if (typeof data.data === 'string') return data.data
-        const officialText = data.translations?.[0]?.text
-        if (officialText) return officialText
-        throw new Error('DeepLX 返回的数据格式不正确')
+
+        const sendSingleRequest = async (): Promise<{ is429: boolean; text?: string; error?: Error }> => {
+          const response = await postJson(
+            url.toString(),
+            {
+              text,
+              ...(sourceLang ? { source_lang: sourceLang } : {}),
+              target_lang: language(this.id, request.targetLanguage),
+            },
+            deepLxHeaders(this.config.apiKey),
+            request.signal,
+          )
+          if (response.status === 429) {
+            return {
+              is429: true,
+              error: new Error('DeepLX：触发速率限制（429 Too Many Requests），请求过于频繁，请稍候重试或在设置中降低并发。'),
+            }
+          }
+          if (response.status < 200 || response.status >= 300) throw errorMessage('DeepLX', response)
+          const data = response.data as DeepLxResponse
+          if (typeof data.code === 'number' && data.code !== 200) {
+            if (data.code === 429) {
+              return {
+                is429: true,
+                error: new Error('DeepLX：触发速率限制（429 Too Many Requests），请求过于频繁，请稍候重试或在设置中降低并发。'),
+              }
+            }
+            throw new Error(`DeepLX：${data.message ?? `服务返回错误码 ${data.code}`}`)
+          }
+          if (typeof data.data === 'string') return { is429: false, text: data.data }
+          const officialText = data.translations?.[0]?.text
+          if (officialText) return { is429: false, text: officialText }
+          throw new Error('DeepLX 返回的数据格式不正确')
+        }
+
+        let res = await sendSingleRequest()
+        if (res.is429) {
+          // 遭遇 429 速率限制时，自动等待 1.2 秒进行一次退避重试
+          await sleep(1200, request.signal)
+          res = await sendSingleRequest()
+          if (res.is429) {
+            throw res.error ?? new Error('DeepLX：触发速率限制（429 Too Many Requests）')
+          }
+        }
+        return res.text ?? ''
       },
       request.signal,
       (singleTranslated, index) => {

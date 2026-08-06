@@ -16,6 +16,7 @@ import {
 
 import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { ConfirmDialog, OptionPickerDialog } from '../../components/ConfirmDialog'
+import { ToggleSwitch } from '../../components/ToggleSwitch'
 import {
   TRANSLATION_LANGUAGES,
   TRANSLATION_PROVIDERS,
@@ -40,6 +41,7 @@ import type {
   TranslationProviderId,
 } from '../../features/translation/types'
 import { isLocalTranslationProviderId } from '../../features/translation/types'
+import { clearFeedTranslations } from '../../features/translation/feedTranslationStorage'
 
 interface Props {
   prefs: TranslationPrefs
@@ -119,6 +121,7 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   const [modelListMessage, setModelListMessage] = useState('')
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [remoteModels, setRemoteModels] = useState<string[]>([])
+  const [clearedFeedCache, setClearedFeedCache] = useState(false)
 
   const autoSource = prefs.sourceLanguage === 'auto'
   const source = prefs.sourceLanguage === 'auto' ? null : mlKitLanguage(prefs.sourceLanguage)
@@ -328,6 +331,44 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
 
   return (
     <SettingsShell title="翻译" caption={`${providerName} · ${translationDisplayModeLabel(prefs.displayMode)}`} onBack={onBack}>
+      <SettingsSection title="信息流外文翻译">
+        <div className="divide-y divide-haze border-y border-haze bg-ink">
+          <div className="page-x flex items-center justify-between py-4">
+            <div className="pr-4">
+              <span className="block text-[14px] text-paper">自动翻译外文标题</span>
+              <span className="mt-1 block text-[11px] leading-relaxed text-paper-faint">
+                开启后，首页及各分类列表中的外文新闻标题将自动检测并翻译为目标语言，导读保留原文，无需点进正文即可快速知晓新闻要点。
+              </span>
+            </div>
+            <ToggleSwitch
+              checked={prefs.translateFeed !== false}
+              label={prefs.translateFeed !== false ? '关闭自动翻译外文标题' : '开启自动翻译外文标题'}
+              onChange={() => onChange({ ...prefs, translateFeed: prefs.translateFeed === false })}
+            />
+          </div>
+
+          <div className="page-x flex items-center justify-between py-3 bg-ink/40">
+            <div>
+              <span className="block text-[13px] text-paper">清空信息流翻译缓存</span>
+              <span className="text-[11px] text-paper-faint">
+                重置所有已缓存的标题译文
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearFeedTranslations()
+                setClearedFeedCache(true)
+                setTimeout(() => setClearedFeedCache(false), 2000)
+              }}
+              className="rounded-full border border-haze bg-paper/5 px-3 py-1 text-[11.5px] text-paper-muted hover:border-paper-faint hover:text-paper transition-colors"
+            >
+              {clearedFeedCache ? '已清空缓存' : '立即清空'}
+            </button>
+          </div>
+        </div>
+      </SettingsSection>
+
       <SettingsSection title="译文呈现">
         <ul className="grid grid-cols-2 gap-px border-y border-haze bg-haze">
           {([
@@ -598,6 +639,33 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
                 </button>
               }
             />
+            {prefs.provider === 'deeplx' && (
+              <>
+                <Field
+                  label="最大并发"
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={String(activeCloud.concurrency ?? 2)}
+                  placeholder="2"
+                  onChange={(raw) => {
+                    const trimmed = raw.trim()
+                    if (!trimmed) {
+                      updateCloud({ concurrency: 2 })
+                      return
+                    }
+                    const n = Number(trimmed)
+                    if (!Number.isFinite(n)) return
+                    const truncated = Math.trunc(n)
+                    if (truncated < 1 || truncated > 5) return
+                    updateCloud({ concurrency: truncated })
+                  }}
+                />
+                <p className="mt-1 text-[11px] leading-relaxed text-paper-faint">
+                  提示：若您的 DeepLX 服务支持，推荐在 URL 后使用 <code className="font-mono text-cinnabar-soft">/v2/translate</code> 端点启用单次批量打包；若使用单段 <code className="font-mono text-cinnabar-soft">/translate</code> 遭遇 429 限流，可将并发设为 1。
+                </p>
+              </>
+            )}
             {prefs.provider === 'azure' && (
               <Field label="AZURE REGION（可选）" value={activeCloud.region ?? ''} placeholder="例如 eastasia；全局单服务资源可留空" onChange={(region) => updateCloud({ region })} />
             )}

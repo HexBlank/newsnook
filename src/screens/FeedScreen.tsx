@@ -15,6 +15,9 @@ import { inkPulse, markRevealedAll, revealItems } from '../lib/motion'
 import type { PaginationViewState } from '../lib/feedPagination'
 import { chineseDate, dayBucket, relativeTime } from '../lib/time'
 import type { Article, RefreshProgress, SourceStatus } from '../lib/types'
+import { DEFAULT_TRANSLATION_PREFS } from '../features/translation/config'
+import { useFeedTranslation } from '../features/translation/useFeedTranslation'
+import type { TranslationPrefs } from '../features/translation/types'
 import type { CategoryId, NewsCategory } from '../sources/categories'
 import { findSource, type NewsSource } from '../sources/registry'
 
@@ -51,6 +54,7 @@ interface Props {
     onSelect: (id: string) => void
     onManage: () => void
   }
+  translationPrefs?: TranslationPrefs
   onRefresh: () => Promise<void>
   onLoadMore?: () => void
   onOpen: (article: Article) => void
@@ -169,6 +173,7 @@ export const FeedScreen = memo(function FeedScreen({
   onSelectSource,
   articlesForCategory,
   presetSwitcher,
+  translationPrefs,
   onRefresh,
   onLoadMore,
   onOpen,
@@ -194,6 +199,13 @@ export const FeedScreen = memo(function FeedScreen({
   const scrollFrameRef = useRef(0)
   /** 横滑提交后跳过列表入场动画，避免预览→正式页闪白/闪透明 */
   const skipRevealAfterSwipe = useRef(false)
+
+  const activeTranslationPrefs = translationPrefs ?? DEFAULT_TRANSLATION_PREFS
+  const { translations } = useFeedTranslation(
+    articles,
+    activeTranslationPrefs,
+    { enabled: activeTranslationPrefs.translateFeed !== false },
+  )
 
   const { containerRef, indicatorRef, phase, cancel: cancelPull } = usePullToRefresh({
     onRefresh,
@@ -251,79 +263,76 @@ export const FeedScreen = memo(function FeedScreen({
       if (list) list.push(article)
       else map.set(key, [article])
     })
-    return [...map.entries()]
+    return Array.from(map.entries())
   }, [rest])
 
-  const revealKey = categoryId ?? ''
-  const revealSignature = `${revealKey}:${articles.length}:${articles
-    .slice(0, 10)
-    .map((a) => a.id)
-    .join(',')}`
-
+  // 列表内容变更时（分类切换/刷新）执行优雅入场交错；横滑翻页后跳过，避免闪动
   useLayoutEffect(() => {
-    const el = containerRef.current
-    if (!el || !categoryId) return
-
-    const prevId = activeCategoryRef.current
-    if (prevId !== categoryId) {
-      if (prevId) {
-        scrollByCategory.current[prevId] = scrollTopRef.current
-      }
-
-      const nextTop = scrollByCategory.current[categoryId] ?? 0
-      el.scrollTop = nextTop
-      const actual = el.scrollTop
-      scrollByCategory.current[categoryId] = actual
-      scrollTopRef.current = actual
-      const scale = 0.12 + Math.min(1, actual / 150) * 0.88
-      inkLineRef.current?.style.setProperty('transform', `scaleX(${scale})`)
-      activeCategoryRef.current = categoryId
-    }
-
-    // 横滑切分类时标记已展示，避免重复入场
     if (skipRevealAfterSwipe.current) {
       skipRevealAfterSwipe.current = false
-      markRevealedAll(listRef.current)
+      if (listRef.current) markRevealedAll(listRef.current)
+      return
     }
-  }, [categoryId, containerRef, articles.length, revealSignature])
+    if (listRef.current) {
+      revealItems(listRef.current, reduced)
+    }
+  }, [categoryId, articles, reduced])
+
+  // 分类切换时，恢复该分类上次记住的滚动位置（若初次访问则平滑归零）
+  useLayoutEffect(() => {
+    const prevCat = activeCategoryRef.current
+    activeCategoryRef.current = categoryId
+    const container = containerRef.current
+    if (!container) return
+
+    const savedTop = (categoryId ? scrollByCategory.current[categoryId] : undefined) ?? 0
+    if (prevCat !== categoryId) {
+      container.scrollTop = savedTop
+      scrollTopRef.current = savedTop
+      const scale = 0.12 + Math.min(1, savedTop / 150) * 0.88
+      inkLineRef.current?.style.setProperty('transform', `scaleX(${scale})`)
+    }
+  }, [categoryId, containerRef])
 
   useEffect(() => {
-    if (skipRevealAfterSwipe.current) return
-    // layout 里若已处理过 swipe skip，dataset 已是 revealed，这里会自然空跑
-    revealItems(listRef.current, reduced)
-  }, [revealSignature, reduced])
-
-  useEffect(() => {
-    if (wasRefreshing.current && !refreshing) inkPulse(pulseRef.current, reduced)
+    if (wasRefreshing.current && !refreshing && pulseRef.current) {
+      inkPulse(pulseRef.current, reduced)
+    }
     wasRefreshing.current = refreshing
   }, [refreshing, reduced])
 
   useEffect(() => {
-    const root = containerRef.current
-    const sentinel = loadMoreSentinelRef.current
-    if (refreshing) {
-      loadRequestedForRef.current = ''
-      return
-    }
+    loadRequestedForRef.current = ''
+  }, [categoryId, selectedSourceId])
+
+  useEffect(() => {
     const canLoadMore = paginationState === 'available' || paginationState === 'error'
-    if (!root || !sentinel || !canLoadMore || !onLoadMoreRef.current) return
+    if (!onLoadMoreRef.current || !canLoadMore) return
+    const sentinel = loadMoreSentinelRef.current
+    const root = containerRef.current
+    if (!sentinel || !root) return
 
     const observer = new IntersectionObserver(
-      ([entry]) => {
-        const signature = `${categoryId ?? ''}:${articles.length}`
-        if (!entry.isIntersecting) {
-          if (loadRequestedForRef.current === signature) loadRequestedForRef.current = ''
-          return
-        }
-        if (loadingMoreRef.current || loadRequestedForRef.current === signature) return
-        loadRequestedForRef.current = signature
+      (entries) => {
+        const first = entries[0]
+        if (!first?.isIntersecting) return
+        if (loadingMoreRef.current) return
+        const lastArticle = articles[articles.length - 1]
+        const requestKey = `${categoryId ?? 'all'}:${selectedSourceId ?? 'all'}:${lastArticle?.id ?? ''}`
+        if (!requestKey || loadRequestedForRef.current === requestKey) return
+        loadRequestedForRef.current = requestKey
         onLoadMoreRef.current?.()
       },
-      { root, rootMargin: '0px 0px 640px', threshold: 0 },
+      {
+        root,
+        rootMargin: '240px 0px',
+        threshold: 0.01,
+      },
     )
+
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [articles.length, categoryId, containerRef, loadingMore, paginationState, refreshing])
+  }, [articles, categoryId, containerRef, paginationState, selectedSourceId])
 
   useEffect(
     () => () => {
@@ -363,9 +372,12 @@ export const FeedScreen = memo(function FeedScreen({
     <div ref={listRef} className="w-full max-w-[2400px] mx-auto pb-12">
       {lead && (
         <LeadStory
+          key={lead.id}
           article={lead}
           read={readIds.has(lead.id)}
           saved={laterIds.has(lead.id)}
+          translated={translations.get(lead.id)}
+          displayMode={activeTranslationPrefs.displayMode}
           onOpen={onOpen}
           onSourceClick={onSelectSource}
           variant={isDesktop ? 'banner' : 'lead'}
@@ -413,6 +425,8 @@ export const FeedScreen = memo(function FeedScreen({
                   article={article}
                   read={readIds.has(article.id)}
                   saved={laterIds.has(article.id)}
+                  translated={translations.get(article.id)}
+                  displayMode={activeTranslationPrefs.displayMode}
                   onOpen={onOpen}
                   onSourceClick={onSelectSource}
                   variant="row"

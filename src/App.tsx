@@ -776,6 +776,7 @@ export default function App() {
           laterIds={laterIds}
           showLead={false}
           offline={offline}
+          translationPrefs={prefs.translation}
           onRefresh={runRefresh}
           onLoadMore={() => void loadMore([focusSource.id])}
           onOpen={openArticle}
@@ -847,6 +848,7 @@ export default function App() {
         onSelectSource={setCategoryFilterSourceId}
         articlesForCategory={articlesForCategory}
         presetSwitcher={presetSwitcherConfig}
+        translationPrefs={prefs.translation}
         onRefresh={runRefresh}
         onLoadMore={() => void loadMore(listScopeIds)}
         onOpen={openArticle}

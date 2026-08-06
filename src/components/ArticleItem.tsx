@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { BookmarkCheck } from 'lucide-react'
 
 import { InkImage } from './InkImage'
@@ -10,6 +10,8 @@ interface RowProps {
   article: Article
   read: boolean
   saved: boolean
+  translated?: { title: string; summary?: string }
+  displayMode?: 'replace' | 'compare'
   onOpen: (article: Article) => void
   onSourceClick?: (sourceId: string) => void
   /** 邻页预览等场景跳过入场透明，避免横滑露白 */
@@ -22,14 +24,42 @@ export const ArticleRow = memo(function ArticleRow({
   article,
   read,
   saved,
+  translated,
+  displayMode = 'replace',
   onOpen,
   onSourceClick,
   revealed = false,
   variant = 'auto',
 }: RowProps) {
+  const [showOriginal, setShowOriginal] = useState(false)
   const showRow = variant === 'row' || variant === 'auto'
   const showCard = variant === 'card' || variant === 'auto'
-  const displaySummary = cleanSummaryText(article.summary, article.title)
+  const hasTranslation = Boolean(translated?.title)
+  const isTranslated = hasTranslation && !showOriginal
+  const activeTitle = isTranslated ? (translated?.title || article.title) : article.title
+  const displaySummary = cleanSummaryText(article.summary, activeTitle)
+
+  const renderTranslateBadge = () => {
+    if (!hasTranslation) return null
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation()
+          setShowOriginal((prev) => !prev)
+        }}
+        title={isTranslated ? '点击查看原文' : '点击查看译文'}
+        className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-sans font-normal transition-all cursor-pointer select-none ${
+          isTranslated
+            ? 'text-cinnabar/90 border border-cinnabar/25 bg-cinnabar/5 hover:bg-cinnabar/15 active:scale-95'
+            : 'text-paper-muted border border-haze bg-paper/5 hover:bg-paper/10 hover:text-paper active:scale-95'
+        }`}
+      >
+        {isTranslated ? '译' : '原'}
+      </span>
+    )
+  }
 
   return (
     <li
@@ -84,6 +114,7 @@ export const ArticleRow = memo(function ArticleRow({
               <span aria-hidden className="text-paper-faint/40">·</span>
               <span>{articleRelativeTime(article)}</span>
               {saved && <BookmarkCheck size={11} strokeWidth={1.8} className="text-cinnabar ml-0.5" />}
+              {renderTranslateBadge()}
             </span>
 
             {/* 文章标题 */}
@@ -94,8 +125,15 @@ export const ArticleRow = memo(function ArticleRow({
                   : 'font-medium text-paper group-hover:text-cinnabar/90'
               }`}
             >
-              {article.title}
+              {activeTitle}
             </span>
+
+            {/* 双语对照模式下的外文原标题 */}
+            {isTranslated && displayMode === 'compare' && (
+              <span className="mt-0.5 block font-sans text-[11.5px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+                {article.title}
+              </span>
+            )}
 
             {/* 清洗后的正文摘要 */}
             {displaySummary && (
@@ -181,6 +219,7 @@ export const ArticleRow = memo(function ArticleRow({
                 >
                   {article.sourceLabel}
                 </span>
+                {renderTranslateBadge()}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span>{articleRelativeTime(article)}</span>
@@ -196,8 +235,15 @@ export const ArticleRow = memo(function ArticleRow({
                   : 'font-medium text-paper group-hover:text-cinnabar'
               }`}
             >
-              {article.title}
+              {activeTitle}
             </h2>
+
+            {/* 双语对照模式下的外文原标题 */}
+            {isTranslated && displayMode === 'compare' && (
+              <p className="mt-1 font-sans text-[12px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+                {article.title}
+              </p>
+            )}
 
             {/* 摘要导读 */}
             {displaySummary && (
@@ -228,6 +274,8 @@ interface LeadProps {
   article: Article
   read?: boolean
   saved?: boolean
+  translated?: { title: string; summary?: string }
+  displayMode?: 'replace' | 'compare'
   onOpen: (article: Article) => void
   onSourceClick?: (sourceId: string) => void
   revealed?: boolean
@@ -242,14 +290,42 @@ export const LeadStory = memo(function LeadStory({
   article,
   read = false,
   saved = false,
+  translated,
+  displayMode = 'replace',
   onOpen,
   onSourceClick,
   revealed = false,
   variant = 'auto',
 }: LeadProps) {
+  const [showOriginal, setShowOriginal] = useState(false)
   const showLead = variant === 'lead' || variant === 'auto'
   const showBanner = variant === 'banner' || variant === 'auto'
-  const displaySummary = cleanSummaryText(article.summary, article.title)
+  const hasTranslation = Boolean(translated?.title)
+  const isTranslated = hasTranslation && !showOriginal
+  const activeTitle = isTranslated ? (translated?.title || article.title) : article.title
+  const displaySummary = cleanSummaryText(article.summary, activeTitle)
+
+  const renderTranslateBadge = () => {
+    if (!hasTranslation) return null
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation()
+          setShowOriginal((prev) => !prev)
+        }}
+        title={isTranslated ? '点击查看原文' : '点击查看译文'}
+        className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-sans font-normal transition-all cursor-pointer select-none ${
+          isTranslated
+            ? 'text-cinnabar/90 border border-cinnabar/25 bg-cinnabar/5 hover:bg-cinnabar/15 active:scale-95'
+            : 'text-paper-muted border border-haze bg-paper/5 hover:bg-paper/10 hover:text-paper active:scale-95'
+        }`}
+      >
+        {isTranslated ? '译' : '原'}
+      </span>
+    )
+  }
 
   return (
     <>
@@ -300,14 +376,20 @@ export const LeadStory = memo(function LeadStory({
                 头条 · {article.sourceLabel}
               </span>
               {saved && <BookmarkCheck size={11} strokeWidth={1.8} className="text-cinnabar" />}
+              {renderTranslateBadge()}
             </span>
             <span
               className={`lead-title mt-2.5 block font-display text-[21px] leading-[1.28] md:text-[25px] ${
                 read ? 'font-normal text-paper-muted/80 opacity-80' : 'font-medium text-paper'
               }`}
             >
-              {article.title}
+              {activeTitle}
             </span>
+            {isTranslated && displayMode === 'compare' && (
+              <span className="mt-1 block font-sans text-[12px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+                {article.title}
+              </span>
+            )}
             {displaySummary && (
               <span
                 className={`mt-2 line-clamp-2 text-[13px] leading-[1.65] ${
@@ -373,6 +455,7 @@ export const LeadStory = memo(function LeadStory({
                     头条特写 · {article.sourceLabel}
                   </span>
                   {saved && <BookmarkCheck size={13} strokeWidth={1.8} className="text-cinnabar" />}
+                  {renderTranslateBadge()}
                 </div>
 
                 <h1
@@ -382,8 +465,14 @@ export const LeadStory = memo(function LeadStory({
                       : 'text-paper group-hover:text-cinnabar'
                   }`}
                 >
-                  {article.title}
+                  {activeTitle}
                 </h1>
+
+                {isTranslated && displayMode === 'compare' && (
+                  <p className="mt-1.5 font-sans text-[13px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+                    {article.title}
+                  </p>
+                )}
 
                 {displaySummary && (
                   <p className="mt-3.5 line-clamp-4 text-[14px] leading-[1.7] text-paper-muted">
@@ -410,3 +499,4 @@ export const LeadStory = memo(function LeadStory({
     </>
   )
 })
+

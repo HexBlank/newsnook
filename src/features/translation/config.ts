@@ -62,6 +62,7 @@ const DEFAULT_CLOUD: TranslationPrefs['cloud'] = {
   deeplx: {
     apiKey: '',
     endpoint: '',
+    concurrency: 2,
   },
   openai: {
     apiKey: '',
@@ -76,6 +77,7 @@ export const DEFAULT_TRANSLATION_PREFS: TranslationPrefs = {
   displayMode: 'replace',
   sourceLanguage: 'auto',
   targetLanguage: 'zh-Hans',
+  translateFeed: true,
   cloud: DEFAULT_CLOUD,
 }
 
@@ -129,6 +131,10 @@ export function normalizeTranslationPrefs(value: unknown): TranslationPrefs {
   if (sourceLanguage !== 'auto' && sourceLanguage === targetLanguage) {
     targetLanguage = sourceLanguage === 'en' ? 'zh-Hans' : 'en'
   }
+  const translateFeed =
+    typeof input.translateFeed === 'boolean'
+      ? input.translateFeed
+      : DEFAULT_TRANSLATION_PREFS.translateFeed
 
   return {
     provider,
@@ -137,6 +143,7 @@ export function normalizeTranslationPrefs(value: unknown): TranslationPrefs {
       : DEFAULT_TRANSLATION_PREFS.displayMode,
     sourceLanguage,
     targetLanguage,
+    translateFeed,
     cloud: {
       google: normalizeCloud(cloud.google, DEFAULT_CLOUD.google),
       azure: normalizeCloud(cloud.azure, DEFAULT_CLOUD.azure),
