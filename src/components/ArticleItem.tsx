@@ -54,13 +54,13 @@ export const ArticleRow = memo(function ArticleRow({
           <span className="min-w-0 flex-1">
             {/* 顶部信源与时间元数据 */}
             <span
-              className={`flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] ${
-                read ? 'text-paper-faint/80' : 'text-paper-faint'
+              className={`flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.12em] ${
+                read ? 'text-paper-faint/75' : 'text-paper-faint'
               }`}
             >
               {!read && (
                 <span
-                  className="h-1.5 w-1.5 rounded-full bg-cinnabar shadow-[0_0_4px_rgba(196,92,74,0.45)] shrink-0"
+                  className="h-1 w-1 rounded-full bg-cinnabar/90 shrink-0"
                   aria-label="未读"
                 />
               )}
@@ -81,7 +81,7 @@ export const ArticleRow = memo(function ArticleRow({
               >
                 {article.sourceLabel}
               </span>
-              <span aria-hidden className="text-paper-faint/60">·</span>
+              <span aria-hidden className="text-paper-faint/40">·</span>
               <span>{articleRelativeTime(article)}</span>
               {saved && <BookmarkCheck size={11} strokeWidth={1.8} className="text-cinnabar ml-0.5" />}
             </span>
@@ -90,7 +90,7 @@ export const ArticleRow = memo(function ArticleRow({
             <span
               className={`row-title mt-1.5 block font-display text-[16px] leading-[1.38] tracking-[0.01em] transition-colors ${
                 read
-                  ? 'font-normal text-paper-muted/75'
+                  ? 'font-normal text-paper-muted/65'
                   : 'font-medium text-paper group-hover:text-cinnabar/90'
               }`}
             >
@@ -101,7 +101,7 @@ export const ArticleRow = memo(function ArticleRow({
             {displaySummary && (
               <span
                 className={`mt-1.5 line-clamp-2 text-[12px] leading-[1.58] ${
-                  read ? 'text-paper-faint/80' : 'text-paper-muted/90'
+                  read ? 'text-paper-faint/75' : 'text-paper-muted/90'
                 }`}
               >
                 {displaySummary}
@@ -109,13 +109,13 @@ export const ArticleRow = memo(function ArticleRow({
             )}
           </span>
 
-          {/* 缩略图容器：微圆角与极细边框 */}
+          {/* 缩略图容器：微圆角与极细边框，强制满幅裁切消除 Letterboxing */}
           {article.image && (
-            <span className="relative shrink-0 overflow-hidden rounded-lg border border-haze/70 bg-ink-deep/20 shadow-2xs mt-0.5">
+            <span className="relative shrink-0 overflow-hidden rounded-lg border border-haze/70 bg-ink-deep/30 shadow-2xs mt-0.5 h-16 w-16 sm:h-17 sm:w-17">
               <InkImage
                 src={article.image}
                 collapseOnError
-                className={`h-16 w-16 sm:h-17 sm:w-17 object-cover transition-all duration-300 ${
+                className={`h-full w-full object-cover transition-all duration-300 ${
                   read
                     ? 'opacity-[0.62] grayscale-[0.25] saturate-[0.8] group-active:opacity-85'
                     : 'opacity-[0.98] group-active:opacity-100'
@@ -157,10 +157,10 @@ export const ArticleRow = memo(function ArticleRow({
 
             {/* 信源与时间 */}
             <div className="flex items-center justify-between gap-2 font-mono text-[10px] tracking-[0.14em] text-paper-faint">
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
                 {!read && (
                   <span
-                    className="h-2 w-2 rounded-full bg-cinnabar shadow-[0_0_6px_rgba(196,92,74,0.4)] shrink-0"
+                    className="h-1.5 w-1.5 rounded-full bg-cinnabar/90 shrink-0"
                     aria-hidden
                   />
                 )}
