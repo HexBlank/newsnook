@@ -26,6 +26,8 @@ export interface CloudTranslationConfig {
   region?: string
   /** OpenAI 兼容提供商必填；其它云端可空。 */
   model?: string
+  /** OpenAI 兼容段级并发；其它云端可忽略。合法 1–10，缺省 2。 */
+  concurrency?: number
 }
 
 export interface TranslationPrefs {

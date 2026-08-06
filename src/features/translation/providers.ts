@@ -212,6 +212,12 @@ const DEFAULT_BATCH_CHARS = 6000
  */
 const DEFAULT_CONCURRENCY_LIMIT = 3
 
+function normalizeOpenAiConcurrency(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) return 2
+  if (value < 1 || value > 10) return 2
+  return value
+}
+
 async function mapConcurrent<T, R>(
   items: T[],
   concurrency: number,
@@ -542,10 +548,11 @@ export class OpenAiProvider extends CloudProvider {
     const model = this.config.model!.trim()
     const system = openAiTranslationSystemPrompt(request.sourceLanguage, request.targetLanguage)
     const url = `${base}/chat/completions`
+    const concurrency = normalizeOpenAiConcurrency(this.config.concurrency)
 
     return mapConcurrent(
       request.texts,
-      DEFAULT_CONCURRENCY_LIMIT,
+      concurrency,
       async (text) => {
         const response = await postJson(
           url,

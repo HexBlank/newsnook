@@ -64,13 +64,17 @@ function Field({
   value,
   placeholder,
   type = 'text',
+  min,
+  max,
   onChange,
   suffix,
 }: {
   label: string
   value: string
   placeholder?: string
-  type?: 'text' | 'password'
+  type?: 'text' | 'password' | 'number'
+  min?: number
+  max?: number
   onChange: (value: string) => void
   suffix?: ReactNode
 }) {
@@ -84,6 +88,9 @@ function Field({
           type={type}
           value={value}
           placeholder={placeholder}
+          min={min}
+          max={max}
+          inputMode={type === 'number' ? 'numeric' : undefined}
           spellCheck={false}
           autoCapitalize="none"
           autoCorrect="off"
@@ -602,6 +609,26 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
                   placeholder="例如 gpt-4o-mini"
                   onChange={(model) => updateCloud({ model })}
                 />
+                <Field
+                  label="最大并发"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={String(activeCloud.concurrency ?? 2)}
+                  placeholder="2"
+                  onChange={(raw) => {
+                    const trimmed = raw.trim()
+                    if (!trimmed) {
+                      updateCloud({ concurrency: 2 })
+                      return
+                    }
+                    const n = Number(trimmed)
+                    if (!Number.isFinite(n)) return
+                    const truncated = Math.trunc(n)
+                    if (truncated < 1 || truncated > 10) return
+                    updateCloud({ concurrency: truncated })
+                  }}
+                />
                 <button
                   type="button"
                   disabled={
@@ -651,7 +678,8 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
             {prefs.provider === 'openai' && (
               <p className="text-[10.5px] leading-relaxed text-paper-faint">
                 填写 OpenAI 兼容 Base URL（如 https://api.openai.com/v1），不要填写完整
-                /chat/completions 路径。Model 可手填，或从远端列表选择。
+                /chat/completions 路径。Model 可手填，或从远端列表选择。最大并发为每次同时请求的段落数（1–10，默认
+                2）。
               </p>
             )}
           </div>

@@ -13,6 +13,7 @@ const empty = normalizeTranslationPrefs({})
 assert.equal(empty.cloud.openai?.endpoint, 'https://api.openai.com/v1')
 assert.equal(empty.cloud.openai?.apiKey, '')
 assert.equal(empty.cloud.openai?.model ?? '', '')
+assert.equal(empty.cloud.openai.concurrency, 2)
 
 const saved = normalizeTranslationPrefs({
   provider: 'openai',
@@ -28,6 +29,33 @@ assert.equal(saved.provider, 'openai')
 assert.equal(saved.cloud.openai.apiKey, 'sk-test')
 assert.equal(saved.cloud.openai.endpoint, 'https://gateway.example/v1/')
 assert.equal(saved.cloud.openai.model, 'gpt-4o-mini')
+
+const withConcurrency = normalizeTranslationPrefs({
+  cloud: {
+    openai: {
+      apiKey: 'k',
+      endpoint: 'https://api.openai.com/v1',
+      model: 'm',
+      concurrency: 5,
+    },
+  },
+})
+assert.equal(withConcurrency.cloud.openai.concurrency, 5)
+
+const clampedHigh = normalizeTranslationPrefs({
+  cloud: { openai: { apiKey: '', endpoint: 'https://api.openai.com/v1', concurrency: 99 } },
+})
+assert.equal(clampedHigh.cloud.openai.concurrency, 2)
+
+const clampedLow = normalizeTranslationPrefs({
+  cloud: { openai: { apiKey: '', endpoint: 'https://api.openai.com/v1', concurrency: 0 } },
+})
+assert.equal(clampedLow.cloud.openai.concurrency, 2)
+
+const clampedFloat = normalizeTranslationPrefs({
+  cloud: { openai: { apiKey: '', endpoint: 'https://api.openai.com/v1', concurrency: 3.7 } },
+})
+assert.equal(clampedFloat.cloud.openai.concurrency, 2)
 
 assert.equal(normalizeOpenAiBaseUrl('https://api.openai.com/v1/'), 'https://api.openai.com/v1')
 assert.equal(
@@ -159,8 +187,26 @@ globalThis.fetch = async (_input, init) => {
   const user = body.messages.find((m) => m.role === 'user')?.content ?? ''
   return Response.json({ choices: [{ message: { content: user } }] })
 }
-await provider.translate({ texts: many, sourceLanguage: 'en', targetLanguage: 'zh-Hans' })
-assert.ok(maxActive <= 3, `max concurrent ${maxActive}`)
+
+const providerDefault = new OpenAiProvider({
+  apiKey: 'sk-test',
+  endpoint: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+})
+await providerDefault.translate({ texts: many, sourceLanguage: 'en', targetLanguage: 'zh-Hans' })
+assert.ok(maxActive <= 2, `default max concurrent ${maxActive}`)
+
+active = 0
+maxActive = 0
+const providerFive = new OpenAiProvider({
+  apiKey: 'sk-test',
+  endpoint: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+  concurrency: 5,
+})
+await providerFive.translate({ texts: many, sourceLanguage: 'en', targetLanguage: 'zh-Hans' })
+assert.ok(maxActive <= 5, `custom max concurrent ${maxActive}`)
+assert.ok(maxActive >= 2, `expected some parallelism, got ${maxActive}`)
 
 globalThis.fetch = originalFetch
 

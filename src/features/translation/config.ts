@@ -67,6 +67,7 @@ const DEFAULT_CLOUD: TranslationPrefs['cloud'] = {
     apiKey: '',
     endpoint: 'https://api.openai.com/v1',
     model: '',
+    concurrency: 2,
   },
 }
 
@@ -86,6 +87,16 @@ const SOURCE_LANGUAGE_IDS = new Set<TranslationSourceLanguage>([
 ])
 const DISPLAY_MODES = new Set<TranslationDisplayMode>(['compare', 'replace'])
 
+function normalizeConcurrency(value: unknown, fallback: number): number {
+  const fallbackSafe =
+    Number.isInteger(fallback) && fallback >= 1 && fallback <= 10 ? fallback : 2
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return fallbackSafe
+  }
+  if (value < 1 || value > 10) return fallbackSafe
+  return value
+}
+
 function normalizeCloud(
   value: unknown,
   fallback: CloudTranslationConfig,
@@ -99,6 +110,7 @@ function normalizeCloud(
         : fallback.endpoint,
     region: typeof input.region === 'string' ? input.region.trim() : fallback.region,
     model: typeof input.model === 'string' ? input.model.trim() : (fallback.model ?? ''),
+    concurrency: normalizeConcurrency(input.concurrency, fallback.concurrency ?? 2),
   }
 }
 
