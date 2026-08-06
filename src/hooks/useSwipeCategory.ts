@@ -69,10 +69,37 @@ export function useSwipeCategory({
     measureWidth()
     window.addEventListener('resize', measureWidth)
 
+    let moveRafId = 0
+    let pendingDragX: number | null = null
+
+    const flushDrag = () => {
+      moveRafId = 0
+      if (pendingDragX !== null) {
+        setDragX(pendingDragX)
+        pendingDragX = null
+      }
+    }
+
+    const cancelDragRaf = () => {
+      if (moveRafId) {
+        window.cancelAnimationFrame(moveRafId)
+        moveRafId = 0
+      }
+      pendingDragX = null
+    }
+
     const apply = (value: number, ms: number) => {
       dragXRef.current = value
       setTransitionMs(ms)
-      setDragX(value)
+      if (ms > 0 || value === 0) {
+        cancelDragRaf()
+        setDragX(value)
+      } else {
+        pendingDragX = value
+        if (!moveRafId) {
+          moveRafId = window.requestAnimationFrame(flushDrag)
+        }
+      }
     }
 
     const resetTouch = () => {
@@ -82,6 +109,7 @@ export function useSwipeCategory({
     }
 
     const settle = () => {
+      cancelDragRaf()
       const needsTransition = dragXRef.current !== 0
       apply(0, needsTransition ? SETTLE_MS : 0)
       resetTouch()
@@ -167,6 +195,7 @@ export function useSwipeCategory({
     }
 
     const onTouchEnd = (event: TouchEvent) => {
+      cancelDragRaf()
       const start = startRef.current
       if (!start || lockRef.current !== 'horizontal') {
         resetTouch()
@@ -193,6 +222,7 @@ export function useSwipeCategory({
     element.addEventListener('touchcancel', settle)
 
     return () => {
+      cancelDragRaf()
       window.removeEventListener('resize', measureWidth)
       element.removeEventListener('touchstart', onTouchStart)
       element.removeEventListener('touchmove', onTouchMove)

@@ -29,34 +29,64 @@ export function CategoryRail({
   const scrollerRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef<Map<CategoryId, HTMLButtonElement>>(new Map())
   const lastActiveIdRef = useRef(activeId)
+  const tabMetricsRef = useRef<Map<CategoryId, number>>(new Map())
+  const scrollerMetricsRef = useRef<{ scrollWidth: number; clientWidth: number }>({
+    scrollWidth: 0,
+    clientWidth: 0,
+  })
   const [, setTick] = useState(0)
 
   const isDragging = dragX !== 0
   const activeIndex = categories.findIndex((category) => category.id === activeId)
 
-  // 尺寸或分类变化时测量各 Tab 几何位置
+  // 尺寸或分类变化时统一测量各 Tab 几何位置并缓存，避免拖拽渲染时高频访问 DOM 引发布局回流
+  const measureMetrics = () => {
+    const scroller = scrollerRef.current
+    if (scroller) {
+      scrollerMetricsRef.current = {
+        scrollWidth: scroller.scrollWidth,
+        clientWidth: scroller.clientWidth,
+      }
+    }
+    const map = new Map<CategoryId, number>()
+    tabRefs.current.forEach((el, id) => {
+      map.set(id, el.offsetLeft + el.offsetWidth / 2)
+    })
+    tabMetricsRef.current = map
+  }
+
   useLayoutEffect(() => {
+    measureMetrics()
     setTick((t) => t + 1)
   }, [categories])
 
   useEffect(() => {
-    const handleResize = () => setTick((t) => t + 1)
+    const handleResize = () => {
+      measureMetrics()
+      setTick((t) => t + 1)
+    }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // 获取某个 tab 的几何中心
+  // 获取某个 tab 的几何中心（优先读缓存，0 DOM Read）
   const getTabCenter = (id: CategoryId) => {
+    const cached = tabMetricsRef.current.get(id)
+    if (typeof cached === 'number' && cached > 0) return cached
     const el = tabRefs.current.get(id)
     if (!el) return 0
-    return el.offsetLeft + el.offsetWidth / 2
+    const center = el.offsetLeft + el.offsetWidth / 2
+    tabMetricsRef.current.set(id, center)
+    return center
   }
 
   // 算出滑动进度与指示器位置
   const width =
     containerWidth > 0
       ? containerWidth
-      : scrollerRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 360)
+      : scrollerMetricsRef.current.clientWidth ||
+        scrollerRef.current?.clientWidth ||
+        (typeof window !== 'undefined' ? window.innerWidth : 360)
 
   const progress = width > 0 ? -dragX / width : 0
 
@@ -121,8 +151,12 @@ export function CategoryRail({
     const scroller = scrollerRef.current
     if (!scroller || currentCenter <= 0) return
 
-    const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth)
-    const targetScroll = Math.max(0, Math.min(maxScroll, currentCenter - scroller.clientWidth / 2))
+    const { scrollWidth, clientWidth } = scrollerMetricsRef.current.clientWidth > 0
+      ? scrollerMetricsRef.current
+      : { scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth }
+
+    const maxScroll = Math.max(0, scrollWidth - clientWidth)
+    const targetScroll = Math.max(0, Math.min(maxScroll, currentCenter - clientWidth / 2))
 
     if (isDragging) {
       scroller.scrollLeft = targetScroll

@@ -307,10 +307,11 @@
     }
   }
 
-  /* 列表项虚拟化降载：浏览器跳过视口外元素的 Layout/Paint */
+  /* 列表项虚拟化与隔离降载：现代 WebView 跳过视口外 Layout/Paint，旧版 WebView 限制重排扩散 */
   .article-row-item {
     content-visibility: auto;
     contain-intrinsic-size: auto 110px;
+    contain: layout style;
   }
 
   /* 加载占位：一层缓慢扫过的微光，走 GPU 合成层 */
@@ -318,6 +319,7 @@
     position: relative;
     overflow: hidden;
     background-color: rgb(var(--tone-paper-rgb) / 0.045);
+    transform: translateZ(0);
   }
 
   .ink-shimmer::after {
@@ -416,6 +418,15 @@
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
+  contain: style;
+}
+
+.reader-prose p,
+.reader-prose blockquote,
+.reader-prose pre,
+.reader-prose figure,
+.reader-prose .reader-table-scroll {
+  contain: layout style;
 }
 
 .reader-prose nobr {
@@ -807,13 +818,11 @@
 @keyframes ink-image-in {
   from {
     opacity: 0;
-    transform: scale(1.025);
-    filter: blur(6px);
+    transform: scale(1.015);
   }
   to {
     opacity: 1;
-    transform: none;
-    filter: none;
+    transform: scale(1);
   }
 }
 

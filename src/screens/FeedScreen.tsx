@@ -265,18 +265,20 @@ export const FeedScreen = memo(function FeedScreen({
     if (!el || !categoryId) return
 
     const prevId = activeCategoryRef.current
-    if (prevId && prevId !== categoryId) {
-      scrollByCategory.current[prevId] = scrollTopRef.current
-    }
+    if (prevId !== categoryId) {
+      if (prevId) {
+        scrollByCategory.current[prevId] = scrollTopRef.current
+      }
 
-    const nextTop = scrollByCategory.current[categoryId] ?? 0
-    el.scrollTop = nextTop
-    const actual = el.scrollTop
-    scrollByCategory.current[categoryId] = actual
-    scrollTopRef.current = actual
-    const scale = 0.12 + Math.min(1, actual / 150) * 0.88
-    inkLineRef.current?.style.setProperty('transform', `scaleX(${scale})`)
-    activeCategoryRef.current = categoryId
+      const nextTop = scrollByCategory.current[categoryId] ?? 0
+      el.scrollTop = nextTop
+      const actual = el.scrollTop
+      scrollByCategory.current[categoryId] = actual
+      scrollTopRef.current = actual
+      const scale = 0.12 + Math.min(1, actual / 150) * 0.88
+      inkLineRef.current?.style.setProperty('transform', `scaleX(${scale})`)
+      activeCategoryRef.current = categoryId
+    }
 
     // 横滑切分类时标记已展示，避免重复入场
     if (skipRevealAfterSwipe.current) {
@@ -617,9 +619,9 @@ export const FeedScreen = memo(function FeedScreen({
         >
           {/*
             三页均 absolute inset-0：布局盒始终在裁剪视口内，各自 translate 跟手。
-            仅在发生横滑拖拽（dragX !== 0）时挂载邻页视图，消除日常上下滚动时的闲置 DOM 与图片开销。
+            按手势方向单向挂载邻页视图（向右滑挂载上一分类，向左滑挂载下一分类），消除不可见反方向的 DOM 与图片开销。
           */}
-          {swipeEnabled && dragX !== 0 && (
+          {swipeEnabled && dragX > 0 && prevCategory && (
             <div
               className="pointer-events-none absolute inset-0 overflow-hidden bg-ink"
               style={{
@@ -629,16 +631,14 @@ export const FeedScreen = memo(function FeedScreen({
               }}
               aria-hidden
             >
-              {prevCategory ? (
-                <CategoryPeek
-                  articles={prevArticles}
-                  showLead={showLead}
-                  readIds={readIds}
-                  laterIds={laterIds}
-                  scrollTop={scrollByCategory.current[prevCategory.id] ?? 0}
-                  onOpen={onOpen}
-                />
-              ) : null}
+              <CategoryPeek
+                articles={prevArticles}
+                showLead={showLead}
+                readIds={readIds}
+                laterIds={laterIds}
+                scrollTop={scrollByCategory.current[prevCategory.id] ?? 0}
+                onOpen={onOpen}
+              />
             </div>
           )}
 
@@ -657,7 +657,7 @@ export const FeedScreen = memo(function FeedScreen({
             listScroller
           )}
 
-          {swipeEnabled && dragX !== 0 && (
+          {swipeEnabled && dragX < 0 && nextCategory && (
             <div
               className="pointer-events-none absolute inset-0 overflow-hidden bg-ink"
               style={{
@@ -667,16 +667,14 @@ export const FeedScreen = memo(function FeedScreen({
               }}
               aria-hidden
             >
-              {nextCategory ? (
-                <CategoryPeek
-                  articles={nextArticles}
-                  showLead={showLead}
-                  readIds={readIds}
-                  laterIds={laterIds}
-                  scrollTop={scrollByCategory.current[nextCategory.id] ?? 0}
-                  onOpen={onOpen}
-                />
-              ) : null}
+              <CategoryPeek
+                articles={nextArticles}
+                showLead={showLead}
+                readIds={readIds}
+                laterIds={laterIds}
+                scrollTop={scrollByCategory.current[nextCategory.id] ?? 0}
+                onOpen={onOpen}
+              />
             </div>
           )}
         </div>
