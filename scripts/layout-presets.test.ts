@@ -18,6 +18,7 @@ import {
   duplicateSourcesAcrossCategories,
   ensureActiveUserPreset,
   findBuiltinPreset,
+  mixThemeOverlap,
   normalizeSnapshot,
   resolvePreset,
   saveAsUserPreset,
@@ -93,7 +94,26 @@ assert.ok(!portal.enabledSourceIds.includes('gnews-world'))
 for (const preset of BUILTIN_PRESETS) {
   const dupes = duplicateSourcesAcrossCategories(preset.snapshot.categorySources)
   assert.deepEqual(dupes, [], `${preset.id} has cross-category source dupes: ${dupes.join(',')}`)
+  const overlap = mixThemeOverlap(
+    preset.snapshot.categorySources,
+    preset.snapshot.enabledSourceIds,
+  )
+  assert.deepEqual(
+    overlap,
+    [],
+    `${preset.id} mix overlaps theme sources: ${overlap.join(',')}`,
+  )
 }
+
+const categoryDefaults: Record<string, string[]> = {}
+for (const category of CATEGORIES) {
+  if (category.sourceIds?.length) categoryDefaults[category.id] = [...category.sourceIds]
+}
+assert.deepEqual(
+  duplicateSourcesAcrossCategories(categoryDefaults),
+  [],
+  'CATEGORIES base source lists must be mutually exclusive',
+)
 
 const tech = findBuiltinPreset('builtin-tech')!
 const techSnap = normalizeSnapshot(tech.snapshot)
@@ -102,42 +122,53 @@ const visible = new Set(
 )
 assert.ok(visible.has('tech') && visible.has('ai'))
 assert.ok(!visible.has('fun'))
-assert.ok(techSnap.enabledSourceIds.includes('qbitai'))
-assert.ok(techSnap.enabledSourceIds.includes('ithome'))
-assert.ok(techSnap.enabledSourceIds.includes('gnews-tech'))
+assert.ok(techSnap.categorySources.ai?.includes('qbitai'))
+assert.ok(techSnap.categorySources.tech?.includes('ithome'))
+assert.ok(techSnap.categorySources.tech?.includes('gnews-tech'))
+assert.ok(!techSnap.enabledSourceIds.includes('qbitai'))
+assert.ok(!techSnap.enabledSourceIds.includes('ithome'))
+assert.ok(techSnap.enabledSourceIds.includes('geekpark'))
 assert.deepEqual(techSnap.categorySources.tech?.slice(-1), ['gnews-tech'])
 
 const world = normalizeSnapshot(findBuiltinPreset('builtin-world')!.snapshot)
-assert.ok(world.enabledSourceIds.includes('bbc-zh'))
-assert.ok(world.enabledSourceIds.includes('gnews-world'))
-assert.ok(world.enabledSourceIds.includes('gnews-science'))
+assert.ok(world.categorySources.intl?.includes('bbc-zh'))
+assert.ok(world.categorySources.intl?.includes('gnews-world'))
+assert.ok(world.categorySources.science?.includes('gnews-science'))
+assert.ok(!world.enabledSourceIds.includes('bbc-zh'))
+assert.ok(world.enabledSourceIds.includes('france24'))
 assert.equal(world.categoryOrder[0], 'mix')
 assert.equal(world.categoryOrder[1], 'intl')
 assert.ok(world.categorySources.intl?.includes('gnews-world'))
 
 const biz = normalizeSnapshot(findBuiltinPreset('builtin-biz')!.snapshot)
-assert.ok(biz.enabledSourceIds.includes('latepost'))
-assert.ok(biz.enabledSourceIds.includes('jazzyear'))
-assert.ok(biz.enabledSourceIds.includes('gnews-business'))
+assert.ok(biz.categorySources.finance?.includes('latepost'))
+assert.ok(biz.categorySources.finance?.includes('jazzyear'))
+assert.ok(biz.categorySources.finance?.includes('gnews-business'))
+assert.ok(!biz.enabledSourceIds.includes('latepost'))
+assert.ok(biz.enabledSourceIds.includes('huxiu'))
 assert.equal(biz.categoryOrder[1], 'finance')
 assert.deepEqual(biz.categorySources.finance?.slice(-1), ['gnews-business'])
 
 const mindful = normalizeSnapshot(findBuiltinPreset('builtin-mindful')!.snapshot)
-assert.ok(mindful.enabledSourceIds.includes('guokr'))
-assert.ok(mindful.enabledSourceIds.includes('zhihu-daily'))
-assert.equal(mindful.categoryOrder[1], 'science')
-assert.equal(mindful.categoryOrder[3], 'zhihu')
+assert.ok(mindful.categorySources.science?.includes('guokr'))
+assert.ok(mindful.categorySources.zhihu?.includes('zhihu-daily'))
+assert.deepEqual(mindful.enabledSourceIds, [])
+assert.equal(mindful.categoryOrder[0], 'science')
+assert.equal(mindful.categoryOrder[2], 'zhihu')
+assert.ok(mindful.hiddenCategoryIds.includes('mix'))
 
 const fun = normalizeSnapshot(findBuiltinPreset('builtin-fun')!.snapshot)
-assert.ok(fun.enabledSourceIds.includes('netease-ent'))
-assert.ok(fun.enabledSourceIds.includes('gnews-ent'))
-assert.ok(fun.enabledSourceIds.includes('netease-history'))
-assert.ok(!fun.enabledSourceIds.includes('netease-antique'))
-assert.equal(fun.categoryOrder[1], 'fun')
+assert.ok(fun.categorySources.ent?.includes('netease-ent'))
+assert.ok(fun.categorySources.ent?.includes('gnews-ent'))
+assert.ok(fun.categorySources.history?.includes('netease-history'))
+assert.deepEqual(fun.enabledSourceIds, [])
+assert.ok(!fun.categorySources.antique)
+assert.equal(fun.categoryOrder[0], 'fun')
 assert.deepEqual(
   fun.categoryOrder.filter((id) => !fun.hiddenCategoryIds.includes(id)),
-  ['mix', 'fun', 'ent', 'game', 'history', 'zhihu'],
+  ['fun', 'ent', 'game', 'history', 'zhihu'],
 )
+assert.ok(fun.hiddenCategoryIds.includes('mix'))
 
 console.log('layout-presets builtins: ok')
 

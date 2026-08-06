@@ -165,10 +165,31 @@ function builtinPreset(
  * 内置场景包原则：
  * - 可见栏 5～10 个，顺序即阅读优先级
  * - 主题栏信源：1 主 + 1～2 辅（含至多 1 个 gnews）
- * - **同一预设内，各主题分类的 sourceId 互斥**（不跨栏重复；综合 mix 除外，它是启用源的混合视图）
- * - 综合启用：人设精选，不整组 dump；对应场景显式打开 gnews
+ * - **同一预设内，任意分类的 sourceId 互斥**（主题栏互斥；综合 enabled 也不得与主题栏重复）
+ * - 综合启用：仅收录未落入其他可见分类的源；若无独占源则隐藏综合
  * - AI / 游戏 / 深度等留给专题预设，不挤默认门户
  */
+
+/** 主题分类（非综合）已占用的信源 */
+export function themeAssignedSourceIds(
+  categorySources: Record<string, string[]>,
+): Set<string> {
+  const assigned = new Set<string>()
+  for (const [categoryId, sourceIds] of Object.entries(categorySources)) {
+    if (categoryId === FOLLOWS_ENABLED_SOURCES) continue
+    for (const sourceId of sourceIds) assigned.add(sourceId)
+  }
+  return assigned
+}
+
+/** 综合启用列表：去掉已落入主题分类的源，保证与主题栏互斥 */
+export function exclusiveEnabledSourceIds(
+  categorySources: Record<string, string[]>,
+  enabledSourceIds: string[],
+): string[] {
+  const theme = themeAssignedSourceIds(categorySources)
+  return enabledSourceIds.filter((id) => !theme.has(id))
+}
 
 /** 检查主题栏信源是否跨分类重复；返回重复的 sourceId（已排序） */
 export function duplicateSourcesAcrossCategories(
@@ -187,225 +208,271 @@ export function duplicateSourcesAcrossCategories(
   return [...dupes].sort()
 }
 
+/** 综合启用与主题栏的交集（应为空） */
+export function mixThemeOverlap(
+  categorySources: Record<string, string[]>,
+  enabledSourceIds: string[],
+): string[] {
+  const theme = themeAssignedSourceIds(categorySources)
+  return enabledSourceIds.filter((id) => theme.has(id)).sort()
+}
+
 export const BUILTIN_PRESETS: readonly LayoutPreset[] = [
-  builtinPreset(
-    BUILTIN_DEFAULT_ID,
-    '全景门户',
-    '要闻娱乐 · 科技商业 · 国际科普 · 轻松收尾',
-    {
-      categoryOrder: [...PORTAL_VISIBLE_CATEGORY_IDS],
-      hiddenCategoryIds: hiddenExcept([...PORTAL_VISIBLE_CATEGORY_IDS]),
-      categorySources: {
-        // 热点只留国内头条；国际源专属 intl，避免与热点重复
-        hot: pickKnown('netease'),
-        ent: pickKnown('netease-ent', 'gnews-ent'),
-        sports: pickKnown('netease-sports', 'gnews-sports'),
-        tech: pickKnown('netease-tech', 'ithome', 'sspai'),
-        finance: pickKnown('netease-biz', 'latepost', 'kr36'),
-        intl: pickKnown('bbc-zh', 'dw-top', 'scmp-china', 'gnews-world'),
-        health: pickKnown('netease-health', 'gnews-health'),
-        science: pickKnown('guokr', 'pansci', 'gnews-science'),
-        fun: pickKnown('netease-fun', 'jandan'),
+  (() => {
+    const categorySources = {
+      // 热点只留国内头条；国际源专属 intl，避免与热点重复
+      hot: pickKnown('netease'),
+      ent: pickKnown('netease-ent', 'gnews-ent'),
+      sports: pickKnown('netease-sports', 'gnews-sports'),
+      tech: pickKnown('netease-tech', 'ithome', 'sspai'),
+      finance: pickKnown('netease-biz', 'latepost', 'kr36'),
+      intl: pickKnown('bbc-zh', 'dw-top', 'scmp-china', 'gnews-world'),
+      health: pickKnown('netease-health', 'gnews-health'),
+      science: pickKnown('guokr', 'pansci', 'gnews-science'),
+      fun: pickKnown('netease-fun', 'jandan'),
+    }
+    return builtinPreset(
+      BUILTIN_DEFAULT_ID,
+      '全景门户',
+      '要闻娱乐 · 科技商业 · 国际科普 · 轻松收尾',
+      {
+        categoryOrder: [...PORTAL_VISIBLE_CATEGORY_IDS],
+        hiddenCategoryIds: hiddenExcept([...PORTAL_VISIBLE_CATEGORY_IDS]),
+        categorySources,
+        customCategories: [],
+        // 综合仅保留未落入主题栏的启用源；英文发现走主题栏 gnews
+        enabledSourceIds: exclusiveEnabledSourceIds(categorySources, defaultEnabledIds()),
       },
-      customCategories: [],
-      // 综合保持中文门户密度；英文发现走主题栏 gnews，不灌进综合
-      enabledSourceIds: defaultEnabledIds(),
-    },
-  ),
-  builtinPreset(
-    BUILTIN_TECH_ID,
-    '极客与 AI',
-    'AI 一线 · 极客工具 · 深度长文 · 硬核科普',
-    {
-      categoryOrder: ['mix', 'ai', 'tech', 'tech-depth', 'science'],
-      hiddenCategoryIds: hiddenExcept(['mix', 'ai', 'tech', 'tech-depth', 'science']),
-      categorySources: {
-        ai: pickKnown(
-          'qbitai',
-          'jiqizhixin',
-          'aiera',
-          'arena',
-          'anthropic',
-          'openai-news',
-          'deepmind',
-        ),
-        tech: pickKnown('netease-tech', 'ithome', 'sspai', 'gnews-tech'),
-        'tech-depth': pickKnown('arstechnica', 'mittr', 'verge', 'ifanr', 'hn'),
-        science: pickKnown('guokr', 'pansci', 'huanqiukexue', 'gnews-science'),
-      },
-      customCategories: [],
-      enabledSourceIds: pickKnown(
-        'netease-tech',
-        'ithome',
-        'sspai',
-        'geekpark',
-        'solidot',
-        'ruanyifeng',
-        'appinn',
-        'ifanr',
-        'infoq-cn',
-        'arstechnica',
-        'mittr',
-        'gnews-tech',
+    )
+  })(),
+  (() => {
+    const categorySources = {
+      ai: pickKnown(
         'qbitai',
         'jiqizhixin',
         'aiera',
         'arena',
         'anthropic',
         'openai-news',
-        'google-ai',
         'deepmind',
-        'huggingface',
-        'mittr-ai',
-        'lastweek-ai',
-        'simonw',
-        'guokr',
-        'pansci',
-        'zhishifenzi',
-        'huanqiukexue',
-        'gnews-science',
       ),
-    },
-  ),
-  builtinPreset(
-    BUILTIN_BIZ_ID,
-    '商业创投',
-    '深度特写 · 创投产业 · 科技观察 · 国际宏观',
-    {
-      categoryOrder: ['mix', 'finance', 'tech', 'intl', 'ai'],
-      hiddenCategoryIds: hiddenExcept(['mix', 'finance', 'tech', 'intl', 'ai']),
-      categorySources: {
-        finance: pickKnown('latepost', 'jazzyear', 'kr36', 'gnews-business'),
-        tech: pickKnown('ifanr', 'geekpark', 'sspai'),
-        intl: pickKnown('scmp-china', 'bbc-zh', 'gnews-world'),
-        ai: pickKnown('qbitai', 'jiqizhixin', 'aiera'),
-      },
-      customCategories: [],
-      enabledSourceIds: pickKnown(
-        'latepost',
-        'jazzyear',
-        'kr36',
-        'huxiu',
-        'tmtpost',
-        'techcrunch',
-        'netease-biz',
-        'gnews-business',
-        'sspai',
-        'ifanr',
-        'geekpark',
-        'qbitai',
-        'jiqizhixin',
-        'aiera',
-        'mittr',
-        'scmp-china',
-        'bbc-zh',
-        'dw-top',
-        'gnews-world',
-      ),
-    },
-  ),
-  builtinPreset(
-    BUILTIN_WORLD_ID,
-    '全球视野',
-    '公共广电 · Google 发现 · 亚洲视角 · 科学深度',
-    {
-      categoryOrder: ['mix', 'intl', 'hot', 'science', 'tech-depth'],
-      hiddenCategoryIds: hiddenExcept(['mix', 'intl', 'hot', 'science', 'tech-depth']),
-      categorySources: {
-        intl: pickKnown(
-          'bbc-zh',
-          'bbc-world',
-          'dw-top',
-          'scmp-china',
-          'npr',
-          'guardian-world',
-          'gnews-world',
+      tech: pickKnown('netease-tech', 'ithome', 'sspai', 'gnews-tech'),
+      'tech-depth': pickKnown('arstechnica', 'mittr', 'verge', 'ifanr', 'hn'),
+      science: pickKnown('guokr', 'pansci', 'huanqiukexue', 'gnews-science'),
+    }
+    return builtinPreset(
+      BUILTIN_TECH_ID,
+      '极客与 AI',
+      'AI 一线 · 极客工具 · 深度长文 · 硬核科普',
+      {
+        categoryOrder: ['mix', 'ai', 'tech', 'tech-depth', 'science'],
+        hiddenCategoryIds: hiddenExcept(['mix', 'ai', 'tech', 'tech-depth', 'science']),
+        categorySources,
+        customCategories: [],
+        enabledSourceIds: exclusiveEnabledSourceIds(
+          categorySources,
+          pickKnown(
+            'netease-tech',
+            'ithome',
+            'sspai',
+            'geekpark',
+            'solidot',
+            'ruanyifeng',
+            'appinn',
+            'ifanr',
+            'infoq-cn',
+            'arstechnica',
+            'mittr',
+            'gnews-tech',
+            'qbitai',
+            'jiqizhixin',
+            'aiera',
+            'arena',
+            'anthropic',
+            'openai-news',
+            'google-ai',
+            'deepmind',
+            'huggingface',
+            'mittr-ai',
+            'lastweek-ai',
+            'simonw',
+            'guokr',
+            'pansci',
+            'zhishifenzi',
+            'huanqiukexue',
+            'gnews-science',
+          ),
         ),
-        // 热点只留国内头条，国际源全部归 intl
-        hot: pickKnown('netease'),
-        science: pickKnown('huanqiukexue', 'pansci', 'gnews-science'),
-        'tech-depth': pickKnown('arstechnica', 'mittr', 'wired'),
       },
-      customCategories: [],
-      enabledSourceIds: pickKnown(
+    )
+  })(),
+  (() => {
+    const categorySources = {
+      finance: pickKnown('latepost', 'jazzyear', 'kr36', 'gnews-business'),
+      tech: pickKnown('ifanr', 'geekpark', 'sspai'),
+      intl: pickKnown('scmp-china', 'bbc-zh', 'gnews-world'),
+      ai: pickKnown('qbitai', 'jiqizhixin', 'aiera'),
+    }
+    return builtinPreset(
+      BUILTIN_BIZ_ID,
+      '商业创投',
+      '深度特写 · 创投产业 · 科技观察 · 国际宏观',
+      {
+        categoryOrder: ['mix', 'finance', 'tech', 'intl', 'ai'],
+        hiddenCategoryIds: hiddenExcept(['mix', 'finance', 'tech', 'intl', 'ai']),
+        categorySources,
+        customCategories: [],
+        enabledSourceIds: exclusiveEnabledSourceIds(
+          categorySources,
+          pickKnown(
+            'latepost',
+            'jazzyear',
+            'kr36',
+            'huxiu',
+            'tmtpost',
+            'techcrunch',
+            'netease-biz',
+            'gnews-business',
+            'sspai',
+            'ifanr',
+            'geekpark',
+            'qbitai',
+            'jiqizhixin',
+            'aiera',
+            'mittr',
+            'scmp-china',
+            'bbc-zh',
+            'dw-top',
+            'gnews-world',
+          ),
+        ),
+      },
+    )
+  })(),
+  (() => {
+    const categorySources = {
+      intl: pickKnown(
         'bbc-zh',
-        'bbc-zh-china',
-        'bbc-zh-world',
         'bbc-world',
-        'scmp-china',
-        'scmp-news',
         'dw-top',
+        'scmp-china',
         'npr',
         'guardian-world',
-        'france24',
-        'aljazeera',
         'gnews-world',
-        'gnews-science',
-        'netease',
-        'mittr',
-        'arstechnica',
-        'wired',
-        'huanqiukexue',
-        'pansci',
       ),
-    },
-  ),
-  builtinPreset(
-    BUILTIN_MINDFUL_ID,
-    '慢读智识',
-    '科学人文 · 数字生活 · 知乎精选 · 闲暇文化',
-    {
-      categoryOrder: ['mix', 'science', 'tech', 'zhihu', 'fun'],
-      hiddenCategoryIds: hiddenExcept(['mix', 'science', 'tech', 'zhihu', 'fun']),
-      categorySources: {
-        science: pickKnown('guokr', 'pansci', 'huanqiukexue', 'zhishifenzi'),
-        tech: pickKnown('sspai', 'ifanr', 'ruanyifeng', 'appinn'),
-        zhihu: pickKnown('zhihu-daily'),
-        fun: pickKnown('gcores', 'jandan'),
+      // 热点只留国内头条，国际源全部归 intl
+      hot: pickKnown('netease'),
+      science: pickKnown('huanqiukexue', 'pansci', 'gnews-science'),
+      'tech-depth': pickKnown('arstechnica', 'mittr', 'wired'),
+    }
+    return builtinPreset(
+      BUILTIN_WORLD_ID,
+      '全球视野',
+      '公共广电 · Google 发现 · 亚洲视角 · 科学深度',
+      {
+        categoryOrder: ['mix', 'intl', 'hot', 'science', 'tech-depth'],
+        hiddenCategoryIds: hiddenExcept(['mix', 'intl', 'hot', 'science', 'tech-depth']),
+        categorySources,
+        customCategories: [],
+        enabledSourceIds: exclusiveEnabledSourceIds(
+          categorySources,
+          pickKnown(
+            'bbc-zh',
+            'bbc-zh-china',
+            'bbc-zh-world',
+            'bbc-world',
+            'scmp-china',
+            'scmp-news',
+            'dw-top',
+            'npr',
+            'guardian-world',
+            'france24',
+            'aljazeera',
+            'gnews-world',
+            'gnews-science',
+            'netease',
+            'mittr',
+            'arstechnica',
+            'wired',
+            'huanqiukexue',
+            'pansci',
+          ),
+        ),
       },
-      customCategories: [],
-      enabledSourceIds: pickKnown(
-        'guokr',
-        'pansci',
-        'huanqiukexue',
-        'zhishifenzi',
-        'sspai',
-        'ifanr',
-        'ruanyifeng',
-        'appinn',
-        'zhihu-daily',
-        'gcores',
-        'jandan',
-      ),
-    },
-  ),
-  builtinPreset(
-    BUILTIN_FUN_ID,
-    '摸鱼消遣',
-    '轻松段子 · 娱乐八卦 · 游戏野史 · 知乎闲读',
-    {
-      categoryOrder: ['mix', 'fun', 'ent', 'game', 'history', 'zhihu'],
-      hiddenCategoryIds: hiddenExcept(['mix', 'fun', 'ent', 'game', 'history', 'zhihu']),
-      categorySources: {
-        fun: pickKnown('netease-fun', 'jandan', 'gcores'),
-        ent: pickKnown('netease-ent', 'gnews-ent'),
-        game: pickKnown('netease-game'),
-        history: pickKnown('netease-history'),
-        zhihu: pickKnown('zhihu-daily'),
+    )
+  })(),
+  (() => {
+    const categorySources = {
+      science: pickKnown('guokr', 'pansci', 'huanqiukexue', 'zhishifenzi'),
+      tech: pickKnown('sspai', 'ifanr', 'ruanyifeng', 'appinn'),
+      zhihu: pickKnown('zhihu-daily'),
+      fun: pickKnown('gcores', 'jandan'),
+    }
+    // 主题栏已覆盖全部精选源，不再展示空的综合栏
+    const visible: CategoryId[] = ['science', 'tech', 'zhihu', 'fun']
+    return builtinPreset(
+      BUILTIN_MINDFUL_ID,
+      '慢读智识',
+      '科学人文 · 数字生活 · 知乎精选 · 闲暇文化',
+      {
+        categoryOrder: visible,
+        hiddenCategoryIds: hiddenExcept(visible),
+        categorySources,
+        customCategories: [],
+        enabledSourceIds: exclusiveEnabledSourceIds(
+          categorySources,
+          pickKnown(
+            'guokr',
+            'pansci',
+            'huanqiukexue',
+            'zhishifenzi',
+            'sspai',
+            'ifanr',
+            'ruanyifeng',
+            'appinn',
+            'zhihu-daily',
+            'gcores',
+            'jandan',
+          ),
+        ),
       },
-      customCategories: [],
-      enabledSourceIds: pickKnown(
-        'netease-fun',
-        'jandan',
-        'gcores',
-        'netease-ent',
-        'gnews-ent',
-        'netease-game',
-        'netease-history',
-        'zhihu-daily',
-      ),
-    },
-  ),
+    )
+  })(),
+  (() => {
+    const categorySources = {
+      fun: pickKnown('netease-fun', 'jandan', 'gcores'),
+      ent: pickKnown('netease-ent', 'gnews-ent'),
+      game: pickKnown('netease-game'),
+      history: pickKnown('netease-history'),
+      zhihu: pickKnown('zhihu-daily'),
+    }
+    // 主题栏已覆盖全部精选源，不再展示空的综合栏
+    const visible: CategoryId[] = ['fun', 'ent', 'game', 'history', 'zhihu']
+    return builtinPreset(
+      BUILTIN_FUN_ID,
+      '摸鱼消遣',
+      '轻松段子 · 娱乐八卦 · 游戏野史 · 知乎闲读',
+      {
+        categoryOrder: visible,
+        hiddenCategoryIds: hiddenExcept(visible),
+        categorySources,
+        customCategories: [],
+        enabledSourceIds: exclusiveEnabledSourceIds(
+          categorySources,
+          pickKnown(
+            'netease-fun',
+            'jandan',
+            'gcores',
+            'netease-ent',
+            'gnews-ent',
+            'netease-game',
+            'netease-history',
+            'zhihu-daily',
+          ),
+        ),
+      },
+    )
+  })(),
 ]
 
 export function findBuiltinPreset(id: string): LayoutPreset | undefined {
