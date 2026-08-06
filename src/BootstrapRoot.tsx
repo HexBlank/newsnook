@@ -90,8 +90,21 @@ export function BootstrapRoot() {
 
     const unbindWake = initCompositorWakeListener()
     let active = true
+    let delayTimer = 0
+
     void prepareApp().finally(() => {
-      if (active) {
+      if (!active) return
+
+      if (splashMode === 'full') {
+        // 首次完整动效：前 2.4 秒是高强度的粒子公转与吸入渲染，
+        // 错峰将 App 后台挂载与大批量网络请求延后至平静整理阶段启动，彻底消除 JS 主线程争抢导致的动画掉帧
+        delayTimer = window.setTimeout(() => {
+          if (active) {
+            setAppReady(true)
+            bootMark('app-ready')
+          }
+        }, 2400)
+      } else {
         setAppReady(true)
         bootMark('app-ready')
       }
@@ -99,9 +112,10 @@ export function BootstrapRoot() {
 
     return () => {
       active = false
+      if (delayTimer) window.clearTimeout(delayTimer)
       unbindWake()
     }
-  }, [])
+  }, [splashMode])
 
   const finishSplash = useCallback(() => {
     bootMark('splash-complete')

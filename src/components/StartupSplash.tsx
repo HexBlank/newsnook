@@ -105,6 +105,15 @@ const STACK_SPAN =
 /** 静态页线条底边到品牌文案的间距 */
 const STATIC_BRAND_GAP_PX = 44
 
+/** 预烘焙坍缩阶段的 25 阶颜色查找表 (LUT)，彻底消除每帧动态拼接 rgb 字符串与 GC 压力 */
+const COLLAPSE_COLOR_LUT = Array.from({ length: 25 }, (_, i) => {
+  const t = i / 24
+  const r = Math.round(242 + (232 - 242) * t)
+  const g = Math.round(241 + (185 - 241) * t)
+  const b = Math.round(238 + (77 - 238) * t)
+  return `rgb(${r} ${g} ${b})`
+})
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
 }
@@ -167,21 +176,18 @@ function drawParticle(
 ): void {
   if (opacity <= 0.005 || width <= 0.5) return
 
+  context.globalAlpha = opacity
+  context.fillStyle = color
+
   // |sinθ| 很小 ≈ 水平短条，整理/收束阶段绝大多数帧走这里
   if (Math.abs(Math.sin(rotation)) < 0.035) {
-    const previousAlpha = context.globalAlpha
-    context.globalAlpha = opacity
-    context.fillStyle = color
     context.fillRect(x - width / 2, y - height / 2, width, height)
-    context.globalAlpha = previousAlpha
     return
   }
 
   context.save()
-  context.globalAlpha = opacity
   context.translate(x, y)
   context.rotate(rotation)
-  context.fillStyle = color
   context.fillRect(-width / 2, -height / 2, width, height)
   context.restore()
 }
@@ -245,9 +251,6 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
     let timelineGradient: CanvasGradient | null = null
     /** 静态页：线条区中心 Y；完整动画始终取画布中点 */
     let centerY = 0
-    /** 收束阶段颜色按 collapse 量化，避免每粒子每帧拼 rgb 字符串 */
-    let collapseColor = 'rgb(242 241 238)'
-    let lastCollapseBucket = -1
 
     const layoutStatic = () => {
       const brandHeight = brand?.getBoundingClientRect().height ?? 96
@@ -276,7 +279,7 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
       // 完整动效持续 6s，Android WebView 上 2x 像素过贵；静态页仍可用更高清
       const pixelRatio = Math.min(
         window.devicePixelRatio || 1,
-        isStatic ? 2 : 1.5,
+        isStatic ? 2 : 1.25,
       )
 
       canvas.width = Math.round(width * pixelRatio)
@@ -308,12 +311,8 @@ export function StartupSplash({ mode, leaving, onComplete }: Props) {
         easeOutCubic(stageProgress(elapsed, STAGE.centerLineIn)) -
         easeOutCubic(stageProgress(elapsed, STAGE.centerLineOut))
 
-      const collapseBucket = (collapse * 24) | 0
-      if (collapseBucket !== lastCollapseBucket) {
-        lastCollapseBucket = collapseBucket
-        const t = collapseBucket / 24
-        collapseColor = `rgb(${Math.round(lerp(242, 232, t))} ${Math.round(lerp(241, 185, t))} ${Math.round(lerp(238, 77, t))})`
-      }
+      const collapseBucket = Math.min(24, Math.max(0, (collapse * 24) | 0))
+      const collapseColor = COLLAPSE_COLOR_LUT[collapseBucket]
 
       context.globalAlpha = 1
       context.clearRect(0, 0, width, height)

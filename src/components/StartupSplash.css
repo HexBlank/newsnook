@@ -19,6 +19,17 @@
   will-change: opacity;
 }
 
+/* 静态噪点层：置于宿主容器上，不随光晕做 scale 动画，避免低版本 WebView 逐帧重绘 SVG 滤镜 */
+.startup-splash::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: '';
+  opacity: 0.025;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 /* 完整动效自带收尾淡出（handoff 关键帧），动画填充值会盖过这里的过渡 */
 .startup-splash--leaving {
   opacity: 0;
@@ -30,7 +41,7 @@
 
 .startup-splash__glow {
   position: absolute;
-  z-index: -1;
+  z-index: 1;
   inset: -16%;
   background: radial-gradient(
     circle at 50% 47%,
@@ -51,14 +62,6 @@
 .startup-splash--static .startup-splash__glow {
   opacity: 0.5;
   transform: scale3d(1.02, 1.02, 1);
-}
-
-.startup-splash__glow::after {
-  position: absolute;
-  inset: 0;
-  content: '';
-  opacity: 0.025;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .startup-splash__canvas {
