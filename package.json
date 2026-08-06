@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.3.13",
+  "version": "1.3.14",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -17,6 +17,7 @@
     "test:inline-video": "rolldown scripts/inline-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/inline-video.test.mjs && node node_modules/.cache/newsnook/inline-video.test.mjs",
     "test:video-gestures": "rolldown scripts/video-gestures.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/video-gestures.test.mjs && node node_modules/.cache/newsnook/video-gestures.test.mjs",
     "test:translation": "rolldown scripts/translation-service.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/translation-service.test.mjs && node node_modules/.cache/newsnook/translation-service.test.mjs",
+    "test:openai": "npx tsx scripts/openai-provider.test.ts",
     "test:detect-language": "rolldown scripts/detect-language.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/detect-language.test.mjs && node node_modules/.cache/newsnook/detect-language.test.mjs",
     "test:chinese-variant": "rolldown scripts/chinese-variant.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/chinese-variant.test.mjs && node node_modules/.cache/newsnook/chinese-variant.test.mjs",
     "test:https-upgrade": "rolldown scripts/https-upgrade.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/https-upgrade.test.mjs && node node_modules/.cache/newsnook/https-upgrade.test.mjs",

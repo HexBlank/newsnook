@@ -34,6 +34,7 @@ import { FeedScreen } from './screens/FeedScreen'
 import { MeScreen } from './screens/MeScreen'
 import { AboutScreen } from './screens/settings/AboutScreen'
 import { ChangelogScreen } from './screens/settings/ChangelogScreen'
+import { OpenSourceScreen } from './screens/settings/OpenSourceScreen'
 import { AppearanceScreen } from './screens/settings/AppearanceScreen'
 import { CategorySettingsScreen } from './screens/settings/CategorySettingsScreen'
 import { CategorySourcesScreen } from './screens/settings/CategorySourcesScreen'
@@ -115,6 +116,7 @@ type SettingsRoute =
   | { name: 'history' }
   | { name: 'about' }
   | { name: 'changelog' }
+  | { name: 'licenses' }
 
 interface BodyPrefetchTask {
   article: Article
@@ -313,7 +315,7 @@ export default function App() {
         setSettingsRoute({ name: 'presets' })
         return
       }
-      if (settingsRoute?.name === 'changelog') {
+      if (settingsRoute?.name === 'changelog' || settingsRoute?.name === 'licenses') {
         setSettingsRoute({ name: 'about' })
         return
       }
@@ -699,12 +701,17 @@ export default function App() {
           updateCaption={appUpdate.manualCaption}
           onCheckUpdate={() => void appUpdate.promptManualCheck()}
           onOpenChangelog={() => setSettingsRoute({ name: 'changelog' })}
+          onOpenLicenses={() => setSettingsRoute({ name: 'licenses' })}
         />
       )
     }
 
     if (settingsRoute.name === 'changelog') {
       return <ChangelogScreen onBack={() => setSettingsRoute({ name: 'about' })} />
+    }
+
+    if (settingsRoute.name === 'licenses') {
+      return <OpenSourceScreen onBack={() => setSettingsRoute({ name: 'about' })} />
     }
 
     return (

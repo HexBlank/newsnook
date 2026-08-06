@@ -59,13 +59,17 @@ export const DesktopSidebar = memo(function DesktopSidebar({
   const isHomeActive = activeTab === 'today' && !settingsRouteName
   const isLaterActive = settingsRouteName === 'later'
   const isHistoryActive = settingsRouteName === 'history'
+  const isAboutBranch =
+    settingsRouteName === 'about' ||
+    settingsRouteName === 'changelog' ||
+    settingsRouteName === 'licenses'
   const isSettingsActive =
     activeTab === 'me' ||
     (Boolean(settingsRouteName) &&
       settingsRouteName !== 'later' &&
       settingsRouteName !== 'history' &&
-      settingsRouteName !== 'about')
-  const isAboutActive = settingsRouteName === 'about'
+      !isAboutBranch)
+  const isAboutActive = isAboutBranch
 
   return (
     <aside

@@ -1,6 +1,6 @@
 export type LocalTranslationProviderId = 'mlkit' | 'bergamot'
 
-export type CloudTranslationProviderId = 'google' | 'azure' | 'deepl' | 'deeplx'
+export type CloudTranslationProviderId = 'google' | 'azure' | 'deepl' | 'deeplx' | 'openai'
 
 export type TranslationProviderId = LocalTranslationProviderId | CloudTranslationProviderId
 
@@ -24,6 +24,8 @@ export interface CloudTranslationConfig {
   endpoint: string
   /** Azure 多服务或区域资源需要；全局 Translator 资源可留空。 */
   region?: string
+  /** OpenAI 兼容提供商必填；其它云端可空。 */
+  model?: string
 }
 
 export interface TranslationPrefs {

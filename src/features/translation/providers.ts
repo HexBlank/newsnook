@@ -6,6 +6,8 @@ import {
   isLocalTranslationAvailable,
   MlKitTranslation,
 } from './native'
+import { assertOpenAiConfig, cleanOpenAiTranslation, extractOpenAiChatContent } from './openai'
+import { openAiTranslationSystemPrompt } from './prompts'
 import type {
   CloudTranslationConfig,
   CloudTranslationProviderId,
@@ -80,6 +82,16 @@ const LANGUAGE_MAP: Record<
     de: 'DE',
     es: 'ES',
   },
+  openai: {
+    en: 'en',
+    'zh-Hans': 'zh-CN',
+    'zh-Hant': 'zh-TW',
+    ja: 'ja',
+    ko: 'ko',
+    fr: 'fr',
+    de: 'de',
+    es: 'es',
+  },
 }
 
 function language(provider: TranslationProviderId, code: TranslationLanguage): string {
@@ -135,6 +147,18 @@ interface JsonResponse {
   data: unknown
 }
 
+/** CapacitorHttp 在部分 Content-Type 下把 JSON 当字符串返回；Web fetch 则已 parse。 */
+export function coerceHttpJsonData(data: unknown): unknown {
+  if (typeof data !== 'string') return data
+  const trimmed = data.trim()
+  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return data
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return data
+  }
+}
+
 async function postJson(
   url: string,
   body: unknown,
@@ -151,7 +175,7 @@ async function postJson(
       connectTimeout: 15000,
       readTimeout: 45000,
     })
-    return { status: response.status, data: response.data }
+    return { status: response.status, data: coerceHttpJsonData(response.data) }
   }
 
   const response = await fetch(url, {
@@ -161,7 +185,7 @@ async function postJson(
     signal,
   })
   const data = (await response.json().catch(() => null)) as unknown
-  return { status: response.status, data }
+  return { status: response.status, data: coerceHttpJsonData(data) }
 }
 
 function errorMessage(provider: string, response: JsonResponse): Error {
@@ -510,6 +534,50 @@ export class DeepLXProvider extends CloudProvider {
   }
 }
 
+export class OpenAiProvider extends CloudProvider {
+  readonly id = 'openai' as const
+
+  async translate(request: TranslationRequest): Promise<string[]> {
+    const base = assertOpenAiConfig(this.config)
+    const model = this.config.model!.trim()
+    const system = openAiTranslationSystemPrompt(request.sourceLanguage, request.targetLanguage)
+    const url = `${base}/chat/completions`
+
+    return mapConcurrent(
+      request.texts,
+      DEFAULT_CONCURRENCY_LIMIT,
+      async (text) => {
+        const response = await postJson(
+          url,
+          {
+            model,
+            temperature: 0.2,
+            stream: false,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: text },
+            ],
+          },
+          { Authorization: `Bearer ${this.config.apiKey.trim()}` },
+          request.signal,
+        )
+        if (response.status < 200 || response.status >= 300) {
+          throw errorMessage('AI 翻译', response)
+        }
+        const content = extractOpenAiChatContent(response.data)
+        if (typeof content !== 'string' || !content.trim()) {
+          throw new Error('AI 翻译：返回内容为空')
+        }
+        return cleanOpenAiTranslation(content)
+      },
+      request.signal,
+      (singleTranslated, index) => {
+        request.onBatch?.([singleTranslated], index)
+      },
+    )
+  }
+}
+
 export function createTranslationProvider(
   providerId: TranslationProviderId,
   config?: CloudTranslationConfig,
@@ -520,5 +588,6 @@ export function createTranslationProvider(
   if (providerId === 'google') return new GoogleProvider(config)
   if (providerId === 'azure') return new AzureProvider(config)
   if (providerId === 'deepl') return new DeepLProvider(config)
+  if (providerId === 'openai') return new OpenAiProvider(config)
   return new DeepLXProvider(config)
 }

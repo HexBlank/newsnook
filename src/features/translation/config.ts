@@ -42,6 +42,7 @@ export const TRANSLATION_PROVIDERS: {
   { id: 'azure', label: 'Microsoft Translator', caption: 'Azure AI Translator Text API' },
   { id: 'deepl', label: 'DeepL', caption: '支持 Free 与 Pro API 地址' },
   { id: 'deeplx', label: 'DeepLX', caption: '兼容自建与带路径令牌的非官方服务' },
+  { id: 'openai', label: 'AI 翻译', caption: 'OpenAI 兼容接口；自备 Base URL / Key / Model' },
 ]
 
 const DEFAULT_CLOUD: TranslationPrefs['cloud'] = {
@@ -61,6 +62,11 @@ const DEFAULT_CLOUD: TranslationPrefs['cloud'] = {
   deeplx: {
     apiKey: '',
     endpoint: '',
+  },
+  openai: {
+    apiKey: '',
+    endpoint: 'https://api.openai.com/v1',
+    model: '',
   },
 }
 
@@ -92,6 +98,7 @@ function normalizeCloud(
         ? input.endpoint.trim()
         : fallback.endpoint,
     region: typeof input.region === 'string' ? input.region.trim() : fallback.region,
+    model: typeof input.model === 'string' ? input.model.trim() : (fallback.model ?? ''),
   }
 }
 
@@ -123,6 +130,7 @@ export function normalizeTranslationPrefs(value: unknown): TranslationPrefs {
       azure: normalizeCloud(cloud.azure, DEFAULT_CLOUD.azure),
       deepl: normalizeCloud(cloud.deepl, DEFAULT_CLOUD.deepl),
       deeplx: normalizeCloud(cloud.deeplx, DEFAULT_CLOUD.deeplx),
+      openai: normalizeCloud(cloud.openai, DEFAULT_CLOUD.openai),
     },
   }
 }

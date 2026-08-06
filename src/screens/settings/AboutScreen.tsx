@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Layers,
   RefreshCw,
+  Scale,
   ScrollText,
   ShieldCheck,
   Sparkles,
@@ -21,6 +22,7 @@ interface Props {
   updateCaption?: string
   onCheckUpdate?: () => void
   onOpenChangelog?: () => void
+  onOpenLicenses?: () => void
 }
 
 const ABOUT_CONFIG = {
@@ -68,6 +70,7 @@ export function AboutScreen({
   updateCaption,
   onCheckUpdate,
   onOpenChangelog,
+  onOpenLicenses,
 }: Props) {
   const [copiedRepo, setCopiedRepo] = useState(false)
 
@@ -228,6 +231,25 @@ export function AboutScreen({
               <ExternalLink size={14} strokeWidth={1.5} className="shrink-0 text-paper-faint" />
             </button>
           </li>
+
+          {/* 开源许可 */}
+          <li className="transition-colors hover:bg-ink-raised/30 active:bg-ink-raised/50">
+            <button
+              type="button"
+              onClick={() => onOpenLicenses?.()}
+              className="page-x flex w-full items-center gap-3.5 py-4 text-left"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-raised/60 text-paper">
+                <Scale size={18} strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-[14px] font-medium text-paper">开源许可</span>
+                <p className="mt-0.5 truncate font-mono text-[11px] text-paper-faint">
+                  Apache 2.0 · 第三方组件清单
+                </p>
+              </div>
+            </button>
+          </li>
         </ul>
       </SettingsSection>
 
@@ -286,7 +308,7 @@ export function AboutScreen({
           NEWSNOOK
         </p>
         <p className="mt-1 font-mono text-[9px] text-paper-faint/60">
-          Open Sourced under MIT License
+          Open Sourced under Apache License 2.0
         </p>
       </footer>
     </SettingsShell>

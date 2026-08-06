@@ -33,6 +33,7 @@ import {
   type MlKitModelState,
 } from '../../features/translation/native'
 import { createTranslationProvider, mlKitLanguage } from '../../features/translation/providers'
+import { listOpenAiModels } from '../../features/translation/openai'
 import type {
   CloudTranslationConfig,
   TranslationPrefs,
@@ -55,6 +56,7 @@ const PROVIDER_ICONS: Record<TranslationProviderId, typeof Cloud> = {
   azure: CloudCog,
   deepl: Cloud,
   deeplx: CloudCog,
+  openai: CloudCog,
 }
 
 function Field({
@@ -106,6 +108,10 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   const [testMessage, setTestMessage] = useState('')
   const [confirmDeleteModel, setConfirmDeleteModel] = useState(false)
   const [languagePicker, setLanguagePicker] = useState<'source' | 'target' | null>(null)
+  const [modelListState, setModelListState] = useState<AsyncState>('idle')
+  const [modelListMessage, setModelListMessage] = useState('')
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  const [remoteModels, setRemoteModels] = useState<string[]>([])
 
   const autoSource = prefs.sourceLanguage === 'auto'
   const source = prefs.sourceLanguage === 'auto' ? null : mlKitLanguage(prefs.sourceLanguage)
@@ -294,6 +300,22 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
     } catch (error) {
       setTestState('error')
       setTestMessage(error instanceof Error ? error.message : '连接失败')
+    }
+  }
+
+  const fetchOpenAiModels = async () => {
+    if (!activeCloud || prefs.provider !== 'openai') return
+    setModelListState('working')
+    setModelListMessage('正在拉取模型列表…')
+    try {
+      const models = await listOpenAiModels(activeCloud)
+      setRemoteModels(models)
+      setModelPickerOpen(true)
+      setModelListState('success')
+      setModelListMessage(models.length ? `已获取 ${models.length} 个模型` : '列表为空，请手填 Model')
+    } catch (error) {
+      setModelListState('error')
+      setModelListMessage(error instanceof Error ? error.message : '拉取模型失败')
     }
   }
 
@@ -540,9 +562,21 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
         <div className="page-x pt-5">
           <div className="mx-auto max-w-3xl space-y-4 rounded-2xl border border-haze bg-ink-raised p-5 shadow-[var(--shadow-lift)]">
             <Field
-              label={prefs.provider === 'deeplx' ? 'DEEPLX API URL' : 'API URL'}
+              label={
+                prefs.provider === 'deeplx'
+                  ? 'DEEPLX API URL'
+                  : prefs.provider === 'openai'
+                    ? 'BASE URL'
+                    : 'API URL'
+              }
               value={activeCloud.endpoint}
-              placeholder={prefs.provider === 'deeplx' ? 'https://你的服务/translate' : 'https://…'}
+              placeholder={
+                prefs.provider === 'deeplx'
+                  ? 'https://你的服务/translate'
+                  : prefs.provider === 'openai'
+                    ? 'https://api.openai.com/v1'
+                    : 'https://…'
+              }
               onChange={(endpoint) => updateCloud({ endpoint })}
             />
             <Field
@@ -560,12 +594,47 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
             {prefs.provider === 'azure' && (
               <Field label="AZURE REGION（可选）" value={activeCloud.region ?? ''} placeholder="例如 eastasia；全局单服务资源可留空" onChange={(region) => updateCloud({ region })} />
             )}
+            {prefs.provider === 'openai' && (
+              <>
+                <Field
+                  label="MODEL"
+                  value={activeCloud.model ?? ''}
+                  placeholder="例如 gpt-4o-mini"
+                  onChange={(model) => updateCloud({ model })}
+                />
+                <button
+                  type="button"
+                  disabled={
+                    modelListState === 'working' ||
+                    !activeCloud.endpoint.trim() ||
+                    !activeCloud.apiKey.trim()
+                  }
+                  onClick={() => void fetchOpenAiModels()}
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-haze bg-ink px-4 text-[12.5px] text-paper disabled:opacity-35"
+                >
+                  {modelListState === 'working' ? (
+                    <LoaderCircle size={15} className="animate-spin" />
+                  ) : (
+                    <Download size={15} />
+                  )}
+                  拉取模型列表
+                </button>
+                {modelListMessage && (
+                  <p
+                    className={`text-[11px] leading-relaxed ${modelListState === 'error' ? 'text-cinnabar-soft' : 'text-paper-faint'}`}
+                  >
+                    {modelListMessage}
+                  </p>
+                )}
+              </>
+            )}
             <button
               type="button"
               disabled={
                 testState === 'working' ||
                 !activeCloud.endpoint.trim() ||
-                (!apiKeyOptional && !activeCloud.apiKey.trim())
+                (!apiKeyOptional && !activeCloud.apiKey.trim()) ||
+                (prefs.provider === 'openai' && !(activeCloud.model ?? '').trim())
               }
               onClick={() => void testCloud()}
               className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-cinnabar/50 bg-cinnabar/12 px-4 text-[12.5px] text-paper disabled:opacity-35"
@@ -579,14 +648,34 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
                 可直接粘贴包含路径令牌的完整 /translate 地址；若只填写域名，会自动补上 /translate。
               </p>
             )}
+            {prefs.provider === 'openai' && (
+              <p className="text-[10.5px] leading-relaxed text-paper-faint">
+                填写 OpenAI 兼容 Base URL（如 https://api.openai.com/v1），不要填写完整
+                /chat/completions 路径。Model 可手填，或从远端列表选择。
+              </p>
+            )}
           </div>
         </div>
       ) : null}
 
       <SettingsHint>
         云服务的费用与配额由你的服务商账号承担，密钥只保存在本机并直接发往所填 API 地址。ML Kit
-        需 Google 服务；Bergamot 使用 Mozilla 专用翻译模型，适合无 GMS 离线。
+        需 Google 服务；Bergamot 使用 Mozilla 专用翻译模型，适合无 GMS 离线；AI 翻译使用 OpenAI 兼容接口。
       </SettingsHint>
+
+      <OptionPickerDialog
+        open={modelPickerOpen && remoteModels.length > 0}
+        title="选择模型"
+        value={(activeCloud?.model && remoteModels.includes(activeCloud.model)
+          ? activeCloud.model
+          : remoteModels[0]) as string}
+        options={remoteModels.map((id) => ({ id, label: id }))}
+        onCancel={() => setModelPickerOpen(false)}
+        onChange={(model) => {
+          updateCloud({ model })
+          setModelPickerOpen(false)
+        }}
+      />
 
       <ConfirmDialog
         open={confirmDeleteModel}

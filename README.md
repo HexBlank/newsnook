@@ -84,7 +84,7 @@ FreshRSS 是成熟的开源 RSS 聚合器，也支持通过规则、XPath / CSS 
 
 - **Android 本地翻译（ML Kit）**：语言包下载到设备，离线可用；需能访问 Google 下载语言包
 - **Bergamot 离线翻译**：Mozilla/Marian 专用翻译模型，按语对下载（首版 en↔zh），适合无 GMS 场景；当前仅在 `local` 包的 `arm64-v8a` 设备上可用
-- **云端翻译**：支持 Google、Azure、DeepL、自建 DeepLX 等。API Key 由用户自行填写并保存在本机；请求直连用户配置的服务地址。应用作者不中转这些请求，也无法查看你翻译了什么
+- **云端翻译**：支持 Google、Azure、DeepL、自建 DeepLX，以及 OpenAI 兼容的 **AI 翻译**（自备 Base URL / API Key / Model）。API Key 由用户自行填写并保存在本机；请求直连用户配置的服务地址。应用作者不中转这些请求，也无法查看你翻译了什么
 
 完整版（local）构建前若要启用 Bergamot 原生引擎，需先执行 `npm run bergamot:init` 拉取 `bergamot-translator`。该脚本会自动应用当前所需的 Android 兼容补丁；若后续删除 `third_party/bergamot-translator` 后重跑，也会重新补齐。
 

@@ -39,13 +39,15 @@ function resolveFallbackProvider(prefs: Preferences): Preferences['translation']
   const { cloud } = prefs.translation
   return cloud.deeplx.endpoint
     ? 'deeplx'
-    : cloud.google.apiKey
-      ? 'google'
-      : cloud.azure.apiKey
-        ? 'azure'
-        : cloud.deepl.apiKey
-          ? 'deepl'
-          : 'deeplx'
+    : cloud.openai.apiKey && cloud.openai.model
+      ? 'openai'
+      : cloud.google.apiKey
+        ? 'google'
+        : cloud.azure.apiKey
+          ? 'azure'
+          : cloud.deepl.apiKey
+            ? 'deepl'
+            : 'deeplx'
 }
 
 export function usePreferences(): PreferencesApi {
