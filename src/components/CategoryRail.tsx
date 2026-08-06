@@ -188,7 +188,7 @@ export function CategoryRail({
             weight = 1
           }
 
-          const opacity = 0.42 + 0.58 * weight
+          const opacity = 0.62 + 0.38 * weight
           const fontTransition = reduced
             ? 'none'
             : isDragging
@@ -212,13 +212,13 @@ export function CategoryRail({
                 opacity,
                 transition: fontTransition,
               }}
-              className="relative shrink-0 px-2.5 py-1.5 text-paper hover:opacity-80"
+              className="relative shrink-0 px-3 py-1.5 text-paper hover:opacity-90"
             >
-              <span className="block whitespace-nowrap font-display text-[13.5px] leading-none tracking-wide">
+              <span className={`block whitespace-nowrap font-display text-[14px] leading-none tracking-wide ${weight >= 0.5 ? 'font-medium' : 'font-normal'}`}>
                 {category.short}
               </span>
               {/* 占位间距，保持高度与垂直居中一致 */}
-              <span className="mx-auto mt-1.5 block h-px w-3.5 opacity-0" aria-hidden />
+              <span className="mx-auto mt-1 block h-px w-3.5 opacity-0" aria-hidden />
             </button>
           )
         })}

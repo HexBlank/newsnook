@@ -222,20 +222,20 @@ export function PresetSwitcher({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`场景预设：${activeName}，点击切换`}
-        className="group flex max-w-[8.5rem] sm:max-w-[10.5rem] items-center gap-1.5 rounded-full border border-cinnabar/35 bg-cinnabar/10 px-2.5 py-1 text-paper shadow-xs transition-all duration-200 hover:border-cinnabar/65 hover:bg-cinnabar/18 active:scale-95"
+        className="group flex max-w-[8.5rem] sm:max-w-[10.5rem] items-center gap-1.5 rounded-full border border-haze/90 bg-ink-raised/80 px-2.5 py-1 text-paper shadow-2xs transition-all duration-200 hover:border-cinnabar/40 hover:bg-ink-raised active:scale-95"
       >
         <LayoutTemplate
-          size={12}
+          size={11.5}
           strokeWidth={1.8}
-          className="shrink-0 text-cinnabar group-hover:scale-110 transition-transform"
+          className="shrink-0 text-cinnabar group-hover:scale-105 transition-transform"
         />
         <span className="min-w-0 truncate font-mono text-[11px] font-medium tracking-wide text-paper group-hover:text-cinnabar transition-colors">
           {activeName}
         </span>
         <ChevronDown
           size={11}
-          strokeWidth={2}
-          className="shrink-0 text-cinnabar/80 group-hover:text-cinnabar group-hover:translate-y-0.5 transition-all"
+          strokeWidth={1.8}
+          className="shrink-0 text-paper-faint group-hover:text-cinnabar group-hover:translate-y-0.5 transition-all"
         />
       </button>
       {sheet}

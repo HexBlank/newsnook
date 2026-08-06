@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser'
 
+import { cleanSummaryText } from './cleanSummary'
 import type { NewsSource, SourceKind } from '../sources/registry'
 import type { Article } from './types'
 
@@ -280,7 +281,8 @@ function buildArticle(
   if (!title) return undefined
 
   const published = parseDate(raw.dateRaw)
-  const summary = raw.summaryText.slice(0, 220)
+  const cleaned = cleanSummaryText(raw.summaryText, title)
+  const summary = (cleaned || raw.summaryText).slice(0, 220)
 
   return {
     id: `${source.id}:${hashId(raw.link || title)}`,

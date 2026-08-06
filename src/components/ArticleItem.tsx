@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { BookmarkCheck } from 'lucide-react'
 
 import { InkImage } from './InkImage'
+import { cleanSummaryText } from '../lib/cleanSummary'
 import type { Article } from '../lib/types'
 import { articleRelativeTime } from '../lib/time'
 
@@ -28,12 +29,13 @@ export const ArticleRow = memo(function ArticleRow({
 }: RowProps) {
   const showRow = variant === 'row' || variant === 'auto'
   const showCard = variant === 'card' || variant === 'auto'
+  const displaySummary = cleanSummaryText(article.summary, article.title)
 
   return (
     <li
       data-reveal={revealed ? undefined : true}
       className={`article-row-item relative transition-colors duration-300 ${
-        variant === 'card' ? 'h-full bg-transparent' : read ? 'bg-ink/30' : 'bg-ink-raised/70 md:bg-transparent'
+        variant === 'card' ? 'h-full bg-transparent' : read ? 'bg-ink/30' : 'bg-ink-raised/60 md:bg-transparent'
       }`}
     >
       {/* 移动端横排布局 (Mobile: < md) */}
@@ -41,30 +43,27 @@ export const ArticleRow = memo(function ArticleRow({
         <button
           type="button"
           onClick={() => onOpen(article)}
-          className={`group relative flex w-full items-center gap-3 px-4 py-3.5 text-left transition-all duration-200 sm:gap-3.5 sm:px-5 sm:py-4 ${
+          className={`group relative flex w-full items-start gap-3.5 px-4 py-3.5 text-left transition-all duration-200 sm:px-5 sm:py-4 ${
             variant === 'auto' ? 'md:hidden' : ''
           } ${
             read
               ? 'bg-transparent hover:bg-ink/50 group-active:bg-ink-deep/40'
-              : 'bg-gradient-to-r from-cinnabar/[0.035] via-transparent to-transparent hover:bg-ink-raised group-active:bg-ink-deep/20'
+              : 'bg-gradient-to-b from-ink-raised/40 to-transparent hover:bg-ink-raised group-active:bg-ink-deep/20'
           }`}
         >
-          {/* 未读朱砂印记 */}
-          <span
-            className={`self-start mt-1.5 h-3.5 w-[3px] rounded-full shrink-0 transition-all duration-300 ${
-              read
-                ? 'bg-transparent opacity-0'
-                : 'bg-cinnabar shadow-[0_0_6px_rgba(196,92,74,0.35)] opacity-100 group-active:scale-y-110'
-            }`}
-            aria-hidden
-          />
-
           <span className="min-w-0 flex-1">
+            {/* 顶部信源与时间元数据 */}
             <span
-              className={`flex items-center gap-2 font-mono text-[10px] tracking-[0.14em] ${
+              className={`flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] ${
                 read ? 'text-paper-faint/80' : 'text-paper-faint'
               }`}
             >
+              {!read && (
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-cinnabar shadow-[0_0_4px_rgba(196,92,74,0.45)] shrink-0"
+                  aria-label="未读"
+                />
+              )}
               <span
                 role={onSourceClick ? 'button' : undefined}
                 tabIndex={onSourceClick ? 0 : undefined}
@@ -82,41 +81,48 @@ export const ArticleRow = memo(function ArticleRow({
               >
                 {article.sourceLabel}
               </span>
-              <span aria-hidden>·</span>
+              <span aria-hidden className="text-paper-faint/60">·</span>
               <span>{articleRelativeTime(article)}</span>
-              {saved && <BookmarkCheck size={11} strokeWidth={1.8} className="text-cinnabar" />}
+              {saved && <BookmarkCheck size={11} strokeWidth={1.8} className="text-cinnabar ml-0.5" />}
             </span>
 
+            {/* 文章标题 */}
             <span
-              className={`row-title mt-1.5 block font-display text-[16.5px] leading-[1.38] tracking-[0.01em] ${
+              className={`row-title mt-1.5 block font-display text-[16px] leading-[1.38] tracking-[0.01em] transition-colors ${
                 read
-                  ? 'font-normal text-paper-muted/80 opacity-75'
-                  : 'font-medium text-paper'
+                  ? 'font-normal text-paper-muted/75'
+                  : 'font-medium text-paper group-hover:text-cinnabar/90'
               }`}
             >
               {article.title}
             </span>
 
-            {article.summary && (
+            {/* 清洗后的正文摘要 */}
+            {displaySummary && (
               <span
-                className={`mt-1.5 line-clamp-2 text-[12.5px] leading-[1.6] ${
-                  read ? 'text-paper-faint/85' : 'text-paper-muted/95'
+                className={`mt-1.5 line-clamp-2 text-[12px] leading-[1.58] ${
+                  read ? 'text-paper-faint/80' : 'text-paper-muted/90'
                 }`}
               >
-                {article.summary}
+                {displaySummary}
               </span>
             )}
           </span>
 
-          <InkImage
-            src={article.image}
-            collapseOnError
-            className={`h-17 w-17 shrink-0 rounded-md transition-all duration-300 ${
-              read
-                ? 'opacity-[0.62] grayscale-[0.2] saturate-[0.8] group-active:opacity-85'
-                : 'opacity-[0.96] group-active:opacity-100'
-            }`}
-          />
+          {/* 缩略图容器：微圆角与极细边框 */}
+          {article.image && (
+            <span className="relative shrink-0 overflow-hidden rounded-lg border border-haze/70 bg-ink-deep/20 shadow-2xs mt-0.5">
+              <InkImage
+                src={article.image}
+                collapseOnError
+                className={`h-16 w-16 sm:h-17 sm:w-17 object-cover transition-all duration-300 ${
+                  read
+                    ? 'opacity-[0.62] grayscale-[0.25] saturate-[0.8] group-active:opacity-85'
+                    : 'opacity-[0.98] group-active:opacity-100'
+                }`}
+              />
+            </span>
+          )}
         </button>
       )}
 
@@ -194,13 +200,13 @@ export const ArticleRow = memo(function ArticleRow({
             </h2>
 
             {/* 摘要导读 */}
-            {article.summary && (
+            {displaySummary && (
               <p
                 className={`mt-2 line-clamp-3 text-[13px] leading-[1.65] ${
                   read ? 'text-paper-faint/80' : 'text-paper-muted/90'
                 }`}
               >
-                {article.summary}
+                {displaySummary}
               </p>
             )}
           </div>
@@ -243,6 +249,7 @@ export const LeadStory = memo(function LeadStory({
 }: LeadProps) {
   const showLead = variant === 'lead' || variant === 'auto'
   const showBanner = variant === 'banner' || variant === 'auto'
+  const displaySummary = cleanSummaryText(article.summary, article.title)
 
   return (
     <>
@@ -301,13 +308,13 @@ export const LeadStory = memo(function LeadStory({
             >
               {article.title}
             </span>
-            {article.summary && (
+            {displaySummary && (
               <span
                 className={`mt-2 line-clamp-2 text-[13px] leading-[1.65] ${
                   read ? 'text-paper-faint/85' : 'text-paper-muted'
                 }`}
               >
-                {article.summary}
+                {displaySummary}
               </span>
             )}
             <span className="mt-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-paper-faint">
@@ -378,9 +385,9 @@ export const LeadStory = memo(function LeadStory({
                   {article.title}
                 </h1>
 
-                {article.summary && (
+                {displaySummary && (
                   <p className="mt-3.5 line-clamp-4 text-[14px] leading-[1.7] text-paper-muted">
-                    {article.summary}
+                    {displaySummary}
                   </p>
                 )}
               </div>

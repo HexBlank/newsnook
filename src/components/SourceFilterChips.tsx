@@ -31,16 +31,16 @@ export function SourceFilterChips({
           onClick={() => onSelect(null)}
           className={`group flex h-6.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 font-mono text-[11px] transition-all duration-200 active:scale-95 ${
             selectedSourceId === null
-              ? 'bg-paper text-ink font-medium shadow-xs ring-1 ring-paper/20'
-              : 'border border-haze bg-ink-raised/40 text-paper-faint hover:border-paper-faint/40 hover:bg-ink-raised hover:text-paper'
+              ? 'bg-paper text-ink font-medium shadow-2xs ring-1 ring-paper/25'
+              : 'border border-haze/80 bg-ink-raised/60 text-paper-muted hover:border-paper-faint/50 hover:bg-ink-raised hover:text-paper'
           }`}
         >
           <span>全部</span>
           <span
             className={`font-mono text-[9.5px] leading-none ${
               selectedSourceId === null
-                ? 'text-ink/70'
-                : 'text-paper-faint/70 group-hover:text-paper-muted'
+                ? 'text-ink/75 font-semibold'
+                : 'text-paper-faint/80 group-hover:text-paper-muted'
             }`}
           >
             {sources.length}
@@ -59,8 +59,8 @@ export function SourceFilterChips({
               onClick={() => onSelect(isSelected ? null : source.id)}
               className={`group flex h-6.5 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[11px] transition-all duration-200 active:scale-95 ${
                 isSelected
-                  ? 'bg-paper text-ink font-medium shadow-xs ring-1 ring-paper/20'
-                  : 'border border-haze bg-ink-raised/40 text-paper-faint hover:border-paper-faint/40 hover:bg-ink-raised hover:text-paper'
+                  ? 'bg-paper text-ink font-medium shadow-2xs ring-1 ring-paper/25'
+                  : 'border border-haze/80 bg-ink-raised/60 text-paper-muted hover:border-paper-faint/50 hover:bg-ink-raised hover:text-paper'
               }`}
             >
               <span className="truncate max-w-[120px]">{source.name}</span>
@@ -68,8 +68,8 @@ export function SourceFilterChips({
                 <span
                   className={`font-mono text-[9.5px] leading-none ${
                     isSelected
-                      ? 'text-ink/70'
-                      : 'text-paper-faint/70 group-hover:text-paper-muted'
+                      ? 'text-ink/75 font-semibold'
+                      : 'text-paper-faint/80 group-hover:text-paper-muted'
                   }`}
                 >
                   {count}

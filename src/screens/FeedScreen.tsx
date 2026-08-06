@@ -514,20 +514,20 @@ export const FeedScreen = memo(function FeedScreen({
     <section className="relative flex min-h-0 flex-1 flex-col">
       <header className="relative z-20 shrink-0 bg-ink/92 pt-2 pb-1.5 backdrop-blur-xl border-b border-haze/40">
         <div className="page-x lg:px-6 xl:px-8 2xl:px-10 max-w-[2400px] mx-auto flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-baseline gap-2.5">
+          <div className="flex min-w-0 items-center gap-2">
             {onBack && (
-              <button type="button" onClick={onBack} aria-label="返回" className="-ml-1 self-center p-1 hover:text-paper">
+              <button type="button" onClick={onBack} aria-label="返回" className="-ml-1 p-1 hover:text-paper">
                 <ChevronLeft size={18} strokeWidth={1.5} className="text-paper-muted" />
               </button>
             )}
-            <h1 className="shrink-0 font-display text-[19px] leading-none text-paper md:text-[21px] lg:text-[23px]">
+            <h1 className="shrink-0 font-display text-[19px] leading-tight text-paper md:text-[21px] lg:text-[23px]">
               {title}
             </h1>
-            <p className="min-w-0 truncate font-mono text-[9.5px] lg:text-[11.5px] tracking-[0.14em] text-paper-faint">
+            <p className="hidden md:inline-block min-w-0 truncate font-mono text-[11px] lg:text-[11.5px] tracking-[0.12em] text-paper-faint">
               {activeCategory?.caption || caption}
             </p>
-            <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded-full border border-haze/80 bg-ink-raised/50 text-[10px] font-mono text-paper-faint">
-              共 {articles.length} 条
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full border border-haze/80 bg-ink-raised/60 text-[9.5px] lg:text-[10px] font-mono text-paper-faint">
+              {articles.length} 篇
             </span>
           </div>
 
