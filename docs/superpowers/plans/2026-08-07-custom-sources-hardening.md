@@ -33,11 +33,11 @@
 - Produces: `export async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T, index: number) => Promise<R>, signal?: AbortSignal, onItemDone?: (result: R, index: number) => void): Promise<R[]>`
 - Abort message for feed refresh callers can pass their own via thrown AbortError from signal; keep translation abort message inside translation callers if they wrap — shared helper should throw `DOMException` with name `AbortError` when `signal.aborted`, message optional default `'操作已取消'`
 
-- [ ] **Step 1: Write failing test** in `scripts/async-pool.test.ts` proving max in-flight ≤ concurrency (e.g. 10 items, concurrency 3, track peak)
-- [ ] **Step 2: Run** `npx tsx scripts/async-pool.test.ts` — expect FAIL (module missing)
-- [ ] **Step 3: Implement** `src/lib/asyncPool.ts` (move logic from translation providers)
-- [ ] **Step 4: Run test** — PASS; switch providers.ts to import it; run `npm run test:openai` or `npm run test:translation` smoke if cheap
-- [ ] **Step 5: Commit** `extract shared mapConcurrent into asyncPool`
+- [x] **Step 1: Write failing test** in `scripts/async-pool.test.ts` proving max in-flight ≤ concurrency (e.g. 10 items, concurrency 3, track peak)
+- [x] **Step 2: Run** `npx tsx scripts/async-pool.test.ts` — expect FAIL (module missing)
+- [x] **Step 3: Implement** `src/lib/asyncPool.ts` (move logic from translation providers)
+- [x] **Step 4: Run test** — PASS; switch providers.ts to import it; run `npm run test:openai` or `npm run test:translation` smoke if cheap
+- [x] **Step 5: Commit** `extract shared mapConcurrent into asyncPool`
 
 ---
 
