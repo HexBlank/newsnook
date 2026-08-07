@@ -148,7 +148,6 @@ export function useFeedTranslation(
           try {
             const results = await provider.translate({
               texts: textsToTranslate,
-              textKinds: textsToTranslate.map(() => 'headline' as const),
               sourceLanguage: prefs.sourceLanguage,
               targetLanguage: prefs.targetLanguage,
               signal: controller.signal,

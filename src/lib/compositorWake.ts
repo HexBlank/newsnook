@@ -1,37 +1,26 @@
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor, type PluginListenerHandle } from '@capacitor/core'
 
-let wakeScheduled = false
-
 /**
- * 强迫 Blink/Chromium 的 GPU 合成器提交新帧：
- * 1. 注入 translateZ(0) 3D 变换并读取 offsetHeight 强迫样式与排版计算（reflow）；
- * 2. 在下一帧还原样式；
- * 3. 在第三帧派发 resize 事件唤醒可能处于挂起状态的子渲染器（如 Canvas / 列表）。
+ * 唤醒 Web 容器与子渲染树（如虚拟列表、Canvas）：
+ * 1. 更新 documentElement 的 data-wake 标记并读取 offsetHeight 触发无害排版计算；
+ * 2. 派发 resize 事件，通知可能处于挂起状态的视图容器重新计算尺寸；
+ * 3. 避免给 <html> 施加 translateZ(0)（防止产生空的 3D 合成层）与脆弱的嵌套 rAF。
  */
 export function wakeWebViewCompositor(): void {
-  if (wakeScheduled) return
-  wakeScheduled = true
+  const root = document.documentElement
+  if (root) {
+    root.setAttribute('data-wake', String(Date.now()))
+    void root.offsetHeight
+  }
 
-  requestAnimationFrame(() => {
-    const root = document.documentElement
-    if (root) {
-      root.style.transform = 'translateZ(0)'
-      void root.offsetHeight
-    }
+  const notify = () => {
+    window.dispatchEvent(new Event('resize'))
+  }
 
-    requestAnimationFrame(() => {
-      if (root) {
-        root.style.transform = ''
-        void root.offsetHeight
-      }
-
-      requestAnimationFrame(() => {
-        wakeScheduled = false
-        window.dispatchEvent(new Event('resize'))
-      })
-    })
-  })
+  notify()
+  // 双轨延时调度，兜底部分机型在 Surface 完全就绪后的容器重排
+  window.setTimeout(notify, 60)
 }
 
 /**

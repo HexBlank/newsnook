@@ -109,27 +109,29 @@ assert.throws(
 )
 
 const systemAuto = openAiTranslationSystemPrompt('auto', 'zh-Hans', 'paragraph')
-assert.match(systemAuto, /translator|翻译|信、达、雅/i)
+assert.match(systemAuto, /请将以下内容翻译为简体中文/)
+assert.doesNotMatch(systemAuto, /信、达、雅|信达雅/)
 assert.doesNotMatch(systemAuto, /from English/i)
-assert.match(systemAuto, /Simplified Chinese|简体/)
-assert.match(systemAuto, /natural|通顺|fluently|news prose|journalistic/i)
-assert.doesNotMatch(systemAuto, /literal translation/i)
-assert.match(systemAuto, /About|NEVER expand|UI labels/i)
-assert.doesNotMatch(systemAuto, /news titles/)
+assert.match(systemAuto, /文本类型|专业领域|作者语气/)
+assert.match(systemAuto, /标准译名|不要臆造/)
+assert.match(systemAuto, /只输出最终译文/)
+assert.doesNotMatch(systemAuto, /Tehran|德黑兰|真主党|信达雅/)
+
+const systemEn = openAiTranslationSystemPrompt('auto', 'en', 'paragraph')
+assert.match(systemEn, /请将以下内容翻译为英语/)
+assert.doesNotMatch(systemEn, /简体中文/)
 
 const systemHeadline = openAiTranslationSystemPrompt('en', 'zh-Hans', 'headline')
-assert.match(systemHeadline, /headline|news title|新闻标题/i)
-assert.match(systemHeadline, /English/)
-assert.doesNotMatch(systemHeadline, /literal translation/i)
+assert.equal(systemHeadline, openAiTranslationSystemPrompt('en', 'zh-Hans', 'paragraph'))
 
 const userHeadline = openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'headline')
 assert.match(userHeadline, /<source_text>\nHello world\n<\/source_text>/)
-assert.match(userHeadline, /headline|新闻标题|title/i)
-assert.doesNotMatch(userHeadline, /literal/i)
+assert.equal(userHeadline, openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'paragraph'))
+assert.match(userHeadline, /^原文：/)
 
 const userBody = openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'paragraph')
-assert.match(userBody, /natural|fluently|通顺|原意|meaning/i)
-assert.doesNotMatch(userBody, /literal/i)
+assert.match(userBody, /原文：/)
+assert.doesNotMatch(userBody, /信达雅|literal/i)
 
 const originalFetch = globalThis.fetch
 const requests: { url: string; body: Record<string, unknown>; authorization: string | null }[] = []
@@ -174,7 +176,7 @@ assert.equal(requests[0].url, 'https://api.openai.com/v1/chat/completions')
 assert.equal(requests[0].authorization, 'Bearer sk-test')
 assert.equal(requests[0].body.model, 'gpt-4o-mini')
 assert.equal(requests[0].body.stream, false)
-assert.equal(requests[0].body.temperature, 0.35)
+assert.equal(requests[0].body.temperature, 0.6)
 assert.ok(Array.isArray(requests[0].body.messages))
 assert.deepEqual(
   batchIndexes.sort((a, b) => a - b),
@@ -199,9 +201,10 @@ const sys0 = (requests[0].body.messages as { role: string; content: string }[]).
 const sys1 = (requests[1].body.messages as { role: string; content: string }[]).find(
   (m) => m.role === 'system',
 )?.content
-assert.match(String(sys0), /headline|news title|新闻标题/i)
-assert.match(String(sys1), /article translator|news\/article|正文|prose/i)
-assert.equal(requests[0].body.temperature, 0.35)
+assert.match(String(sys0), /请将以下内容翻译为|只输出最终译文/)
+assert.equal(sys0, sys1)
+assert.doesNotMatch(String(sys1), /信、达、雅|信达雅/)
+assert.equal(requests[0].body.temperature, 0.6)
 
 await assert.rejects(
   () =>

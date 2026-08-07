@@ -621,7 +621,8 @@ export class OpenAiProvider extends CloudProvider {
           url,
           {
             model,
-            temperature: 0.35,
+            // Mid-low: fluent news prose without inventing proper-noun transliterations.
+            temperature: 0.6,
             stream: false,
             messages: [
               { role: 'system', content: system },
