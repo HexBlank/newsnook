@@ -6,17 +6,17 @@ import {
   ChevronUp,
   Globe,
   LoaderCircle,
+  Route,
   Shield,
   XCircle,
-  Zap,
 } from 'lucide-react'
 
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { proxyModeLabel, proxyProtocolLabel } from '../../features/proxy/config'
 import { currentProxyRuntime } from '../../features/proxy/runtime'
 import { parseProxyAddress } from '../../features/proxy/service'
 import { testProxyConnection } from '../../features/proxy/testConnection'
-import { browserTunnelUnsupportedReason, isTunnelProtocol } from '../../features/proxy/transport'
+import { browserTunnelUnsupportedReason } from '../../features/proxy/transport'
 import type { ProxyMode, ProxyPrefs, ProxyTestResult } from '../../features/proxy/types'
 
 interface Props {
@@ -29,24 +29,24 @@ const MODES: {
   id: ProxyMode
   label: string
   caption: string
-  icon: typeof Zap
+  icon: typeof Route
 }[] = [
   {
     id: 'auto',
     label: '智能分流',
-    caption: '推荐 · 国际源走代理，国内源直连',
-    icon: Zap,
+    caption: '国际源代理，国内直连',
+    icon: Route,
   },
   {
     id: 'always',
     label: '全局代理',
-    caption: '全部信源与正文抓取均经代理',
+    caption: '信源与正文均经代理',
     icon: Globe,
   },
   {
     id: 'off',
     label: '直连关闭',
-    caption: '不用应用内代理 · 适合系统 VPN',
+    caption: '适合系统 VPN',
     icon: Shield,
   },
 ]
@@ -63,11 +63,6 @@ export function ProxyScreen({ prefs, onChange, onBack }: Props) {
     () => browserTunnelUnsupportedReason(prefs, runtime),
     [prefs, runtime],
   )
-  const showDevTunnelNote =
-    !runtime.native &&
-    runtime.dev &&
-    parsedAddress.isValid &&
-    isTunnelProtocol(parsedAddress.protocol)
 
   const caption = useMemo(() => {
     const mode = proxyModeLabel(prefs.mode)
@@ -188,27 +183,9 @@ export function ProxyScreen({ prefs, onChange, onBack }: Props) {
                 </span>
               </label>
 
-              <p className="text-[10.5px] leading-relaxed text-paper-faint">
-                支持{' '}
-                <code className="text-paper-muted">http://host:port</code>
-                、{' '}
-                <code className="text-paper-muted">socks5://user:pass@host:port</code>
-                （仅 Android App
-                {runtime.dev ? '；开发态网页经 Vite 上游代理' : ''}），以及{' '}
-                <code className="text-paper-muted">https://proxy/?url=</code> 反向代理（网页与
-                App 均可）。省略协议时按 HTTP 处理。
-              </p>
-
               {tunnelUnsupportedHint ? (
                 <p className="rounded-xl border border-cinnabar/35 bg-cinnabar/10 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-cinnabar-soft">
                   {tunnelUnsupportedHint}
-                </p>
-              ) : null}
-
-              {showDevTunnelNote ? (
-                <p className="rounded-xl border border-haze bg-paper/5 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-paper-muted">
-                  开发服务器将把需代理的上游请求经此 HTTP/SOCKS 发出；生产静态网页不支持，请改用 Web
-                  反向代理或系统 VPN。
                 </p>
               ) : null}
 
@@ -292,7 +269,7 @@ export function ProxyScreen({ prefs, onChange, onBack }: Props) {
                     className="w-full rounded-xl border border-haze bg-ink-raised px-3.5 py-3 text-[12.5px] leading-relaxed text-paper outline-none focus:border-cinnabar/55 placeholder:text-paper-faint/65"
                   />
                   <span className="mt-1.5 block text-[10.5px] text-paper-faint">
-                    这些域名始终直连，逗号或换行分隔
+                    逗号或换行分隔
                   </span>
                 </label>
 
@@ -310,7 +287,7 @@ export function ProxyScreen({ prefs, onChange, onBack }: Props) {
                     className="w-full rounded-xl border border-haze bg-ink-raised px-3.5 py-3 text-[12.5px] leading-relaxed text-paper outline-none focus:border-cinnabar/55 placeholder:text-paper-faint/65"
                   />
                   <span className="mt-1.5 block text-[10.5px] text-paper-faint">
-                    这些域名始终走代理，逗号或换行分隔
+                    逗号或换行分隔
                   </span>
                 </label>
               </div>
@@ -318,11 +295,6 @@ export function ProxyScreen({ prefs, onChange, onBack }: Props) {
           </div>
         </SettingsSection>
       )}
-
-      <SettingsHint>
-        工作模式与地址会保存在本机。智能分流只影响应用内的信源与正文请求；系统已开启 VPN / TUN
-        时可直接选「直连关闭」。
-      </SettingsHint>
     </SettingsShell>
   )
 }

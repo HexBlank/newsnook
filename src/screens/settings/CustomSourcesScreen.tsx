@@ -3,20 +3,20 @@ import {
   AlertCircle,
   ArrowDownToLine,
   Check,
+  ChevronDown,
   Download,
   ExternalLink,
   Loader2,
   Plus,
   Rss,
   Search,
-  Sparkles,
   Trash2,
   Upload,
   X,
 } from 'lucide-react'
 
-import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { ConfirmDialog, OptionPickerDialog, type OptionPickerItem } from '../../components/ConfirmDialog'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { fetchAbsoluteText } from '../../lib/http'
 import {
   discoverFeedsFromHtml,
@@ -87,6 +87,23 @@ export function CustomSourcesScreen({
   // 删除确认弹窗
   const [sourceToDelete, setSourceToDelete] = useState<NewsSource | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
+
+  const categoryOptions: OptionPickerItem<string>[] = useMemo(
+    () => [
+      { id: 'none', label: '暂不归入特定分类 (可在分类设置中按需添加)' },
+      ...categories.map((c) => ({ id: c.id, label: c.label })),
+    ],
+    [categories],
+  )
+
+  const selectedCategoryLabel = useMemo(() => {
+    if (targetCategory === 'none') {
+      return '暂不归入特定分类 (可在分类设置中按需添加)'
+    }
+    const found = categories.find((c) => c.id === targetCategory)
+    return found ? found.label : '暂不归入特定分类'
+  }, [targetCategory, categories])
 
   const filteredCustomSources = useMemo(() => {
     const list = prefs.customSources ?? []
@@ -111,6 +128,7 @@ export function CustomSourcesScreen({
     setInputLabel('')
     setInputSiteUrl('')
     setTargetCategory('none')
+    setCategoryPickerOpen(false)
     setProbeError(null)
     setProbeDiscoveredFeeds([])
     setEditingSourceId(null)
@@ -413,7 +431,7 @@ export function CustomSourcesScreen({
             </div>
             <p className="mt-3 text-[14px] font-medium text-paper">暂无自定义订阅源</p>
             <p className="mt-1 text-[12px] text-paper-faint">
-              点击上方「添加 RSS 源」或「导入 OPML」添加您喜欢的任何博客与新闻源。
+              上方可添加 RSS，或导入 OPML。
             </p>
           </div>
         ) : (
@@ -517,10 +535,6 @@ export function CustomSourcesScreen({
         )}
       </SettingsSection>
 
-      <SettingsHint>
-        自定义信源完全存储在您的本地设备中，直接通过无头网络或本地代理获取 RSS / Atom 流，具备与内置信源相同的离线缓存、图片预览与阅读排版能力。
-      </SettingsHint>
-
       {/* 添加 / 编辑订阅源 模态框 */}
       {showAddModal && (
         <div
@@ -566,7 +580,7 @@ export function CustomSourcesScreen({
                     onClick={() => probeFeedUrl(inputUrl)}
                     className="flex shrink-0 items-center gap-1 rounded-xl border border-haze bg-paper/5 px-3.5 py-2.5 font-mono text-[11px] text-paper-muted transition-colors hover:border-cinnabar/60 hover:text-paper disabled:opacity-40"
                   >
-                    {probing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    {probing ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
                     探测
                   </button>
                 </div>
@@ -650,18 +664,16 @@ export function CustomSourcesScreen({
                   <label className="block text-[13px] font-medium text-paper">
                     同时归入分类 (可选)
                   </label>
-                  <select
-                    value={targetCategory}
-                    onChange={(e) => setTargetCategory(e.target.value)}
-                    className="mt-1.5 w-full rounded-xl border border-haze bg-ink-raised px-3.5 py-2.5 text-[13.5px] text-paper focus:border-cinnabar focus:outline-none"
+                  <button
+                    type="button"
+                    onClick={() => setCategoryPickerOpen(true)}
+                    className="mt-1.5 flex w-full items-center justify-between gap-2 rounded-xl border border-haze bg-ink-raised px-3.5 py-2.5 text-left text-[13.5px] text-paper transition-colors hover:border-paper-faint/40 focus:border-cinnabar focus:outline-none active:scale-[0.99]"
                   >
-                    <option value="none">暂不归入特定分类 (可在分类设置中按需添加)</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="min-w-0 flex-1 truncate text-paper">
+                      {selectedCategoryLabel}
+                    </span>
+                    <ChevronDown size={15} strokeWidth={1.8} className="shrink-0 text-paper-faint" />
+                  </button>
                 </div>
               )}
 
@@ -770,7 +782,7 @@ export function CustomSourcesScreen({
 
               {opmlResult.sources.length > OPML_IMPORT_SOFT_LIMIT && (
                 <p className="rounded-2xl border border-cinnabar/30 bg-cinnabar/10 px-3.5 py-3 text-[12px] leading-relaxed text-cinnabar-soft">
-                  本次超过 {OPML_IMPORT_SOFT_LIMIT} 个源。应用按当前分类限流刷新（并发 5），但仍可能较慢、更耗电。建议按需分批导入或拆分分类。
+                  本次超过 {OPML_IMPORT_SOFT_LIMIT} 个源，导入后刷新可能较慢、更耗电。可分批导入或拆分分类。
                 </p>
               )}
             </div>
@@ -831,7 +843,7 @@ export function CustomSourcesScreen({
                     仅导出自建订阅源 ({customSources.length} 个)
                   </span>
                   <span className="mt-0.5 block text-[11px] text-paper-faint">
-                    适合轻量备份与在不同设备间同步您的私有源
+                    轻量备份与换机同步
                   </span>
                 </div>
               </label>
@@ -849,7 +861,7 @@ export function CustomSourcesScreen({
                     导出全部已订阅频道与分类
                   </span>
                   <span className="mt-0.5 block text-[11px] text-paper-faint">
-                    包含内置全量信源与自建信源，按您的分类树结构组织
+                    含内置与自建，按分类树组织
                   </span>
                 </div>
               </label>
@@ -901,12 +913,24 @@ export function CustomSourcesScreen({
         title="导入大量订阅？"
         message={
           opmlResult
-            ? `将导入 ${opmlResult.sources.length} 个源（超过建议上限 ${OPML_IMPORT_SOFT_LIMIT}）。刷新时会限流，但仍可能较慢并增加耗电。确定继续？`
+            ? `将导入 ${opmlResult.sources.length} 个源（超过建议上限 ${OPML_IMPORT_SOFT_LIMIT}）。刷新可能较慢并增加耗电。确定继续？`
             : ''
         }
         confirmLabel="仍然导入"
         onCancel={() => setConfirmLargeOpmlImport(false)}
         onConfirm={commitOpmlImport}
+      />
+
+      <OptionPickerDialog
+        open={categoryPickerOpen}
+        title="选择归入分类"
+        value={targetCategory}
+        options={categoryOptions}
+        onCancel={() => setCategoryPickerOpen(false)}
+        onChange={(val) => {
+          setTargetCategory(val)
+          setCategoryPickerOpen(false)
+        }}
       />
     </SettingsShell>
   )

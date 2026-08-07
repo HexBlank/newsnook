@@ -78,9 +78,7 @@ export function CategorySourcesScreen({
         />
       </div>
 
-      <SettingsHint>
-        勾选的信源会在这个分类下混合编排，按发布时间倒序。至少保留一个信源；未做修改时跟随内置推荐组合。
-      </SettingsHint>
+      <SettingsHint>至少保留一个信源。</SettingsHint>
     </SettingsShell>
   )
 }

@@ -14,7 +14,7 @@ import {
   Trash2,
 } from 'lucide-react'
 
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { ConfirmDialog, OptionPickerDialog } from '../../components/ConfirmDialog'
 import { ToggleSwitch } from '../../components/ToggleSwitch'
 import {
@@ -179,28 +179,23 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
   )
   const apiKeyOptional = prefs.provider === 'deeplx'
   const modelCaption = useMemo(() => {
-    if (!localTranslationAvailable) return '当前安装包不包含本地翻译'
-    if (autoSource) {
-      return '自动检测下将在翻译时按识别结果使用对应语言包；若要预下载，请先指定原文语言'
-    }
+    if (!localTranslationAvailable) return '当前版本不支持本地翻译'
+    if (autoSource) return '预下载请先指定原文语言'
     if (!modelState) return '正在检查语言包…'
-    return modelState.ready ? '语言包已就绪，可离线翻译' : '尚未下载这组语言包'
+    return modelState.ready ? '语言包已就绪' : '尚未下载语言包'
   }, [autoSource, localTranslationAvailable, modelState])
 
   const bergamotCaption = useMemo(() => {
-    if (!bergamotAvailable) return '当前安装包不包含 Bergamot 离线翻译'
-    if (autoSource) return '自动检测下将先在端侧识别语言；若要预下载，请先指定原文语言'
-    if (!bergamotState) return '正在检查 Bergamot 引擎状态…'
+    if (!bergamotAvailable) return '当前版本不支持 Bergamot 离线翻译'
+    if (autoSource) return '预下载请先指定原文语言'
+    if (!bergamotState) return '正在检查引擎…'
     if (bergamotState.ready && bergamotState.engineReady) {
-      return '语对模型与引擎均已就绪，可离线翻译'
+      return '语对已就绪'
     }
     if (bergamotState.ready && !bergamotState.engineReady) {
-      return (
-        bergamotState.engineError ??
-        '模型已下载，但原生引擎未链接。请执行 npm run bergamot:init 后重编 local 包。'
-      )
+      return bergamotState.engineError ?? '模型已下载，但当前版本无法使用离线引擎'
     }
-    return '尚未下载该语对（首版支持 en↔zh；约 40–50 MB）'
+    return '尚未下载该语对（约 40–50 MB）'
   }, [autoSource, bergamotAvailable, bergamotState])
 
   const updateCloud = (patch: Partial<CloudTranslationConfig>) => {
@@ -337,7 +332,7 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
             <div className="pr-4">
               <span className="block text-[14px] text-paper">自动翻译外文标题</span>
               <span className="mt-1 block text-[11px] leading-relaxed text-paper-faint">
-                开启后，首页及各分类列表中的外文新闻标题将自动检测并翻译为目标语言，导读保留原文，无需点进正文即可快速知晓新闻要点。
+                仅翻译列表标题
               </span>
             </div>
             <ToggleSwitch
@@ -375,13 +370,13 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
             {
               id: 'compare' as const,
               label: '对比翻译',
-              caption: '每段原文下方显示译文',
+              caption: '段下附译文',
               icon: Languages,
             },
             {
               id: 'replace' as const,
               label: '全文替代',
-              caption: '只显示译文，不保留原文',
+              caption: '只显示译文',
               icon: FileText,
             },
           ]).map((mode) => {
@@ -600,10 +595,6 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
                 {modelMessage}
               </p>
             )}
-            <p className="mt-3 text-[10.5px] leading-relaxed text-paper-faint">
-              模型来自 Mozilla Firefox Translations（GCS）；首版语对 en↔zh。引擎需
-              `npm run bergamot:init` 后编入 local 包。
-            </p>
           </div>
         </div>
       ) : activeCloud ? (
@@ -640,34 +631,34 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
               }
             />
             {prefs.provider === 'deeplx' && (
-              <>
-                <Field
-                  label="最大并发"
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={String(activeCloud.concurrency ?? 2)}
-                  placeholder="2"
-                  onChange={(raw) => {
-                    const trimmed = raw.trim()
-                    if (!trimmed) {
-                      updateCloud({ concurrency: 2 })
-                      return
-                    }
-                    const n = Number(trimmed)
-                    if (!Number.isFinite(n)) return
-                    const truncated = Math.trunc(n)
-                    if (truncated < 1 || truncated > 5) return
-                    updateCloud({ concurrency: truncated })
-                  }}
-                />
-                <p className="mt-1 text-[11px] leading-relaxed text-paper-faint">
-                  提示：若您的 DeepLX 服务支持，推荐在 URL 后使用 <code className="font-mono text-cinnabar-soft">/v2/translate</code> 端点启用单次批量打包；若使用单段 <code className="font-mono text-cinnabar-soft">/translate</code> 遭遇 429 限流，可将并发设为 1。
-                </p>
-              </>
+              <Field
+                label="最大并发"
+                type="number"
+                min={1}
+                max={5}
+                value={String(activeCloud.concurrency ?? 2)}
+                placeholder="2"
+                onChange={(raw) => {
+                  const trimmed = raw.trim()
+                  if (!trimmed) {
+                    updateCloud({ concurrency: 2 })
+                    return
+                  }
+                  const n = Number(trimmed)
+                  if (!Number.isFinite(n)) return
+                  const truncated = Math.trunc(n)
+                  if (truncated < 1 || truncated > 5) return
+                  updateCloud({ concurrency: truncated })
+                }}
+              />
             )}
             {prefs.provider === 'azure' && (
-              <Field label="AZURE REGION（可选）" value={activeCloud.region ?? ''} placeholder="例如 eastasia；全局单服务资源可留空" onChange={(region) => updateCloud({ region })} />
+              <Field
+                label="AZURE REGION（可选）"
+                value={activeCloud.region ?? ''}
+                placeholder="例如 eastasia"
+                onChange={(region) => updateCloud({ region })}
+              />
             )}
             {prefs.provider === 'openai' && (
               <>
@@ -738,26 +729,9 @@ export function TranslationScreen({ prefs, onChange, onBack }: Props) {
               测试连接
             </button>
             {testMessage && <p className={`text-[11px] leading-relaxed ${testState === 'error' ? 'text-cinnabar-soft' : 'text-paper-faint'}`}>{testMessage}</p>}
-            {prefs.provider === 'deeplx' && (
-              <p className="text-[10.5px] leading-relaxed text-paper-faint">
-                可直接粘贴包含路径令牌的完整 /translate 地址；若只填写域名，会自动补上 /translate。
-              </p>
-            )}
-            {prefs.provider === 'openai' && (
-              <p className="text-[10.5px] leading-relaxed text-paper-faint">
-                填写 OpenAI 兼容 Base URL（如 https://api.openai.com/v1），不要填写完整
-                /chat/completions 路径。Model 可手填，或从远端列表选择。最大并发为每次同时请求的段落数（1–10，默认
-                2）。
-              </p>
-            )}
           </div>
         </div>
       ) : null}
-
-      <SettingsHint>
-        云服务的费用与配额由你的服务商账号承担，密钥只保存在本机并直接发往所填 API 地址。ML Kit
-        需 Google 服务；Bergamot 使用 Mozilla 专用翻译模型，适合无 GMS 离线；AI 翻译使用 OpenAI 兼容接口。
-      </SettingsHint>
 
       <OptionPickerDialog
         open={modelPickerOpen && remoteModels.length > 0}

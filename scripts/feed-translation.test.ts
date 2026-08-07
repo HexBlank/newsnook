@@ -7,6 +7,7 @@ import {
 } from '../src/features/translation/feedTranslationStorage'
 import { detectLanguage } from '../src/features/translation/detectLanguage'
 import { DEFAULT_TRANSLATION_PREFS, normalizeTranslationPrefs } from '../src/features/translation/config'
+import { isArticleForeign, isValidTranslationQuality } from '../src/features/translation/quality'
 
 // 1. Mock LocalStorage for node environment
 const memoryStore = new Map<string, string>()
@@ -55,5 +56,80 @@ assert.equal(zhTitle.language, 'zh-Hans')
 
 const jaTitle = detectLanguage('ソニー、新型イメージセンサーを発表 スマートフォン向けに最適化')
 assert.equal(jaTitle.language, 'ja')
+
+// 5. Test isArticleForeign (including mixed English title + Chinese summary boilerplate)
+assert.equal(
+  isArticleForeign(
+    {
+      title: "Wang Gungwu on the lessons of Chinese history and the Cold War",
+      summary: "南华早报 · 2026",
+    },
+    'zh-Hans',
+  ),
+  true,
+)
+
+assert.equal(
+  isArticleForeign(
+    {
+      title: "Apple unveils new chips",
+      summary: "Tech news summary",
+    },
+    'zh-Hans',
+  ),
+  true,
+)
+
+assert.equal(
+  isArticleForeign(
+    {
+      title: "中国空间站最新动态",
+      summary: "神舟飞船乘组顺利开展各项实验",
+    },
+    'zh-Hans',
+  ),
+  false,
+)
+
+// 6. Test isValidTranslationQuality (Rejecting partial / corrupted translations)
+// Bad case 1: "Wang Gungwu on the lessons of Chinese history and the Cold War" -> "王 gunshot on Chinese history and the Cold War"
+assert.equal(
+  isValidTranslationQuality(
+    "Wang Gungwu on the lessons of Chinese history and the Cold War",
+    "王 gunshot on Chinese history and the Cold War",
+    "zh-Hans",
+  ),
+  false,
+)
+
+// Bad case 2: Unchanged foreign text returned
+assert.equal(
+  isValidTranslationQuality(
+    "Beyond call centres? Philippines reopens Manila for outsourcing edge",
+    "Beyond call centres? Philippines reopens Manila for outsourcing edge",
+    "zh-Hans",
+  ),
+  false,
+)
+
+// Good case 1: Faithful full translation
+assert.equal(
+  isValidTranslationQuality(
+    "Wang Gungwu on the lessons of Chinese history and the Cold War",
+    "王赓武谈中国历史与冷战的教训",
+    "zh-Hans",
+  ),
+  true,
+)
+
+// Good case 2: Proper translation with brand name preserved
+assert.equal(
+  isValidTranslationQuality(
+    "DeepSeek V3 released with high performance",
+    "DeepSeek V3 正式发布，性能表现优异",
+    "zh-Hans",
+  ),
+  true,
+)
 
 console.log('feed-translation: ok')

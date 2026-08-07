@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react'
-import { Sparkles, Trash2 } from 'lucide-react'
+import { PanelTop, Trash2 } from 'lucide-react'
 
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { SourcePicker } from '../../components/SourcePicker'
 import type { CategoryId, NewsCategory } from '../../sources/categories'
 import {
@@ -115,7 +115,7 @@ export function CategoryEditScreen({
       caption={
         selectedIds.length
           ? `已选 ${selectedIds.length} 个信源 · ${describeSources(selectedIds, prefs.customSources)}`
-          : '自定义信源组合配置'
+          : '自选信源组合'
       }
       onBack={onBack}
       action={
@@ -132,12 +132,9 @@ export function CategoryEditScreen({
       {/* 首页 Tab 即时预览 */}
       <div className="page-x pt-3 pb-1">
         <div className="rounded-2xl border border-haze/80 bg-ink-raised/60 p-3.5 backdrop-blur-sm">
-          <div className="flex items-center justify-between text-[11px] text-paper-faint">
-            <span className="flex items-center gap-1.5 font-mono tracking-wider">
-              <Sparkles size={13} className="text-cinnabar-soft" />
-              首页 Tab 实时效果
-            </span>
-            <span className="font-mono text-[10px] text-paper-faint/70">所见即所得</span>
+          <div className="flex items-center gap-1.5 text-[11px] text-paper-faint">
+            <PanelTop size={13} className="text-cinnabar-soft" />
+            <span className="font-mono tracking-wider">顶栏预览</span>
           </div>
 
           <div className="mt-3 flex items-center justify-center gap-6 overflow-hidden rounded-xl border border-haze/60 bg-ink/70 py-3.5 px-4">
@@ -183,7 +180,7 @@ export function CategoryEditScreen({
           {/* 灵感快捷标签 */}
           <div>
             <span className="block font-mono text-[10.5px] tracking-wider text-paper-faint">
-              灵感预设（点击快速填入）：
+              快捷填入
             </span>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {PRESET_INSPIRATIONS.map((preset) => (
@@ -215,9 +212,6 @@ export function CategoryEditScreen({
               placeholder={label.trim().slice(0, 4) || '自动截取前 4 字'}
               className="mt-1.5 w-full rounded-xl border border-haze bg-ink-raised px-3.5 py-2.5 text-[14.5px] text-paper placeholder-paper-faint/45 transition-colors focus:border-cinnabar focus:outline-none"
             />
-            <p className="mt-1 font-mono text-[10px] text-paper-faint">
-              在手机顶栏滑动轨道上紧凑显示，留空时自动取分类全称前 4 个字。
-            </p>
           </div>
         </div>
       </SettingsSection>
@@ -240,7 +234,7 @@ export function CategoryEditScreen({
               <div>
                 <h3 className="text-[13.5px] font-medium text-paper">删除此自定义分类</h3>
                 <p className="mt-0.5 text-[11px] text-paper-faint">
-                  删除后该分类将从首页轨道和列表中移除，不会影响内置信源。
+                  将从首页顶栏移除，不影响信源本身。
                 </p>
               </div>
 
@@ -275,10 +269,6 @@ export function CategoryEditScreen({
           </div>
         </div>
       )}
-
-      <SettingsHint>
-        新建的分类将作为一个独立的阅读轨道出现在首页顶栏，聚合所选信源的文章并按时间流倒序展示。
-      </SettingsHint>
     </SettingsShell>
   )
 }

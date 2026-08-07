@@ -7,9 +7,9 @@ export type ThemeMode = 'system' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
 export const THEME_MODES: { id: ThemeMode; label: string; caption: string }[] = [
-  { id: 'system', label: '跟随系统', caption: '按系统昼夜设置自动切换' },
-  { id: 'light', label: '昼读', caption: '宣纸暖白，适合明亮环境' },
-  { id: 'dark', label: '夜读', caption: '深墨底色，适合弱光环境' },
+  { id: 'system', label: '跟随系统', caption: '随系统切换' },
+  { id: 'light', label: '昼读', caption: '浅色' },
+  { id: 'dark', label: '夜读', caption: '深色' },
 ]
 
 /** 改动这里时，index.html 里防闪脚本的兜底值也要一起改 */

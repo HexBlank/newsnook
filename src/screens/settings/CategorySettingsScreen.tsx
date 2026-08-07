@@ -528,7 +528,7 @@ export function CategorySettingsScreen({
               </span>
             </div>
             <p className="mt-1 text-[12px] leading-relaxed text-paper-muted">
-              开启时切换或滑动分类将自动拉取最新内容；关闭时保留在各分类之前的阅读位置，仅在手动下拉或点击刷新时同步。
+              关闭后只保留阅读位置，不自动联网。
             </p>
           </div>
           <ToggleSwitch
@@ -560,7 +560,7 @@ export function CategorySettingsScreen({
             新建分类
           </span>
           <span className="mt-0.5 font-mono text-[9.5px] text-paper-faint">
-            自选信源组合配置
+            自选信源组合
           </span>
         </button>
 
@@ -662,7 +662,7 @@ export function CategorySettingsScreen({
                 </span>
               ) : (
                 <span className="mt-2 inline-flex items-center gap-0.5 self-end font-mono text-[9px] tracking-[0.12em] text-paper-faint">
-                  去配置
+                  频道启用
                   <ChevronRight size={11} strokeWidth={1.6} />
                 </span>
               )}
@@ -672,7 +672,7 @@ export function CategorySettingsScreen({
       </div>
 
       <SettingsHint>
-        长按卡片，或按住左上角把手拖到新位置，即可调整首页轨道顺序；开关控制是否显示。点卡片进入该分类的信源勾选与编辑；「综合」会打开「综合频道」，由其启用列表决定混读内容。
+        长按排序，开关控制显隐。「综合」跟频道启用，其它分类单独选源。
       </SettingsHint>
 
       {/* 恢复默认确认弹窗 */}

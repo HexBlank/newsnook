@@ -137,14 +137,14 @@ export function MeScreen({
           <SettingsRow
             icon={Bookmark}
             title="稍后读"
-            caption={later.length ? `${later.length} 篇待读 · 离线正文已保留` : '列表右滑即可加入稍后读'}
+            caption={later.length ? `${later.length} 篇待读` : '列表右滑可加入'}
             badge={later.length > 0 ? later.length : null}
             onClick={onOpenLater}
           />
           <SettingsRow
             icon={History}
             title="最近阅读"
-            caption={history.length ? `${history.length} 篇正文已离线` : '打开过的文章自动保留正文'}
+            caption={history.length ? `${history.length} 篇` : '打开过的文章会出现在这里'}
             onClick={onOpenHistory}
           />
         </ul>
@@ -158,13 +158,13 @@ export function MeScreen({
           <SettingsRow
             icon={Rss}
             title="自定义订阅与 OPML"
-            caption={customSourcesSummary ?? '管理 RSS/Atom 订阅源 · OPML 导入与导出'}
+            caption={customSourcesSummary ?? 'RSS / Atom · OPML 导入导出'}
             onClick={onOpenCustomSources}
           />
           <SettingsRow
             icon={LayoutGrid}
             title="分类与自动刷新"
-            caption={categoriesSummary ?? '管理分类顺序、信源及切换自动刷新'}
+            caption={categoriesSummary ?? '顺序、信源与切换刷新'}
             onClick={onOpenCategories}
           />
           <SettingsRow
@@ -227,8 +227,7 @@ export function MeScreen({
         <div data-reveal className="page-x lg:px-8 max-w-2xl pt-8">
           <p className="font-display text-[15px] text-paper">权利和免责</p>
           <p className="mt-2 text-[11.5px] leading-relaxed text-paper-faint">
-            新闻内容的著作权及其他相关权利归原发布方所有；本应用仅为本地阅读客户端，不托管、不转载、不运营内容库。
-            列表与正文由本机直接请求来源站点获取，稍后读与已读状态仅保存在本地。
+            内容版权归原发布方。本应用只做本地阅读，不托管内容库；列表与正文由本机直连来源站点，稍后读与已读仅存本机。
           </p>
         </div>
         </div>

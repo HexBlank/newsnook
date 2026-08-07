@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, LayoutTemplate, Settings2, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, LayoutTemplate, Settings2 } from 'lucide-react'
 
 export interface PresetSwitcherItem {
   id: string
@@ -94,7 +94,7 @@ export function PresetSwitcher({
           <div className="page-x flex shrink-0 items-center justify-between gap-3 pt-3 pb-3 border-b border-haze/50">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-cinnabar/15 text-cinnabar">
-                <Sparkles size={16} />
+                <LayoutTemplate size={16} />
               </div>
               <div className="min-w-0">
                 <h2 id={titleId} className="font-display text-[18px] font-semibold leading-none text-paper">

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { FileText, ListTree, Trash2 } from 'lucide-react'
 
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { clearBodyCache, type BodyCacheStats } from '../../lib/bodyCache'
 import { clearListCache } from '../../lib/storage'
 
@@ -64,7 +64,7 @@ function CacheRow({
   )
 }
 
-export function StorageScreen({ laterCount, usage, onCacheChange, onBack }: Props) {
+export function StorageScreen({ laterCount: _laterCount, usage, onCacheChange, onBack }: Props) {
   const total = usage.bodies.bytes + usage.lists.bytes
   const [confirmClearAll, setConfirmClearAll] = useState(false)
 
@@ -119,13 +119,6 @@ export function StorageScreen({ laterCount, usage, onCacheChange, onBack }: Prop
           清除全部可管理缓存
         </button>
       </div>
-
-      <SettingsHint>
-        完整打开过的文章会把正文文字和排版存在本机，再次打开时无需等待来源站点；正文中的网络图片仍由
-        Android WebView 自身按站点缓存策略管理。稍后读会限速预取正文并优先保留。
-        正文最多占用约 3 MB，写满后自动淘汰最久没读的普通文章。当前稍后读 {laterCount}
-        条，已预取 {usage.bodies.pinned} 篇；标题、已读状态和设置不在缓存清理范围内。
-      </SettingsHint>
 
       <ConfirmDialog
         open={confirmClearAll}

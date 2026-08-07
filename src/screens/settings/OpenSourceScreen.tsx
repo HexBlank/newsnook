@@ -1,7 +1,7 @@
 import { ExternalLink } from 'lucide-react'
 import { Browser } from '@capacitor/browser'
 
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import {
   APP_LICENSE,
   NATIVE_OSS_LICENSES,
@@ -90,10 +90,6 @@ export function OpenSourceScreen({ onBack }: Props) {
           ))}
         </ul>
       </SettingsSection>
-
-      <SettingsHint>
-        列表为直接依赖与关键原生组件，不含完整传递依赖树。各组件版权归属其原作者；完整条款以其上游仓库为准。
-      </SettingsHint>
     </SettingsShell>
   )
 }

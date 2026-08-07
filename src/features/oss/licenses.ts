@@ -64,6 +64,6 @@ export const NATIVE_OSS_LICENSES: OssLicenseEntry[] = [
     name: 'Bergamot Translator',
     license: 'MPL-2.0',
     url: 'https://github.com/browsermt/bergamot-translator',
-    note: 'local 包离线翻译引擎（若已编入）',
+    note: '离线翻译引擎',
   },
 ]

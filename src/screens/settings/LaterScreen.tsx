@@ -15,7 +15,7 @@ export function LaterScreen({ later, onOpen, onRemoveLater, onBack }: Props) {
   return (
     <SettingsShell
       title="稍后读"
-      caption={later.length ? `共 ${later.length} 篇待读 · 列表右滑亦可快速管理` : '列表右滑即可加入稍后读'}
+      caption={later.length ? `共 ${later.length} 篇` : '列表右滑可加入'}
       onBack={onBack}
     >
       {later.length === 0 ? (
@@ -25,7 +25,7 @@ export function LaterScreen({ later, onOpen, onRemoveLater, onBack }: Props) {
           </div>
           <p className="mt-4 font-display text-[16px] text-paper">暂无稍后读内容</p>
           <p className="mt-2 max-w-xs text-[12px] leading-relaxed text-paper-faint">
-            在首页或分类文章列表中向右滑动卡片，即可快速加入稍后读；已加入的文章会自动保留离线正文。
+            在列表中右滑卡片即可加入。
           </p>
         </div>
       ) : (

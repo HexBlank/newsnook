@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import {
+  BookMarked,
   BookOpen,
   Check,
   ChevronRight,
   CopyPlus,
   Cpu,
+  FolderPlus,
   Gamepad2,
   Globe,
   Layers,
@@ -12,7 +14,6 @@ import {
   Pencil,
   Plus,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   TrendingUp,
 } from 'lucide-react'
@@ -107,7 +108,7 @@ function getBuiltinIcon(id: string) {
     case BUILTIN_TECH_ID:
       return Cpu
     case BUILTIN_DEPTH_ID:
-      return Sparkles
+      return BookMarked
     case BUILTIN_BIZ_ID:
       return TrendingUp
     case BUILTIN_WORLD_ID:
@@ -489,11 +490,11 @@ function PresetEmptyState({ onSaveAs }: { onSaveAs: () => void }) {
     <div className="page-x pt-2">
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-haze/90 bg-ink-raised/30 px-4 py-7 text-center">
         <div className="flex h-10 w-10 items-center justify-center rounded-full border border-haze bg-paper/5 text-paper-muted">
-          <Sparkles size={18} strokeWidth={1.75} className="text-cinnabar-soft" />
+          <FolderPlus size={18} strokeWidth={1.75} className="text-cinnabar-soft" />
         </div>
         <h3 className="mt-3 font-display text-[16px] text-paper">还没有自定义预设</h3>
         <p className="mt-1 max-w-xs text-[12px] leading-relaxed text-paper-muted">
-          将当前精心编排的分类与信源保存为新预设，方便在不同阅读场景（如深度研读、极速早报）之间一键切换。
+          保存当前分类与信源，随时一键切换。
         </p>
         <button
           type="button"
@@ -529,7 +530,7 @@ export function PresetListScreen({
   return (
     <SettingsShell
       title="场景预设"
-      caption={`当前使用「${activePreset?.name ?? '自定义预设'}」· 全套分类与信源快照`}
+      caption={`当前「${activePreset?.name ?? '自定义预设'}」`}
       onBack={onBack}
       action={
         <button
@@ -542,7 +543,6 @@ export function PresetListScreen({
         </button>
       }
     >
-      {/* 顶部当前运行态焦点卡片 */}
       <ActivePresetHero
         activePreset={activePreset}
         basedOnBuiltinName={basedOnBuiltin?.name}
@@ -550,10 +550,7 @@ export function PresetListScreen({
         onSaveAs={() => setDialog({ type: 'saveAs' })}
       />
 
-      {/* 说明提示 */}
-      <SettingsHint>
-        场景预设是分类顺序、显隐、自建分类与信源覆盖的完整快照。切换预设会整包替换当前布局；编辑分类时改动会自动写回当前激活的预设。
-      </SettingsHint>
+      <SettingsHint>切换会整包替换；改分类写回当前预设。</SettingsHint>
 
       {/* 内置场景包 */}
       <SettingsSection title="内置场景包">

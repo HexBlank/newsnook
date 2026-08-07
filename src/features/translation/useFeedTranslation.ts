@@ -1,40 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { normalizeChineseVariant } from './chineseVariant'
-import { detectLanguage } from './detectLanguage'
 import {
   loadCachedFeedTranslations,
   saveCachedFeedTranslations,
 } from './feedTranslationStorage'
 import { createTranslationProvider } from './providers'
+import { isArticleForeign, isValidTranslationQuality } from './quality'
 import type { Article } from '../../lib/types'
-import { isLocalTranslationProviderId, type TranslatedFeedItem, type TranslationLanguage, type TranslationPrefs } from './types'
+import {
+  isLocalTranslationProviderId,
+  type TranslatedFeedItem,
+  type TranslationPrefs,
+} from './types'
 
-/**
- * 启发式判断文章是否需要翻译成目标语言。
- * 例如：当目标语言为中文时，若标题或摘要为外文（英文等），则需要翻译。
- */
-export function isArticleForeign(
-  article: Article,
-  targetLanguage: TranslationLanguage,
-): boolean {
-  const text = `${article.title} ${article.summary || ''}`.trim()
-  if (!text) return false
+export { isArticleForeign }
 
-  const detected = detectLanguage(text)
-  const isTargetChinese = targetLanguage === 'zh-Hans' || targetLanguage === 'zh-Hant'
-  const isDetectedChinese = detected.language === 'zh-Hans' || detected.language === 'zh-Hant'
-
-  if (isTargetChinese) {
-    // 目标语言为中文，只要识别出的不是中文（如英文、日文等），且汉字字符不足即认为需要翻译
-    if (!isDetectedChinese) return true
-    return false
-  }
-
-  return detected.language !== targetLanguage
-}
-
-const MAX_BATCH_ARTICLES = 8
+const BATCH_SIZE = 8
 
 export function useFeedTranslation(
   articles: Article[],
@@ -57,6 +39,12 @@ export function useFeedTranslation(
   const pendingAbortRef = useRef<AbortController | null>(null)
   const translationsRef = useRef(translations)
   translationsRef.current = translations
+  const failedIdsRef = useRef<Set<string>>(new Set())
+
+  // 当 targetLanguage 或 enabled 变动时，清理会话级失败记录
+  useEffect(() => {
+    failedIdsRef.current.clear()
+  }, [targetLanguage, enabled, prefs.provider])
 
   // 当 articles 或 targetLanguage 发生变动时，先同步从缓存加载已存在的译文
   useEffect(() => {
@@ -82,14 +70,14 @@ export function useFeedTranslation(
     })
   }, [articles, targetLanguage, enabled])
 
-  // 后台异步对当前列表里尚未翻译的外文文章执行批量翻译
+  // 后台持续、逐批对当前列表里尚未翻译的外文文章执行批量翻译管道（全列表覆盖，不因单批结束而截断）
   useEffect(() => {
     if (!enabled || !articles.length) {
       setIsTranslating(false)
       return
     }
 
-    // 筛选出：属于外文且尚未有当前目标语言标题译文的文章
+    // 筛选出：属于外文、尚未有译文、且未在当前会话失败的待翻译文章
     const neededArticles: Article[] = []
     for (let i = 0; i < articles.length; i += 1) {
       const art = articles[i]
@@ -99,9 +87,11 @@ export function useFeedTranslation(
       ) {
         continue
       }
+      if (failedIdsRef.current.has(art.id)) {
+        continue
+      }
       if (isArticleForeign(art, targetLanguage)) {
         neededArticles.push(art)
-        if (neededArticles.length >= MAX_BATCH_ARTICLES) break
       }
     }
 
@@ -115,18 +105,22 @@ export function useFeedTranslation(
     pendingAbortRef.current = controller
     setIsTranslating(true)
 
-    // 仅待翻译文章标题，极大减少并发与 token 开销并提升响应速度
-    const textsToTranslate = neededArticles.map((a) => a.title.trim())
-
     const config = isLocalTranslationProviderId(prefs.provider)
       ? undefined
       : prefs.cloud[prefs.provider]
     const provider = createTranslationProvider(prefs.provider, config)
 
-    const applyProgressiveUpdate = (index: number, text: string) => {
-      const art = neededArticles[index]
-      if (!art || !text) return
-      const normalizedTitle = normalizeChineseVariant(text.trim(), targetLanguage)
+    const applyProgressiveUpdate = (art: Article, rawText: string) => {
+      if (!art || !rawText) return
+      const trimmed = rawText.trim()
+
+      // 质量与完整性校验：拦截严重残缺、中英混乱或翻译直通失败
+      if (!isValidTranslationQuality(art.title, trimmed, targetLanguage)) {
+        failedIdsRef.current.add(art.id)
+        return
+      }
+
+      const normalizedTitle = normalizeChineseVariant(trimmed, targetLanguage)
       if (!normalizedTitle) return
 
       const item: TranslatedFeedItem = {
@@ -143,37 +137,57 @@ export function useFeedTranslation(
       })
     }
 
-    provider
-      .translate({
-        texts: textsToTranslate,
-        sourceLanguage: prefs.sourceLanguage,
-        targetLanguage: prefs.targetLanguage,
-        signal: controller.signal,
-        onBatch: (batchTranslations, startIndex) => {
-          if (controller.signal.aborted) return
-          for (let i = 0; i < batchTranslations.length; i += 1) {
-            applyProgressiveUpdate(startIndex + i, batchTranslations[i])
+    const runPipeline = async () => {
+      try {
+        // 分批连续处理整个列表中的所有外文条目
+        for (let chunkIdx = 0; chunkIdx < neededArticles.length; chunkIdx += BATCH_SIZE) {
+          if (controller.signal.aborted) break
+          const chunk = neededArticles.slice(chunkIdx, chunkIdx + BATCH_SIZE)
+          const textsToTranslate = chunk.map((a) => a.title.trim())
+
+          try {
+            const results = await provider.translate({
+              texts: textsToTranslate,
+              sourceLanguage: prefs.sourceLanguage,
+              targetLanguage: prefs.targetLanguage,
+              signal: controller.signal,
+              onBatch: (batchTranslations, startIndex) => {
+                if (controller.signal.aborted) return
+                for (let i = 0; i < batchTranslations.length; i += 1) {
+                  const art = chunk[startIndex + i]
+                  const transText = batchTranslations[i]
+                  if (art && transText) {
+                    applyProgressiveUpdate(art, transText)
+                  }
+                }
+              },
+            })
+
+            if (controller.signal.aborted) break
+            for (let i = 0; i < results.length; i += 1) {
+              const art = chunk[i]
+              const transText = results[i]
+              if (art && transText) {
+                applyProgressiveUpdate(art, transText)
+              }
+            }
+          } catch (chunkError) {
+            if (controller.signal.aborted) break
+            console.warn('[useFeedTranslation] Failed to translate chunk:', chunkError)
+            for (const art of chunk) {
+              failedIdsRef.current.add(art.id)
+            }
           }
-        },
-      })
-      .then((results) => {
-        if (controller.signal.aborted) return
-        for (let i = 0; i < results.length; i += 1) {
-          applyProgressiveUpdate(i, results[i])
         }
-      })
-      .catch((error) => {
-        // 请求被主动取消或遇到网络限流时静默降级，保留原文，不阻塞列表正常阅读
-        if (!controller.signal.aborted) {
-          console.warn('[useFeedTranslation] Failed to translate feed items:', error)
-        }
-      })
-      .finally(() => {
+      } finally {
         if (pendingAbortRef.current === controller) {
           setIsTranslating(false)
           pendingAbortRef.current = null
         }
-      })
+      }
+    }
+
+    void runPipeline()
 
     return () => {
       controller.abort()

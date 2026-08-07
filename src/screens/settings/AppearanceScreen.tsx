@@ -1,6 +1,6 @@
 import { Check, Monitor, Moon, Sun } from 'lucide-react'
 
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { THEME_MODES, type ResolvedTheme, type ThemeMode } from '../../lib/theme'
 
 interface Props {
@@ -32,21 +32,15 @@ export function AppearanceScreen({ theme, resolved, onChange, onBack }: Props) {
               <span className="h-px w-5 bg-cinnabar" aria-hidden />
               预览
             </p>
-            <h2 className="mt-3 font-display text-[22px] leading-snug text-paper">
-              灯下翻页，字要立得住
-            </h2>
+            <h2 className="mt-3 font-display text-[22px] leading-snug text-paper">有所闻</h2>
             <p className="mt-2 text-[13px] leading-[1.85] text-paper-muted">
-              昼读用宣纸暖白，夜读用深墨底色，两套配色共用同一份留白与字距，
-              切换时只有明暗变化，版面不会跳动。
-            </p>
-            <p className="mt-3 font-mono text-[10px] tracking-[0.12em] text-paper-faint">
-              有所闻 · 示例段落
+              灯下翻页，字要立得住，行要走得开。
             </p>
           </div>
           <div className="h-px w-full bg-haze" />
           <div className="flex items-center gap-2 bg-ink px-5 py-3">
             <span className="h-2 w-2 rounded-full bg-cinnabar" aria-hidden />
-            <span className="text-[12px] text-paper-muted">强调色在两种底色下都保持可读</span>
+            <span className="text-[12px] text-paper-muted">链接与标记</span>
           </div>
         </div>
       </div>
@@ -94,11 +88,6 @@ export function AppearanceScreen({ theme, resolved, onChange, onBack }: Props) {
           })}
         </ul>
       </SettingsSection>
-
-      <SettingsHint>
-        选择「跟随系统」后，切换手机的深色模式会即时改变这里的配色。图片查看与视频播放始终保持深底，
-        以免亮色边框干扰画面。
-      </SettingsHint>
     </SettingsShell>
   )
 }

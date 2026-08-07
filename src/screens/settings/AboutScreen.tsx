@@ -4,13 +4,13 @@ import {
   Check,
   Copy,
   ExternalLink,
+  HardDrive,
+  Languages,
   Layers,
   RefreshCw,
   Scale,
   ScrollText,
   ShieldCheck,
-  Sparkles,
-  Zap,
 } from 'lucide-react'
 import { Browser } from '@capacitor/browser'
 
@@ -277,18 +277,18 @@ export function AboutScreen({
             </div>
             <p className="mt-1.5 font-display text-[13px] text-paper">数据本地化</p>
             <p className="mt-1 text-[10.5px] leading-relaxed text-paper-faint">
-              不设服务端数据库，阅读历史、稍后读与配置项均保存在本地存储。
+              历史、稍后读与配置只保存在本机。
             </p>
           </div>
 
           <div className="rounded-xl border border-haze bg-ink/60 p-3.5">
             <div className="flex items-center gap-1.5 text-cinnabar">
-              <Zap size={15} strokeWidth={1.75} />
+              <HardDrive size={15} strokeWidth={1.75} />
               <span className="font-mono text-[10px] tracking-wider">离线优先 / OFFLINE</span>
             </div>
             <p className="mt-1.5 font-display text-[13px] text-paper">离线正文</p>
             <p className="mt-1 text-[10.5px] leading-relaxed text-paper-faint">
-              浏览过的文章与稍后读自动缓存解析正文，支持无网环境阅读。
+              打开过的文章可无网回看。
             </p>
           </div>
 
@@ -299,18 +299,18 @@ export function AboutScreen({
             </div>
             <p className="mt-1.5 font-display text-[13px] text-paper">多源聚合</p>
             <p className="mt-1 text-[10.5px] leading-relaxed text-paper-faint">
-              内置静态信源注册表与分类管理，支持按需启用、排序与单源浏览。
+              内置与自建源，按分类浏览。
             </p>
           </div>
 
           <div className="rounded-xl border border-haze bg-ink/60 p-3.5">
             <div className="flex items-center gap-1.5 text-cinnabar">
-              <Sparkles size={15} strokeWidth={1.75} />
+              <Languages size={15} strokeWidth={1.75} />
               <span className="font-mono text-[10px] tracking-wider">双语翻译 / TRANSLATION</span>
             </div>
-            <p className="mt-1.5 font-display text-[13px] text-paper">并发翻译</p>
+            <p className="mt-1.5 font-display text-[13px] text-paper">双语翻译</p>
             <p className="mt-1 text-[10.5px] leading-relaxed text-paper-faint">
-              支持本地模型与云端 API，分段并发请求并实时渲染对照段落。
+              本地或云端，对照阅读。
             </p>
           </div>
         </div>

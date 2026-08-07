@@ -1,6 +1,6 @@
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { ToggleSwitch } from '../../components/ToggleSwitch'
-import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import {
   FONT_FAMILY_OPTIONS,
   FONT_SCALE_OPTIONS,
@@ -20,7 +20,7 @@ interface Props {
 
 const PREVIEW_PARAGRAPHS = [
   '夜读讲究一个静字。灯下翻页，字要立得住，行要走得开，眼睛才不至于在半页之间就先累了。',
-  '这段示例会跟着下面的选项实时变化，调到你在手机上一眼看着最舒服的程度即可，设置只保存在本机。',
+  '字距疏密、行距开合，都在下面几项里，调到看着顺眼为止。',
 ]
 
 export function TypographyScreen({ prefs, onChange, onReset, onBack }: Props) {
@@ -112,7 +112,7 @@ export function TypographyScreen({ prefs, onChange, onReset, onBack }: Props) {
           <span className="min-w-0 flex-1">
             <span className="block text-[14.5px] text-paper">首行缩进</span>
             <span className="mt-0.5 block font-mono text-[10px] text-paper-faint">
-              中文正文每段开头空两字符；英文与引用列表自动顶格
+              中文段落空两字；英文与列表顶格
             </span>
           </span>
           <ToggleSwitch
@@ -122,10 +122,6 @@ export function TypographyScreen({ prefs, onChange, onReset, onBack }: Props) {
           />
         </div>
       </SettingsSection>
-
-      <SettingsHint>
-        这些设置作用于阅读页正文与标题，不改变列表密度。系统开启「减弱动态效果」时，页面切换动画会自动关闭。
-      </SettingsHint>
     </SettingsShell>
   )
 }

@@ -14,7 +14,7 @@ export function HistoryScreen({ history, onOpen, onBack }: Props) {
   return (
     <SettingsShell
       title="最近阅读"
-      caption={history.length ? `共 ${history.length} 篇正文已离线` : '完整打开过的文章会自动保留正文'}
+      caption={history.length ? `共 ${history.length} 篇` : '打开过的文章会出现在这里'}
       onBack={onBack}
     >
       {history.length === 0 ? (
@@ -24,7 +24,7 @@ export function HistoryScreen({ history, onOpen, onBack }: Props) {
           </div>
           <p className="mt-4 font-display text-[16px] text-paper">暂无离线阅读记录</p>
           <p className="mt-2 max-w-xs text-[12px] leading-relaxed text-paper-faint">
-            在应用内完整打开过的文章会自动缓存正文，并在此处展示，方便在无网络时随时查阅。
+            完整打开文章后会自动缓存正文。
           </p>
         </div>
       ) : (

@@ -116,7 +116,7 @@ export function ChannelsScreen({
       })}
 
         <SettingsHint>
-          这里控制「综合」分类混读哪些信源。点来源名可进入单源列表；其它分类的选源请到「分类与信源」里单独配置。
+          控制「综合」混读哪些源；点名称进入单源列表。
         </SettingsHint>
       </div>
     </SettingsShell>
