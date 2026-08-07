@@ -33,6 +33,7 @@ import {
   settleRefreshSource,
 } from '../lib/refreshProgress'
 import { mapWithFeedConcurrency } from '../lib/feedRefreshConcurrency'
+import { buildFeedStatusList } from '../lib/feedStatusList'
 import type { Article, RefreshProgress, SourceStatus } from '../lib/types'
 import {
   CATALOG_PAGE_SIZE,
@@ -845,16 +846,8 @@ export function useFeeds(
   }, [enabledIds, updatedAtBySource])
 
   const statusList = useMemo(
-    () =>
-      SOURCES.map(
-        (source) =>
-          statuses[source.id] ?? {
-            sourceId: source.id,
-            state: 'idle' as const,
-            count: buckets.get(source.id)?.length ?? 0,
-          },
-      ),
-    [statuses, buckets],
+    () => buildFeedStatusList(SOURCES, extraSources, statuses, buckets),
+    [buckets, extraSources, statuses],
   )
 
   return {

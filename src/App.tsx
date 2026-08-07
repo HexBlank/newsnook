@@ -130,6 +130,7 @@ interface BodyPrefetchTask {
   article: Article
   shouldPin: () => boolean
   onCacheChange: () => void
+  extraSources?: import('./sources/registry').NewsSource[]
 }
 
 const bodyPrefetchQueue: BodyPrefetchTask[] = []
@@ -146,7 +147,7 @@ function drainBodyPrefetchQueue(): void {
       try {
         // 排队期间已被移出稍后读，不再为未浏览内容消耗弱网流量。
         if (!task.shouldPin()) return
-        const resolved = await resolveArticleBody(task.article)
+        const resolved = await resolveArticleBody(task.article, undefined, task.extraSources)
         if (resolved.bodySource === 'video') return
         const cached = saveCachedBody(
           task.article,
@@ -430,10 +431,11 @@ export default function App() {
         article,
         shouldPin: () => laterRef.current.some((item) => item.id === article.id),
         onCacheChange: notifyCacheChange,
+        extraSources: prefs.customSources,
       })
     })
     notifyCacheChange()
-  }, [later, notifyCacheChange])
+  }, [later, notifyCacheChange, prefs.customSources])
 
   const openArticle = useCallback((article: Article) => {
     setReading(article)
@@ -457,8 +459,9 @@ export default function App() {
       article,
       shouldPin: () => laterRef.current.some((item) => item.id === article.id),
       onCacheChange: notifyCacheChange,
+      extraSources: prefs.customSources,
     })
-  }, [notifyCacheChange])
+  }, [notifyCacheChange, prefs.customSources])
 
   const removeLater = useCallback((id: string) => {
     const next = laterRef.current.filter((item) => item.id !== id)
@@ -813,6 +816,7 @@ export default function App() {
           showLead={false}
           offline={offline}
           translationPrefs={prefs.translation}
+          customSources={prefs.customSources}
           onRefresh={runRefresh}
           onLoadMore={() => void loadMore([focusSource.id])}
           onOpen={openArticle}
@@ -889,6 +893,7 @@ export default function App() {
         articlesForCategory={articlesForCategory}
         presetSwitcher={presetSwitcherConfig}
         translationPrefs={prefs.translation}
+        customSources={prefs.customSources}
         onRefresh={runRefresh}
         onLoadMore={() => void loadMore(listScopeIds)}
         onOpen={openArticle}
@@ -977,6 +982,7 @@ export default function App() {
             onCacheChange={notifyCacheChange}
             overlayCloserRef={readerOverlayCloserRef}
             translationPrefs={prefs.translation}
+            customSources={prefs.customSources}
           />
         </Suspense>
       )}

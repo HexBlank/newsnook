@@ -19,6 +19,9 @@ import {
   type NewsSource,
 } from '../sources/registry'
 
+/** 超过此数量导入时需二次确认（仍允许导入，避免手机全量并发压力被忽视） */
+export const OPML_IMPORT_SOFT_LIMIT = 100
+
 export interface OpmlOutlineItem {
   title: string
   xmlUrl: string

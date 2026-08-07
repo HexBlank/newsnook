@@ -10,13 +10,12 @@ Object.assign(globalThis, {
 import {
   discoverFeedsFromHtml,
   exportOpml,
+  OPML_IMPORT_SOFT_LIMIT,
   parseOpml,
 } from '../src/lib/opml'
 import {
   DEFAULT_PREFERENCES,
-  addCustomCategory,
   addCustomSource,
-  allRegisteredCategories,
   allRegisteredSources,
   batchImportSourcesAndCategories,
   deleteCustomSource,
@@ -133,6 +132,8 @@ const coolshellId = opmlParsed.sources.find((s) => s.url === 'https://coolshell.
 const codingnowId = opmlParsed.sources.find((s) => s.url === 'https://blog.codingnow.com/atom.xml')?.id
 assert.ok(coolshellId && opmlParsed.categories[0].sourceIds.includes(coolshellId))
 assert.ok(codingnowId && opmlParsed.categories[0].sourceIds.includes(codingnowId))
+
+assert.equal(OPML_IMPORT_SOFT_LIMIT, 100)
 
 // 7. Batch Import Sources & Categories
 const batchPrefs = batchImportSourcesAndCategories(

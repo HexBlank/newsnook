@@ -2,12 +2,13 @@ import type { RefObject } from 'react'
 
 import type { PullPhase } from '../hooks/usePullToRefresh'
 import type { RefreshProgress } from '../lib/types'
-import { findSource } from '../sources/registry'
+import { findSource, type NewsSource } from '../sources/registry'
 
 interface Props {
   phase: PullPhase
   indicatorRef: RefObject<HTMLDivElement | null>
   progress?: RefreshProgress | null
+  customSources?: NewsSource[]
 }
 
 const LABEL: Record<PullPhase, string> = {
@@ -18,9 +19,9 @@ const LABEL: Record<PullPhase, string> = {
 }
 
 /** 墨点：下拉时晕开，刷新时缓慢转动，并呈现真实的信源同步进度。 */
-export function PullIndicator({ phase, indicatorRef, progress }: Props) {
+export function PullIndicator({ phase, indicatorRef, progress, customSources }: Props) {
   const currentSource = progress?.pendingSourceIds
-    .map((id) => findSource(id))
+    .map((id) => findSource(id, customSources))
     .find((source) => Boolean(source))
   const pendingCount = progress?.pendingSourceIds.length ?? 0
   const progressPercent = progress?.total

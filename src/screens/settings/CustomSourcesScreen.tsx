@@ -22,6 +22,7 @@ import {
   discoverFeedsFromHtml,
   downloadOpmlFile,
   exportOpml,
+  OPML_IMPORT_SOFT_LIMIT,
   parseOpml,
   type OpmlParseResult,
 } from '../../lib/opml'
@@ -77,6 +78,7 @@ export function CustomSourcesScreen({
   const [importCategoriesOption, setImportCategoriesOption] = useState(true)
   const [importing, setImporting] = useState(false)
   const [opmlError, setOpmlError] = useState<string | null>(null)
+  const [confirmLargeOpmlImport, setConfirmLargeOpmlImport] = useState(false)
 
   // OPML 导出状态
   const [showExportModal, setShowExportModal] = useState(false)
@@ -280,11 +282,21 @@ export function CustomSourcesScreen({
   }
 
   // 确认导入 OPML
-  const handleConfirmOpmlImport = () => {
+  const commitOpmlImport = () => {
     if (!opmlResult) return
     const categoriesToImport = importCategoriesOption ? opmlResult.categories : undefined
     onBatchImport(opmlResult.sources, categoriesToImport)
     setOpmlResult(null)
+    setConfirmLargeOpmlImport(false)
+  }
+
+  const handleConfirmOpmlImport = () => {
+    if (!opmlResult) return
+    if (opmlResult.sources.length > OPML_IMPORT_SOFT_LIMIT) {
+      setConfirmLargeOpmlImport(true)
+      return
+    }
+    commitOpmlImport()
   }
 
   // 触发 OPML 导出
@@ -755,6 +767,12 @@ export function CustomSourcesScreen({
                   </div>
                 )}
               </div>
+
+              {opmlResult.sources.length > OPML_IMPORT_SOFT_LIMIT && (
+                <p className="rounded-2xl border border-cinnabar/30 bg-cinnabar/10 px-3.5 py-3 text-[12px] leading-relaxed text-cinnabar-soft">
+                  本次超过 {OPML_IMPORT_SOFT_LIMIT} 个源。应用按当前分类限流刷新（并发 5），但仍可能较慢、更耗电。建议按需分批导入或拆分分类。
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-haze">
@@ -876,6 +894,19 @@ export function CustomSourcesScreen({
             setSourceToDelete(null)
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={confirmLargeOpmlImport && Boolean(opmlResult)}
+        title="导入大量订阅？"
+        message={
+          opmlResult
+            ? `将导入 ${opmlResult.sources.length} 个源（超过建议上限 ${OPML_IMPORT_SOFT_LIMIT}）。刷新时会限流，但仍可能较慢并增加耗电。确定继续？`
+            : ''
+        }
+        confirmLabel="仍然导入"
+        onCancel={() => setConfirmLargeOpmlImport(false)}
+        onConfirm={commitOpmlImport}
       />
     </SettingsShell>
   )
