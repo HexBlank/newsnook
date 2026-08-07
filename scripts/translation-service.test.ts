@@ -239,6 +239,45 @@ assert.ok(maxConcurrentObserved <= 3, `Max concurrent requests was ${maxConcurre
 
 globalThis.fetch = originalFetch
 
+const kindsLog: (
+  | import('../src/features/translation/types').TranslationTextKind[]
+  | undefined
+)[] = []
+const kindProbe: TranslationProvider = {
+  id: 'mlkit',
+  async translate(request) {
+    kindsLog.push(request.textKinds)
+    return request.texts.map((text) => `译:${text}`)
+  },
+}
+const kindService = new TranslationService(kindProbe)
+await kindService.translateArticle(
+  'Title One',
+  '<p>Body A</p><p>Body B</p>',
+  { sourceLanguage: 'en', targetLanguage: 'zh-Hans', displayMode: 'replace' },
+)
+{
+  const last = kindsLog[kindsLog.length - 1]
+  assert.ok(last)
+  assert.equal(last[0], 'headline')
+  assert.ok(last.length >= 2)
+  assert.ok(last.slice(1).every((k) => k === 'paragraph'))
+}
+
+kindsLog.length = 0
+await kindService.translateArticle(
+  'Title Two',
+  '<p>Only body</p>',
+  { sourceLanguage: 'en', targetLanguage: 'zh-Hans', displayMode: 'compare' },
+)
+{
+  const last = kindsLog[kindsLog.length - 1]
+  assert.ok(last)
+  assert.equal(last[0], 'headline')
+  assert.ok(last.length >= 2)
+  assert.ok(last.slice(1).every((k) => k === 'paragraph'))
+}
+
 console.log('translation-service: ok')
 
 

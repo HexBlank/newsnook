@@ -110,6 +110,9 @@ export class TranslationService {
     }
 
     const texts = [title.trim(), ...parts.map((part) => part.content)]
+    const textKinds = texts.map((_, index) =>
+      index === 0 ? ('headline' as const) : ('paragraph' as const),
+    )
     let currentTitle = title
     let completedCount = 0
     let lastPartialAt = 0
@@ -117,6 +120,7 @@ export class TranslationService {
     options?.onProgress?.({ completed: 0, total: texts.length })
     const translations = await this.provider.translate({
       texts,
+      textKinds,
       sourceLanguage: prefs.sourceLanguage,
       targetLanguage: prefs.targetLanguage,
       signal: options?.signal,
@@ -182,6 +186,9 @@ export class TranslationService {
         ? semanticBlocks
         : [document.body]
     const texts = [title.trim(), ...blocks.map((block) => (block.textContent ?? '').trim())]
+    const textKinds = texts.map((_, index) =>
+      index === 0 ? ('headline' as const) : ('paragraph' as const),
+    )
     let currentTitle = title
     let completedCount = 0
     let lastPartialAt = 0
@@ -189,6 +196,7 @@ export class TranslationService {
     options?.onProgress?.({ completed: 0, total: texts.length })
     const translations = await this.provider.translate({
       texts,
+      textKinds,
       sourceLanguage: prefs.sourceLanguage,
       targetLanguage: prefs.targetLanguage,
       signal: options?.signal,
