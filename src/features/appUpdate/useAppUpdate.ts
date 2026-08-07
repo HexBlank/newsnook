@@ -8,6 +8,7 @@ import {
   saveSnooze,
 } from './prefs'
 import { isNewerVersion } from './semver'
+import { fetchReleaseApkForChannel } from './github'
 import {
   beginUpdate,
   checkForAutoUpdate,
@@ -17,10 +18,12 @@ import {
   getAppUpdateUiState,
   isAppUpdateSupported,
   openInstallSettings,
+  resolveChannel,
+  resolveOppositeChannel,
   setManualMessage,
   subscribeAppUpdateUi,
 } from './service'
-import type { LatestReleaseInfo } from './types'
+import type { AppUpdateChannel, LatestReleaseInfo } from './types'
 
 export type ManualUpdateStatus = 'idle' | 'checking' | 'downloading' | 'latest' | 'error'
 
@@ -42,6 +45,14 @@ export function useAppUpdate({ settingsOpen }: Options) {
   const [manualStatus, setManualStatus] = useState<ManualUpdateStatus>('idle')
   const [manualHint, setManualHint] = useState<string | undefined>()
   const [downloading, setDownloading] = useState(() => getAppUpdateUiState().downloading)
+  const [flavorConfirmOpen, setFlavorConfirmOpen] = useState(false)
+  const [flavorErrorOpen, setFlavorErrorOpen] = useState(false)
+  const [flavorErrorMessage, setFlavorErrorMessage] = useState('')
+  const [flavorBusy, setFlavorBusy] = useState(false)
+  const [flavorHint, setFlavorHint] = useState<string | undefined>()
+
+  const currentChannel: AppUpdateChannel = resolveChannel()
+  const oppositeChannel = resolveOppositeChannel(currentChannel)
 
   const [availableVersion, setAvailableVersion] = useState<string | undefined>(() => {
     const prefs = loadAppUpdatePrefsNormalized()
@@ -311,6 +322,69 @@ export function useAppUpdate({ settingsOpen }: Options) {
     setManualHint(result.message || '检查失败，点按重试')
   }, [supported, downloading, showRelease])
 
+  const onPromptFlavorSwitch = useCallback(() => {
+    if (!supported) return
+    if (downloading || getAppUpdateUiState().downloading || getActiveDownloadId() != null) {
+      setFlavorErrorMessage('已有下载任务进行中，请稍后再试')
+      setFlavorErrorOpen(true)
+      return
+    }
+    setFlavorHint(undefined)
+    setFlavorConfirmOpen(true)
+  }, [supported, downloading])
+
+  const onCancelFlavorSwitch = useCallback(() => {
+    setFlavorConfirmOpen(false)
+  }, [])
+
+  const onDismissFlavorError = useCallback(() => {
+    setFlavorErrorOpen(false)
+    setFlavorErrorMessage('')
+  }, [])
+
+  const onConfirmFlavorSwitch = useCallback(async () => {
+    setFlavorConfirmOpen(false)
+    if (!supported) return
+    if (downloading || getAppUpdateUiState().downloading || getActiveDownloadId() != null) {
+      setFlavorErrorMessage('已有下载任务进行中，请稍后再试')
+      setFlavorErrorOpen(true)
+      return
+    }
+    const target = resolveOppositeChannel(resolveChannel())
+    setFlavorBusy(true)
+    setFlavorHint('正在查找安装包…')
+    const result = await fetchReleaseApkForChannel(__APP_VERSION__, target)
+    setFlavorBusy(false)
+    if (result.status === 'no-asset') {
+      setFlavorHint('当前版本暂无对应安装包')
+      setFlavorErrorMessage('当前版本暂无对应安装包')
+      setFlavorErrorOpen(true)
+      return
+    }
+    if (result.status === 'error') {
+      setFlavorHint(result.message)
+      setFlavorErrorMessage(result.message)
+      setFlavorErrorOpen(true)
+      return
+    }
+    setFlavorHint(undefined)
+    await startDownload(result.release)
+  }, [supported, downloading, startDownload])
+
+  const flavorSwitchCaption = useMemo(() => {
+    if (flavorBusy) return '正在查找安装包…'
+    if (flavorHint) return flavorHint
+    return undefined
+  }, [flavorBusy, flavorHint])
+
+  const flavorConfirmMessage = useMemo(() => {
+    const ver = __APP_VERSION__
+    if (oppositeChannel === 'local') {
+      return `将下载并安装当前版本（v${ver}）的离线翻译版安装包。离线版体积更大，支持本地翻译引擎。覆盖安装后设置与数据通常保留。`
+    }
+    return `将下载并安装当前版本（v${ver}）的云端版安装包。云端版更轻量，不含本地翻译引擎。覆盖安装后设置与数据通常保留。`
+  }, [oppositeChannel])
+
   const manualCaption = useMemo(() => {
     if (manualStatus === 'checking') return '检查中…'
     if (manualStatus === 'downloading' || downloading) return '正在下载…'
@@ -336,5 +410,16 @@ export function useAppUpdate({ settingsOpen }: Options) {
     promptManualCheck,
     manualCaption,
     manualStatus,
+    currentChannel,
+    oppositeChannel,
+    flavorSwitchCaption,
+    flavorConfirmOpen,
+    flavorConfirmMessage,
+    flavorErrorOpen,
+    flavorErrorMessage,
+    onPromptFlavorSwitch,
+    onConfirmFlavorSwitch,
+    onCancelFlavorSwitch,
+    onDismissFlavorError,
   }
 }

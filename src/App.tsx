@@ -760,6 +760,13 @@ export default function App() {
           onCheckUpdate={() => void appUpdate.promptManualCheck()}
           onOpenChangelog={() => setSettingsRoute({ name: 'changelog' })}
           onOpenLicenses={() => setSettingsRoute({ name: 'licenses' })}
+          flavorSwitchSupported={appUpdate.supported}
+          currentChannelLabel={appUpdate.currentChannel === 'local' ? '离线翻译版' : '云端版'}
+          flavorSwitchTitle={
+            appUpdate.oppositeChannel === 'local' ? '切换到离线翻译版' : '切换到云端版'
+          }
+          flavorSwitchCaption={appUpdate.flavorSwitchCaption}
+          onSwitchFlavor={appUpdate.onPromptFlavorSwitch}
         />
       )
     }
@@ -1003,6 +1010,24 @@ export default function App() {
         cancelLabel="取消"
         onConfirm={appUpdate.onConfirmInstallPermission}
         onCancel={appUpdate.onCancelInstallPermission}
+      />
+      <ConfirmDialog
+        open={appUpdate.flavorConfirmOpen}
+        title="切换安装包"
+        message={appUpdate.flavorConfirmMessage}
+        confirmLabel="下载并安装"
+        cancelLabel="取消"
+        onConfirm={() => void appUpdate.onConfirmFlavorSwitch()}
+        onCancel={appUpdate.onCancelFlavorSwitch}
+      />
+      <ConfirmDialog
+        open={appUpdate.flavorErrorOpen}
+        title="无法切换"
+        message={appUpdate.flavorErrorMessage}
+        confirmLabel="知道了"
+        cancelLabel="关闭"
+        onConfirm={appUpdate.onDismissFlavorError}
+        onCancel={appUpdate.onDismissFlavorError}
       />
     </AppShell>
   )

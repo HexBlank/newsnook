@@ -25,6 +25,11 @@ interface Props {
   onCheckUpdate?: () => void
   onOpenChangelog?: () => void
   onOpenLicenses?: () => void
+  flavorSwitchSupported?: boolean
+  currentChannelLabel?: string
+  flavorSwitchTitle?: string
+  flavorSwitchCaption?: string
+  onSwitchFlavor?: () => void
 }
 
 const ABOUT_CONFIG = {
@@ -75,6 +80,11 @@ export function AboutScreen({
   onCheckUpdate,
   onOpenChangelog,
   onOpenLicenses,
+  flavorSwitchSupported = false,
+  currentChannelLabel,
+  flavorSwitchTitle,
+  flavorSwitchCaption,
+  onSwitchFlavor,
 }: Props) {
   const [copiedRepo, setCopiedRepo] = useState(false)
 
@@ -149,6 +159,28 @@ export function AboutScreen({
                   </div>
                   <p className="mt-0.5 truncate font-mono text-[11px] text-paper-faint">
                     {updateCaption ?? `当前 v${ABOUT_CONFIG.version}`}
+                  </p>
+                </div>
+              </button>
+            </li>
+          ) : null}
+          {flavorSwitchSupported ? (
+            <li className="transition-colors hover:bg-ink-raised/30 active:bg-ink-raised/50">
+              <button
+                type="button"
+                onClick={() => onSwitchFlavor?.()}
+                className="page-x flex w-full items-center gap-3.5 py-4 text-left"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-raised/60 text-paper">
+                  <Languages size={18} strokeWidth={1.75} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[14px] font-medium text-paper">
+                    {flavorSwitchTitle ?? '切换安装包'}
+                  </span>
+                  <p className="mt-0.5 truncate font-mono text-[11px] text-paper-faint">
+                    {flavorSwitchCaption ??
+                      `当前${currentChannelLabel ?? '本版'} · 将下载 v${ABOUT_CONFIG.version} 对应安装包`}
                   </p>
                 </div>
               </button>
