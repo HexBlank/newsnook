@@ -106,8 +106,8 @@ export const zhihuCommentProvider: CommentProvider = {
       }
 
       const availableTabs: CommentTab[] = [
-        { id: 'short', label: '💬 短评', count: extra.short_comments },
-        { id: 'long', label: '📝 深度长评', count: extra.long_comments },
+        { id: 'short', label: '短评', count: extra.short_comments },
+        { id: 'long', label: '深度长评', count: extra.long_comments },
       ]
 
       const endpoint = tab === 'long' ? 'long-comments' : 'short-comments'
@@ -153,8 +153,8 @@ export const zhihuCommentProvider: CommentProvider = {
         comments: [],
         totalCount: 0,
         availableTabs: [
-          { id: 'short', label: '💬 短评' },
-          { id: 'long', label: '📝 深度长评' },
+          { id: 'short', label: '短评' },
+          { id: 'long', label: '深度长评' },
         ],
         hasMore: false,
       }

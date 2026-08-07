@@ -78,7 +78,7 @@ export const hackerNewsCommentProvider: CommentProvider = {
       return { comments: [], totalCount: 0, availableTabs: [], hasMore: false }
     }
 
-    const availableTabs: CommentTab[] = [{ id: 'hot', label: '🔥 极客讨论' }]
+    const availableTabs: CommentTab[] = [{ id: 'hot', label: '极客讨论' }]
 
     try {
       const url = `https://hn.algolia.com/api/v1/items/${itemId}`

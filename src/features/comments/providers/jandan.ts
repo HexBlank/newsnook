@@ -80,8 +80,8 @@ export const jandanCommentProvider: CommentProvider = {
       const totalCount = rawList.length
 
       const availableTabs: CommentTab[] = [
-        { id: 'hot', label: '🔥 热门吐槽', count: hotList.length > 0 ? hotList.length : undefined },
-        { id: 'latest', label: '⏱️ 最新吐槽', count: totalCount },
+        { id: 'hot', label: '热门吐槽', count: hotList.length > 0 ? hotList.length : undefined },
+        { id: 'latest', label: '最新吐槽', count: totalCount },
       ]
 
       // 构建快速查找 map，用于解析 @回复 的引用楼层
@@ -159,8 +159,8 @@ export const jandanCommentProvider: CommentProvider = {
         comments: [],
         totalCount: 0,
         availableTabs: [
-          { id: 'hot', label: '🔥 热门吐槽' },
-          { id: 'latest', label: '⏱️ 最新吐槽' },
+          { id: 'hot', label: '热门吐槽' },
+          { id: 'latest', label: '最新吐槽' },
         ],
         hasMore: false,
       }

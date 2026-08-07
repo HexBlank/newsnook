@@ -164,4 +164,4 @@ assert.ok(v2exArticles[0].summary.includes('业余时间开发'))
 
 console.log('✓ V2EX curated "create" (分享创造) feed verified')
 
-console.log('\nAll high-signal sources intake tests passed! 🎉')
+console.log('\nAll high-signal sources intake tests passed!')

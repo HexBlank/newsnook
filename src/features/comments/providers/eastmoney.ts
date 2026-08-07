@@ -176,8 +176,8 @@ export const eastmoneyCommentProvider: CommentProvider = {
   async getComments(article, tab = 'hot', offset = 0, signal?: AbortSignal): Promise<CommentsQueryResult> {
     const newsId = extractEastmoneyNewsId(article)
     const availableTabs: CommentTab[] = [
-      { id: 'hot', label: '🔥 热门跟帖' },
-      { id: 'latest', label: '⏱️ 最新跟帖' },
+      { id: 'hot', label: '热门跟帖' },
+      { id: 'latest', label: '最新跟帖' },
     ]
     if (!newsId) {
       return { comments: [], totalCount: 0, availableTabs: [], hasMore: false }
@@ -209,8 +209,8 @@ export const eastmoneyCommentProvider: CommentProvider = {
         comments,
         totalCount,
         availableTabs: [
-          { id: 'hot', label: '🔥 热门跟帖', count: activeTab === 'hot' ? Number(data.count) || comments.length : undefined },
-          { id: 'latest', label: '⏱️ 最新跟帖', count: Number(data.reply_total_count) || Number(data.count) || undefined },
+          { id: 'hot', label: '热门跟帖', count: activeTab === 'hot' ? Number(data.count) || comments.length : undefined },
+          { id: 'latest', label: '最新跟帖', count: Number(data.reply_total_count) || Number(data.count) || undefined },
         ],
         hasMore,
         nextOffset: currentOffset + comments.length,

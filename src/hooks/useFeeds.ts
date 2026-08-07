@@ -171,12 +171,13 @@ function pagingFromCache(
 
 function loadCachedSource(
   sourceId: string,
+  extraSources?: NewsSource[],
 ): {
   items: Article[]
   cachedAt?: number
   paging: SourcePagingState
 } {
-  const source = findSource(sourceId)
+  const source = findSource(sourceId, extraSources)
   const cached = loadCachedList(sourceId)
   let items = cached?.items ?? []
   if (
@@ -198,13 +199,13 @@ function loadCachedSource(
 }
 
 /** 只恢复当前需要的源缓存，避免启动时同步解析全部 SOURCES */
-function readInitialFeeds(sourceIds: string[]): InitialFeeds {
+function readInitialFeeds(sourceIds: string[], extraSources?: NewsSource[]): InitialFeeds {
   const buckets = new Map<string, Article[]>()
   const updatedAt: Record<string, number> = {}
   const paging: Record<string, SourcePagingState> = {}
 
   for (const id of sourceIds) {
-    const loaded = loadCachedSource(id)
+    const loaded = loadCachedSource(id, extraSources)
     if (loaded.cachedAt !== undefined && loaded.items.length) {
       buckets.set(id, loaded.items)
       updatedAt[id] = loaded.cachedAt
@@ -220,6 +221,7 @@ function mergeCachedSources(
   paging: Record<string, SourcePagingState>,
   updatedAt: Record<string, number>,
   sourceIds: string[],
+  extraSources?: NewsSource[],
 ): {
   buckets: Map<string, Article[]>
   paging: Record<string, SourcePagingState>
@@ -234,7 +236,7 @@ function mergeCachedSources(
   for (const id of sourceIds) {
     if (nextPaging[id] || nextBuckets.has(id)) continue
     if (nextBuckets === buckets) nextBuckets = new Map(buckets)
-    const loaded = loadCachedSource(id)
+    const loaded = loadCachedSource(id, extraSources)
     if (loaded.cachedAt !== undefined && loaded.items.length) {
       nextBuckets.set(id, loaded.items)
       nextUpdatedAt[id] = loaded.cachedAt
@@ -264,9 +266,10 @@ function cacheMetaForItems(
   sourceId: string,
   state: SourcePagingState | undefined,
   items: Article[],
+  extraSources?: NewsSource[],
 ): CachedPagingMeta | undefined {
   const meta = cacheMeta(state)
-  const source = findSource(sourceId)
+  const source = findSource(sourceId, extraSources)
   if (source?.kind !== 'zhihu') return meta
 
   const cachedItems = items.slice(0, 160)
@@ -282,9 +285,13 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '请求失败'
 }
 
-export function useFeeds(enabledIds: string[], onCacheChange?: () => void): FeedsResult {
+export function useFeeds(
+  enabledIds: string[],
+  onCacheChange?: () => void,
+  extraSources?: NewsSource[],
+): FeedsResult {
   const initialRef = useRef<InitialFeeds | null>(null)
-  if (!initialRef.current) initialRef.current = readInitialFeeds(enabledIds)
+  if (!initialRef.current) initialRef.current = readInitialFeeds(enabledIds, extraSources)
 
   const [buckets, setBuckets] = useState(initialRef.current.buckets)
   const [statuses, setStatuses] = useState<Record<string, SourceStatus>>({})
@@ -301,6 +308,9 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   const updatedAtRef = useRef(initialRef.current.updatedAt)
   const enabledIdsRef = useRef(enabledIds)
   enabledIdsRef.current = enabledIds
+  const extraSourcesRef = useRef(extraSources)
+  extraSourcesRef.current = extraSources
+  const getSource = useCallback((id: string) => findSource(id, extraSourcesRef.current), [])
   /** client-catalog：完整解析结果仅驻内存，列表窗口从此切片 */
   const catalogRef = useRef<Map<string, Article[]>>(new Map())
 
@@ -318,6 +328,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       pagingRef.current,
       updatedAtRef.current,
       enabledIdsRef.current,
+      extraSourcesRef.current,
     )
     if (!merged.changed) return
     pagingRef.current = merged.paging
@@ -371,7 +382,11 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
     const next = new Map(bucketsRef.current).set(id, items)
     bucketsRef.current = next
     setBuckets(next)
-    saveCachedArticles(id, items, cacheMetaForItems(id, pagingRef.current[id], items))
+    saveCachedArticles(
+      id,
+      items,
+      cacheMetaForItems(id, pagingRef.current[id], items, extraSourcesRef.current),
+    )
   }, [])
 
   const applyHeadPage = useCallback(
@@ -415,13 +430,13 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
     (sourceIds: string[]): PaginationViewState => {
       void pagingTick
       const entries = [...new Set(sourceIds)].flatMap((id) => {
-        const source = findSource(id)
+        const source = getSource(id)
         if (!source || !sourceSupportsPaging(source)) return []
         return [pagingRef.current[id] ?? { phase: 'uninitialized' as const }]
       })
       return summarizePagination(entries)
     },
-    [pagingTick],
+    [getSource, pagingTick],
   )
 
   const stopLoadMore = useCallback(() => {
@@ -444,7 +459,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   const refresh = useCallback(async (sourceIds?: string[]) => {
     if (refreshInFlightRef.current) return
     const scope = sourceIds?.length ? sourceIds : enabledIdsRef.current
-    const ids = [...new Set(scope)].filter((id) => Boolean(findSource(id)))
+    const ids = [...new Set(scope)].filter((id) => Boolean(getSource(id)))
     if (!ids.length) return
     refreshInFlightRef.current = true
     stopLoadMore()
@@ -475,7 +490,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
     try {
       await Promise.all(
       ids.map(async (id) => {
-        const source = findSource(id)
+        const source = getSource(id)
         if (!source) return
         let synced = false
         try {
@@ -545,7 +560,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       }
       if (anySucceeded) onCacheChange?.()
     }
-  }, [applyHeadPage, onCacheChange, stopLoadMore])
+  }, [applyHeadPage, getSource, onCacheChange, stopLoadMore])
 
   /** Quietly initialize sources that have no list cache yet. */
   const prefetchMissing = useCallback(
@@ -561,7 +576,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
 
       await Promise.all(
         missing.map(async (id) => {
-          const source = findSource(id)
+          const source = getSource(id)
           if (!source) return
           try {
             const payload = await fetchSourceText(source, controller.signal)
@@ -597,14 +612,14 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       if (prefetchControllerRef.current === controller) prefetchControllerRef.current = null
       if (!controller.signal.aborted && anySucceeded) onCacheChange?.()
     },
-    [applyHeadPage, onCacheChange],
+    [applyHeadPage, getSource, onCacheChange],
   )
 
   const loadMore = useCallback(
     async (sourceIds: string[]) => {
       if (refreshInFlightRef.current || loadMoreInFlightRef.current) return
       const targets = [...new Set(sourceIds)].filter((id) => {
-        const source = findSource(id)
+        const source = getSource(id)
         if (!source || !sourceSupportsPaging(source)) return false
         return pagingRef.current[id]?.phase !== 'exhausted'
       })
@@ -618,7 +633,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
 
       await Promise.all(
         targets.map(async (id) => {
-          const source = findSource(id)
+          const source = getSource(id)
           if (!source) return
           const previous = pagingRef.current[id] ?? { phase: 'uninitialized' as const }
           updatePaging(id, { ...previous, phase: 'loading', error: undefined })

@@ -1,10 +1,14 @@
 import { useId, useMemo, useState } from 'react'
-import { Check, Sparkles, Trash2 } from 'lucide-react'
+import { Sparkles, Trash2 } from 'lucide-react'
 
 import { SettingsHint, SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { SourcePicker } from '../../components/SourcePicker'
 import type { CategoryId, NewsCategory } from '../../sources/categories'
-import { describeSources, type Preferences } from '../../sources/preferences'
-import { SOURCES, SOURCE_GROUPS, SOURCE_GROUP_ORDER } from '../../sources/registry'
+import {
+  allRegisteredSources,
+  describeSources,
+  type Preferences,
+} from '../../sources/preferences'
 
 interface Props {
   categoryId?: CategoryId
@@ -30,6 +34,7 @@ export function CategoryEditScreen({
   onDelete,
   onBack,
 }: Props) {
+  const allSources = allRegisteredSources(prefs)
   const isEditing = Boolean(categoryId)
   const existingCategory = useMemo<NewsCategory | undefined>(() => {
     if (!categoryId) return undefined
@@ -109,7 +114,7 @@ export function CategoryEditScreen({
       title={isEditing ? '编辑分类' : '新建分类'}
       caption={
         selectedIds.length
-          ? `已选 ${selectedIds.length} 个信源 · ${describeSources(selectedIds)}`
+          ? `已选 ${selectedIds.length} 个信源 · ${describeSources(selectedIds, prefs.customSources)}`
           : '自定义信源组合配置'
       }
       onBack={onBack}
@@ -217,72 +222,15 @@ export function CategoryEditScreen({
         </div>
       </SettingsSection>
 
-      {/* 信源勾选列表 */}
-      {SOURCE_GROUP_ORDER.map((group) => {
-        const groupSources = SOURCES.filter((source) => source.group === group)
-        if (!groupSources.length) return null
-
-        const groupSourceIds = groupSources.map((s) => s.id)
-        const selectedInGroupCount = groupSourceIds.filter((id) =>
-          selectedIds.includes(id),
-        ).length
-        const allGroupSelected =
-          groupSourceIds.length > 0 && selectedInGroupCount === groupSourceIds.length
-
-        return (
-          <SettingsSection key={group} title={SOURCE_GROUPS[group].title}>
-            <div className="page-x flex items-center justify-between pb-2 text-[11px]">
-              <span className="font-mono text-paper-faint">
-                已选 {selectedInGroupCount} / {groupSources.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => toggleGroup(groupSourceIds)}
-                className="font-mono text-[11px] text-cinnabar-soft hover:underline"
-              >
-                {allGroupSelected ? '取消全选' : '全选本组'}
-              </button>
-            </div>
-
-            <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze xl:grid-cols-3">
-              {groupSources.map((source) => {
-                const checked = selectedIds.includes(source.id)
-
-                return (
-                  <li key={source.id} className="bg-ink">
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={checked}
-                      onClick={() => toggleSource(source.id)}
-                      className="page-x flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-paper/5"
-                    >
-                      <span
-                        className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors duration-200 ${
-                          checked ? 'border-cinnabar bg-cinnabar/25' : 'border-haze bg-paper/5'
-                        }`}
-                      >
-                        {checked && (
-                          <Check size={12} strokeWidth={2.4} className="text-cinnabar-soft" />
-                        )}
-                      </span>
-
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[14px] text-paper">
-                          {source.name}
-                        </span>
-                        <span className="mt-0.5 block truncate font-mono text-[10px] text-paper-faint">
-                          {source.url.replace(/^https?:\/\//, '').slice(0, 42)}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </SettingsSection>
-        )
-      })}
+      {/* 信源选择与管理 */}
+      <SettingsSection title="信源组合">
+        <SourcePicker
+          sources={allSources}
+          selectedIds={selectedIds}
+          onToggleSource={toggleSource}
+          onToggleGroup={toggleGroup}
+        />
+      </SettingsSection>
 
       {/* 删除自建分类操作区 */}
       {isEditing && onDelete && (

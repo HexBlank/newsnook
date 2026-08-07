@@ -10,6 +10,7 @@ import {
   Languages,
   LayoutGrid,
   LayoutTemplate,
+  Rss,
   Type,
 } from 'lucide-react'
 
@@ -21,6 +22,7 @@ interface Props {
   later: Article[]
   history: Article[]
   readCount: number
+  customSourcesSummary?: string
   categoriesSummary?: string
   presetsSummary: string
   typographySummary: string
@@ -32,6 +34,7 @@ interface Props {
   availableVersion?: string
   onOpenLater: () => void
   onOpenHistory: () => void
+  onOpenCustomSources: () => void
   onOpenCategories: () => void
   onOpenPresets: () => void
   onOpenTypographySettings: () => void
@@ -82,6 +85,7 @@ export function MeScreen({
   later,
   history,
   readCount,
+  customSourcesSummary,
   categoriesSummary,
   presetsSummary,
   typographySummary,
@@ -93,6 +97,7 @@ export function MeScreen({
   availableVersion,
   onOpenLater,
   onOpenHistory,
+  onOpenCustomSources,
   onOpenCategories,
   onOpenPresets,
   onOpenTypographySettings,
@@ -150,6 +155,12 @@ export function MeScreen({
         </div>
 
         <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze">
+          <SettingsRow
+            icon={Rss}
+            title="自定义订阅与 OPML"
+            caption={customSourcesSummary ?? '管理 RSS/Atom 订阅源 · OPML 导入与导出'}
+            onClick={onOpenCustomSources}
+          />
           <SettingsRow
             icon={LayoutGrid}
             title="分类与自动刷新"

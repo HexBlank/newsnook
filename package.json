@@ -12,6 +12,8 @@
     "test:edge-swipe": "rolldown scripts/edge-swipe-back.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/edge-swipe-back.test.mjs && node node_modules/.cache/newsnook/edge-swipe-back.test.mjs",
     "test:category-order": "rolldown scripts/category-settings-order.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/category-settings-order.test.mjs && node node_modules/.cache/newsnook/category-settings-order.test.mjs",
     "test:custom-category": "rolldown scripts/custom-category-lifecycle.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/custom-category-lifecycle.test.mjs && node node_modules/.cache/newsnook/custom-category-lifecycle.test.mjs",
+    "test:custom-sources": "npx tsx scripts/custom-sources-opml.test.ts",
+    "test:source-picker": "npx tsx scripts/source-picker.test.ts",
     "test:refresh-progress": "rolldown scripts/refresh-progress.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/refresh-progress.test.mjs && node node_modules/.cache/newsnook/refresh-progress.test.mjs",
     "test:reader-images": "rolldown scripts/reader-image-role.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/reader-image-role.test.mjs && node node_modules/.cache/newsnook/reader-image-role.test.mjs",
     "test:inline-video": "rolldown scripts/inline-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/inline-video.test.mjs && node node_modules/.cache/newsnook/inline-video.test.mjs",
