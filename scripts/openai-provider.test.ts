@@ -174,11 +174,44 @@ assert.equal(requests[0].url, 'https://api.openai.com/v1/chat/completions')
 assert.equal(requests[0].authorization, 'Bearer sk-test')
 assert.equal(requests[0].body.model, 'gpt-4o-mini')
 assert.equal(requests[0].body.stream, false)
-assert.equal(requests[0].body.temperature, 0.1)
+assert.equal(requests[0].body.temperature, 0.35)
 assert.ok(Array.isArray(requests[0].body.messages))
 assert.deepEqual(
   batchIndexes.sort((a, b) => a - b),
   [0, 1],
+)
+
+requests.length = 0
+const mixed = await provider.translate({
+  texts: ['Market rallies on rate cut hopes', 'Investors bought shares after the announcement.'],
+  textKinds: ['headline', 'paragraph'],
+  sourceLanguage: 'en',
+  targetLanguage: 'zh-Hans',
+})
+assert.deepEqual(mixed, [
+  'AI:Market rallies on rate cut hopes',
+  'AI:Investors bought shares after the announcement.',
+])
+assert.equal(requests.length, 2)
+const sys0 = (requests[0].body.messages as { role: string; content: string }[]).find(
+  (m) => m.role === 'system',
+)?.content
+const sys1 = (requests[1].body.messages as { role: string; content: string }[]).find(
+  (m) => m.role === 'system',
+)?.content
+assert.match(String(sys0), /headline|news title|新闻标题/i)
+assert.match(String(sys1), /article translator|news\/article|正文|prose/i)
+assert.equal(requests[0].body.temperature, 0.35)
+
+await assert.rejects(
+  () =>
+    provider.translate({
+      texts: ['a', 'b'],
+      textKinds: ['headline'],
+      sourceLanguage: 'en',
+      targetLanguage: 'zh-Hans',
+    }),
+  /textKinds/,
 )
 
 await assert.rejects(

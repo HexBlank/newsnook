@@ -599,20 +599,29 @@ export class OpenAiProvider extends CloudProvider {
   async translate(request: TranslationRequest): Promise<string[]> {
     const base = assertOpenAiConfig(this.config)
     const model = this.config.model!.trim()
-    const system = openAiTranslationSystemPrompt(request.sourceLanguage, request.targetLanguage)
     const url = `${base}/chat/completions`
     const concurrency = normalizeOpenAiConcurrency(this.config.concurrency)
+
+    if (request.textKinds != null && request.textKinds.length !== request.texts.length) {
+      throw new Error('AI 翻译：textKinds 与 texts 长度不一致')
+    }
 
     return mapConcurrent(
       request.texts,
       concurrency,
-      async (text) => {
-        const userPrompt = openAiTranslationUserPrompt(text, request.targetLanguage)
+      async (text, index) => {
+        const kind = request.textKinds?.[index] ?? 'paragraph'
+        const system = openAiTranslationSystemPrompt(
+          request.sourceLanguage,
+          request.targetLanguage,
+          kind,
+        )
+        const userPrompt = openAiTranslationUserPrompt(text, request.targetLanguage, kind)
         const response = await postJson(
           url,
           {
             model,
-            temperature: 0.1,
+            temperature: 0.35,
             stream: false,
             messages: [
               { role: 'system', content: system },
