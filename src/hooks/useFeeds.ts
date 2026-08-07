@@ -32,6 +32,8 @@ import {
   finishRefreshProgress,
   settleRefreshSource,
 } from '../lib/refreshProgress'
+import { mapWithFeedConcurrency } from '../lib/feedRefreshConcurrency'
+import { buildFeedStatusList } from '../lib/feedStatusList'
 import type { Article, RefreshProgress, SourceStatus } from '../lib/types'
 import {
   CATALOG_PAGE_SIZE,
@@ -171,12 +173,13 @@ function pagingFromCache(
 
 function loadCachedSource(
   sourceId: string,
+  extraSources?: NewsSource[],
 ): {
   items: Article[]
   cachedAt?: number
   paging: SourcePagingState
 } {
-  const source = findSource(sourceId)
+  const source = findSource(sourceId, extraSources)
   const cached = loadCachedList(sourceId)
   let items = cached?.items ?? []
   if (
@@ -198,13 +201,13 @@ function loadCachedSource(
 }
 
 /** 只恢复当前需要的源缓存，避免启动时同步解析全部 SOURCES */
-function readInitialFeeds(sourceIds: string[]): InitialFeeds {
+function readInitialFeeds(sourceIds: string[], extraSources?: NewsSource[]): InitialFeeds {
   const buckets = new Map<string, Article[]>()
   const updatedAt: Record<string, number> = {}
   const paging: Record<string, SourcePagingState> = {}
 
   for (const id of sourceIds) {
-    const loaded = loadCachedSource(id)
+    const loaded = loadCachedSource(id, extraSources)
     if (loaded.cachedAt !== undefined && loaded.items.length) {
       buckets.set(id, loaded.items)
       updatedAt[id] = loaded.cachedAt
@@ -220,6 +223,7 @@ function mergeCachedSources(
   paging: Record<string, SourcePagingState>,
   updatedAt: Record<string, number>,
   sourceIds: string[],
+  extraSources?: NewsSource[],
 ): {
   buckets: Map<string, Article[]>
   paging: Record<string, SourcePagingState>
@@ -234,7 +238,7 @@ function mergeCachedSources(
   for (const id of sourceIds) {
     if (nextPaging[id] || nextBuckets.has(id)) continue
     if (nextBuckets === buckets) nextBuckets = new Map(buckets)
-    const loaded = loadCachedSource(id)
+    const loaded = loadCachedSource(id, extraSources)
     if (loaded.cachedAt !== undefined && loaded.items.length) {
       nextBuckets.set(id, loaded.items)
       nextUpdatedAt[id] = loaded.cachedAt
@@ -264,9 +268,10 @@ function cacheMetaForItems(
   sourceId: string,
   state: SourcePagingState | undefined,
   items: Article[],
+  extraSources?: NewsSource[],
 ): CachedPagingMeta | undefined {
   const meta = cacheMeta(state)
-  const source = findSource(sourceId)
+  const source = findSource(sourceId, extraSources)
   if (source?.kind !== 'zhihu') return meta
 
   const cachedItems = items.slice(0, 160)
@@ -282,9 +287,13 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '请求失败'
 }
 
-export function useFeeds(enabledIds: string[], onCacheChange?: () => void): FeedsResult {
+export function useFeeds(
+  enabledIds: string[],
+  onCacheChange?: () => void,
+  extraSources?: NewsSource[],
+): FeedsResult {
   const initialRef = useRef<InitialFeeds | null>(null)
-  if (!initialRef.current) initialRef.current = readInitialFeeds(enabledIds)
+  if (!initialRef.current) initialRef.current = readInitialFeeds(enabledIds, extraSources)
 
   const [buckets, setBuckets] = useState(initialRef.current.buckets)
   const [statuses, setStatuses] = useState<Record<string, SourceStatus>>({})
@@ -301,6 +310,9 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   const updatedAtRef = useRef(initialRef.current.updatedAt)
   const enabledIdsRef = useRef(enabledIds)
   enabledIdsRef.current = enabledIds
+  const extraSourcesRef = useRef(extraSources)
+  extraSourcesRef.current = extraSources
+  const getSource = useCallback((id: string) => findSource(id, extraSourcesRef.current), [])
   /** client-catalog：完整解析结果仅驻内存，列表窗口从此切片 */
   const catalogRef = useRef<Map<string, Article[]>>(new Map())
 
@@ -318,6 +330,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       pagingRef.current,
       updatedAtRef.current,
       enabledIdsRef.current,
+      extraSourcesRef.current,
     )
     if (!merged.changed) return
     pagingRef.current = merged.paging
@@ -371,7 +384,11 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
     const next = new Map(bucketsRef.current).set(id, items)
     bucketsRef.current = next
     setBuckets(next)
-    saveCachedArticles(id, items, cacheMetaForItems(id, pagingRef.current[id], items))
+    saveCachedArticles(
+      id,
+      items,
+      cacheMetaForItems(id, pagingRef.current[id], items, extraSourcesRef.current),
+    )
   }, [])
 
   const applyHeadPage = useCallback(
@@ -415,13 +432,13 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
     (sourceIds: string[]): PaginationViewState => {
       void pagingTick
       const entries = [...new Set(sourceIds)].flatMap((id) => {
-        const source = findSource(id)
+        const source = getSource(id)
         if (!source || !sourceSupportsPaging(source)) return []
         return [pagingRef.current[id] ?? { phase: 'uninitialized' as const }]
       })
       return summarizePagination(entries)
     },
-    [pagingTick],
+    [getSource, pagingTick],
   )
 
   const stopLoadMore = useCallback(() => {
@@ -444,7 +461,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   const refresh = useCallback(async (sourceIds?: string[]) => {
     if (refreshInFlightRef.current) return
     const scope = sourceIds?.length ? sourceIds : enabledIdsRef.current
-    const ids = [...new Set(scope)].filter((id) => Boolean(findSource(id)))
+    const ids = [...new Set(scope)].filter((id) => Boolean(getSource(id)))
     if (!ids.length) return
     refreshInFlightRef.current = true
     stopLoadMore()
@@ -473,48 +490,52 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
     }, REFRESH_TIMEOUT_MS)
 
     try {
-      await Promise.all(
-      ids.map(async (id) => {
-        const source = findSource(id)
-        if (!source) return
-        let synced = false
-        try {
-          const payload = await fetchSourceText(source, controller.signal)
-          if (controller.signal.aborted) return
-          const articles = parseSourcePayload(source, payload)
-          if (!articles.length) throw new Error('返回内容为空')
-          applyHeadPage(id, source, payload, articles)
-          scheduleDetailDateEnrichment(
-            id,
-            source,
-            payload,
-            articles,
-            controller.signal,
-            applyHeadPage,
-          )
-          anySucceeded = true
-          synced = true
-        } catch (error) {
-          if (controller.signal.aborted) return
-          setStatuses((prev) => ({
-            ...prev,
-            [id]: {
-              sourceId: id,
-              state: 'error',
-              count: bucketsRef.current.get(id)?.length ?? 0,
-              error: errorMessage(error),
-              fetchedAt: Date.now(),
-            },
-          }))
-        } finally {
-          if (!controller.signal.aborted) {
-            setRefreshProgress((progress) =>
-              progress ? settleRefreshSource(progress, id, synced) : progress,
+      await mapWithFeedConcurrency(
+        ids,
+        async (id) => {
+          const source = getSource(id)
+          if (!source) return
+          let synced = false
+          try {
+            const payload = await fetchSourceText(source, controller.signal)
+            if (controller.signal.aborted) return
+            const articles = parseSourcePayload(source, payload)
+            if (!articles.length) throw new Error('返回内容为空')
+            applyHeadPage(id, source, payload, articles)
+            scheduleDetailDateEnrichment(
+              id,
+              source,
+              payload,
+              articles,
+              controller.signal,
+              applyHeadPage,
             )
+            anySucceeded = true
+            synced = true
+          } catch (error) {
+            if (controller.signal.aborted) return
+            setStatuses((prev) => ({
+              ...prev,
+              [id]: {
+                sourceId: id,
+                state: 'error',
+                count: bucketsRef.current.get(id)?.length ?? 0,
+                error: errorMessage(error),
+                fetchedAt: Date.now(),
+              },
+            }))
+          } finally {
+            if (!controller.signal.aborted) {
+              setRefreshProgress((progress) =>
+                progress ? settleRefreshSource(progress, id, synced) : progress,
+              )
+            }
           }
-        }
-        }),
+        },
+        controller.signal,
       )
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
     } finally {
       window.clearTimeout(refreshTimer)
     }
@@ -545,7 +566,7 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       }
       if (anySucceeded) onCacheChange?.()
     }
-  }, [applyHeadPage, onCacheChange, stopLoadMore])
+  }, [applyHeadPage, getSource, onCacheChange, stopLoadMore])
 
   /** Quietly initialize sources that have no list cache yet. */
   const prefetchMissing = useCallback(
@@ -559,52 +580,58 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       prefetchControllerRef.current = controller
       let anySucceeded = false
 
-      await Promise.all(
-        missing.map(async (id) => {
-          const source = findSource(id)
-          if (!source) return
-          try {
-            const payload = await fetchSourceText(source, controller.signal)
-            if (controller.signal.aborted) return
-            const articles = parseSourcePayload(source, payload)
-            if (!articles.length) throw new Error('返回内容为空')
-            applyHeadPage(id, source, payload, articles)
-            scheduleDetailDateEnrichment(
-              id,
-              source,
-              payload,
-              articles,
-              controller.signal,
-              applyHeadPage,
-            )
-            anySucceeded = true
-          } catch (error) {
-            if (controller.signal.aborted) return
-            setStatuses((prev) => ({
-              ...prev,
-              [id]: {
-                sourceId: id,
-                state: 'error',
-                count: bucketsRef.current.get(id)?.length ?? 0,
-                error: errorMessage(error),
-                fetchedAt: Date.now(),
-              },
-            }))
-          }
-        }),
-      )
+      try {
+        await mapWithFeedConcurrency(
+          missing,
+          async (id) => {
+            const source = getSource(id)
+            if (!source) return
+            try {
+              const payload = await fetchSourceText(source, controller.signal)
+              if (controller.signal.aborted) return
+              const articles = parseSourcePayload(source, payload)
+              if (!articles.length) throw new Error('返回内容为空')
+              applyHeadPage(id, source, payload, articles)
+              scheduleDetailDateEnrichment(
+                id,
+                source,
+                payload,
+                articles,
+                controller.signal,
+                applyHeadPage,
+              )
+              anySucceeded = true
+            } catch (error) {
+              if (controller.signal.aborted) return
+              setStatuses((prev) => ({
+                ...prev,
+                [id]: {
+                  sourceId: id,
+                  state: 'error',
+                  count: bucketsRef.current.get(id)?.length ?? 0,
+                  error: errorMessage(error),
+                  fetchedAt: Date.now(),
+                },
+              }))
+            }
+          },
+          controller.signal,
+        )
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
+      }
 
       if (prefetchControllerRef.current === controller) prefetchControllerRef.current = null
       if (!controller.signal.aborted && anySucceeded) onCacheChange?.()
     },
-    [applyHeadPage, onCacheChange],
+    [applyHeadPage, getSource, onCacheChange],
   )
 
   const loadMore = useCallback(
     async (sourceIds: string[]) => {
       if (refreshInFlightRef.current || loadMoreInFlightRef.current) return
       const targets = [...new Set(sourceIds)].filter((id) => {
-        const source = findSource(id)
+        const source = getSource(id)
         if (!source || !sourceSupportsPaging(source)) return false
         return pagingRef.current[id]?.phase !== 'exhausted'
       })
@@ -616,9 +643,11 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
       setLoadingMore(true)
       let anyAdded = false
 
-      await Promise.all(
-        targets.map(async (id) => {
-          const source = findSource(id)
+      try {
+        await mapWithFeedConcurrency(
+          targets,
+          async (id) => {
+          const source = getSource(id)
           if (!source) return
           const previous = pagingRef.current[id] ?? { phase: 'uninitialized' as const }
           updatePaging(id, { ...previous, phase: 'loading', error: undefined })
@@ -767,8 +796,12 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
               error: errorMessage(error),
             })
           }
-        }),
-      )
+          },
+          controller.signal,
+        )
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
+      }
 
       if (loadMoreControllerRef.current === controller) {
         loadMoreControllerRef.current = null
@@ -813,16 +846,8 @@ export function useFeeds(enabledIds: string[], onCacheChange?: () => void): Feed
   }, [enabledIds, updatedAtBySource])
 
   const statusList = useMemo(
-    () =>
-      SOURCES.map(
-        (source) =>
-          statuses[source.id] ?? {
-            sourceId: source.id,
-            state: 'idle' as const,
-            count: buckets.get(source.id)?.length ?? 0,
-          },
-      ),
-    [statuses, buckets],
+    () => buildFeedStatusList(SOURCES, extraSources, statuses, buckets),
+    [buckets, extraSources, statuses],
   )
 
   return {

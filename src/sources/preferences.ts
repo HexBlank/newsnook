@@ -17,7 +17,13 @@ import {
 } from '../features/proxy/config'
 import type { ProxyPrefs } from '../features/proxy/types'
 import { CATEGORIES, findCategory, PORTAL_VISIBLE_CATEGORY_IDS, type CategoryId, type NewsCategory } from './categories'
-import { SOURCES, findSource } from './registry'
+import {
+  SOURCES,
+  findSource,
+  makeCustomSourceId,
+  type NewsSource,
+  type SourceGroup,
+} from './registry'
 
 export type FontFamilyId = 'sans' | 'serif' | 'system'
 
@@ -40,6 +46,8 @@ export interface Preferences {
   categorySources: Record<CategoryId, string[]>
   /** 用户自建的自定义分类列表 */
   customCategories?: NewsCategory[]
+  /** 用户自建或导入的自定义订阅源 */
+  customSources?: NewsSource[]
   typography: TypographyPrefs
   theme: ThemeMode
   translation: TranslationPrefs
@@ -94,6 +102,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   hiddenCategoryIds: [...DEFAULT_HIDDEN_CATEGORY_IDS],
   categorySources: {},
   customCategories: [],
+  customSources: [],
   typography: DEFAULT_TYPOGRAPHY,
   theme: DEFAULT_THEME_MODE,
   translation: DEFAULT_TRANSLATION_PREFS,
@@ -130,8 +139,6 @@ export const PARAGRAPH_GAP_OPTIONS: { label: string; value: number }[] = [
   { label: '宽松', value: 1.5 },
 ]
 
-const KNOWN_SOURCE_IDS = new Set(SOURCES.map((source) => source.id))
-
 function uniqueValid(ids: unknown, known: Set<string>): string[] {
   if (!Array.isArray(ids)) return []
   const valid = ids.filter((id): id is string => typeof id === 'string' && known.has(id))
@@ -142,6 +149,11 @@ function clamp(value: unknown, fallback: number, min: number, max: number): numb
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.min(max, Math.max(min, value))
     : fallback
+}
+
+/** 获取全部可用信源（内置 + 用户自建） */
+export function allRegisteredSources(prefs?: Preferences): NewsSource[] {
+  return [...SOURCES, ...(prefs?.customSources ?? [])]
 }
 
 /** 获取全部可用分类（内置 + 用户自建） */
@@ -158,7 +170,49 @@ export function normalizePreferences(raw: unknown): Preferences {
   const input = (raw ?? {}) as Partial<Preferences>
   const typography = (input.typography ?? {}) as Partial<TypographyPrefs>
 
-  // 1. 规范化自建分类列表
+  // 1. 规范化自建订阅源列表
+  const customSources: NewsSource[] = []
+  const seenSourceIds = new Set(SOURCES.map((s) => s.id))
+
+  if (Array.isArray(input.customSources)) {
+    input.customSources.forEach((item) => {
+      if (!item || typeof item !== 'object') return
+      const rawUrl = typeof item.url === 'string' ? item.url.trim() : ''
+      const rawName = typeof item.name === 'string' ? item.name.trim() : ''
+      if (!rawUrl || !rawName) return
+
+      const rawId =
+        typeof item.id === 'string' && item.id.trim()
+          ? item.id.trim()
+          : makeCustomSourceId(rawUrl)
+      if (seenSourceIds.has(rawId)) return
+      seenSourceIds.add(rawId)
+
+      const rawLabel = typeof item.label === 'string' ? item.label.trim() : ''
+      const rawSiteUrl = typeof item.siteUrl === 'string' ? item.siteUrl.trim() : undefined
+      const rawGroup =
+        typeof item.group === 'string' && ['cn', 'intl', 'tech', 'ai', 'special', 'custom'].includes(item.group)
+          ? (item.group as SourceGroup)
+          : 'custom'
+
+      customSources.push({
+        id: rawId,
+        name: rawName,
+        label: rawLabel || rawName.slice(0, 4),
+        group: rawGroup,
+        kind: 'feed',
+        url: rawUrl,
+        siteUrl: rawSiteUrl,
+        enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
+        isCustom: true,
+        createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
+      })
+    })
+  }
+
+  const knownSourceIds = new Set([...SOURCES.map((s) => s.id), ...customSources.map((s) => s.id)])
+
+  // 2. 规范化自建分类列表
   const customCategories: NewsCategory[] = []
   if (Array.isArray(input.customCategories)) {
     input.customCategories.forEach((item) => {
@@ -168,14 +222,14 @@ export function normalizePreferences(raw: unknown): Preferences {
       const rawShort = typeof item.short === 'string' ? item.short.trim() : ''
       if (!rawId || !rawLabel) return
 
-      const sourceIds = uniqueValid(item.sourceIds, KNOWN_SOURCE_IDS)
+      const sourceIds = uniqueValid(item.sourceIds, knownSourceIds)
       if (!sourceIds.length) return
 
       customCategories.push({
         id: rawId,
         label: rawLabel,
         short: rawShort || rawLabel.slice(0, 4),
-        caption: describeSources(sourceIds),
+        caption: describeSources(sourceIds, customSources),
         sourceIds,
         isCustom: true,
       })
@@ -190,7 +244,7 @@ export function normalizePreferences(raw: unknown): Preferences {
   const categorySources: Record<CategoryId, string[]> = {}
   Object.entries(input.categorySources ?? {}).forEach(([categoryId, sourceIds]) => {
     if (!allCategoryIds.has(categoryId) || categoryId === FOLLOWS_ENABLED_SOURCES) return
-    const valid = uniqueValid(sourceIds, KNOWN_SOURCE_IDS)
+    const valid = uniqueValid(sourceIds, knownSourceIds)
     if (valid.length) categorySources[categoryId] = valid
   })
 
@@ -205,6 +259,7 @@ export function normalizePreferences(raw: unknown): Preferences {
     hiddenCategoryIds: hidden.length >= allCategoryIds.size ? hidden.slice(1) : hidden,
     categorySources,
     customCategories,
+    customSources,
     theme: isThemeMode(input.theme) ? input.theme : DEFAULT_THEME_MODE,
     translation: normalizeTranslationPrefs(input.translation),
     proxy: normalizeProxyPrefs(input.proxy),
@@ -229,9 +284,9 @@ export function normalizePreferences(raw: unknown): Preferences {
 }
 
 /** 把信源 id 折成一句出处摘要 */
-export function describeSources(sourceIds: string[]): string {
+export function describeSources(sourceIds: string[], extraSources?: NewsSource[]): string {
   const labels = sourceIds
-    .map((id) => findSource(id)?.label)
+    .map((id) => findSource(id, extraSources)?.label)
     .filter((label): label is string => Boolean(label))
   if (!labels.length) return '未选择信源'
   const head = labels.slice(0, 4).join(' · ')
@@ -264,7 +319,7 @@ export function resolveCategory(categoryId: CategoryId, prefs: Preferences): New
     return {
       ...custom,
       sourceIds,
-      caption: describeSources(sourceIds),
+      caption: describeSources(sourceIds, prefs.customSources),
       isCustom: true,
     }
   }
@@ -276,7 +331,9 @@ export function resolveCategory(categoryId: CategoryId, prefs: Preferences): New
   return {
     ...base,
     sourceIds,
-    caption: hasSourceOverride(base.id, prefs) ? describeSources(sourceIds) : base.caption,
+    caption: hasSourceOverride(base.id, prefs)
+      ? describeSources(sourceIds, prefs.customSources)
+      : base.caption,
   }
 }
 
@@ -429,7 +486,8 @@ export function addCustomCategory(
   prefs: Preferences,
   draft: { label: string; short?: string; sourceIds: string[] },
 ): { nextPrefs: Preferences; newCategoryId: CategoryId } {
-  const validSourceIds = uniqueValid(draft.sourceIds, KNOWN_SOURCE_IDS)
+  const knownSourceIds = new Set(allRegisteredSources(prefs).map((s) => s.id))
+  const validSourceIds = uniqueValid(draft.sourceIds, knownSourceIds)
   const label = draft.label.trim() || '自定义分类'
   const short = (draft.short?.trim() || label.slice(0, 4)) || '分类'
   const id: CategoryId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -437,7 +495,7 @@ export function addCustomCategory(
     id,
     label,
     short,
-    caption: describeSources(validSourceIds),
+    caption: describeSources(validSourceIds, prefs.customSources),
     sourceIds: validSourceIds,
     isCustom: true,
   }
@@ -476,12 +534,13 @@ export function updateCustomCategory(
   const index = list.findIndex((category) => category.id === categoryId)
   if (index < 0) return prefs
 
+  const knownSourceIds = new Set(allRegisteredSources(prefs).map((s) => s.id))
   const current = list[index]
   const label = patch.label !== undefined ? (patch.label.trim() || current.label) : current.label
   const short = patch.short !== undefined ? (patch.short.trim() || label.slice(0, 4)) : current.short
   const sourceIds =
     patch.sourceIds !== undefined
-      ? uniqueValid(patch.sourceIds, KNOWN_SOURCE_IDS)
+      ? uniqueValid(patch.sourceIds, knownSourceIds)
       : (current.sourceIds ?? [])
 
   if (!sourceIds.length) return prefs
@@ -491,7 +550,7 @@ export function updateCustomCategory(
     label,
     short,
     sourceIds,
-    caption: describeSources(sourceIds),
+    caption: describeSources(sourceIds, prefs.customSources),
     isCustom: true,
   }
 
@@ -525,6 +584,224 @@ export function deleteCustomCategory(prefs: Preferences, categoryId: CategoryId)
     hiddenCategoryIds: nextHidden,
     categorySources: nextSources,
   }
+}
+
+/** 添加单个自定义 RSS 信源 */
+export function addCustomSource(
+  prefs: Preferences,
+  draft: {
+    name: string
+    url: string
+    label?: string
+    siteUrl?: string
+    group?: SourceGroup
+  },
+  targetCategoryId?: CategoryId,
+): { nextPrefs: Preferences; newSourceId: string } {
+  const url = draft.url.trim()
+  const name = draft.name.trim() || '自定义订阅'
+  const label = draft.label?.trim() || name.slice(0, 4)
+  const id = makeCustomSourceId(url)
+  const group = draft.group || 'custom'
+
+  const existingList = prefs.customSources ?? []
+  const existingIndex = existingList.findIndex((s) => s.id === id || s.url === url)
+
+  const newSource: NewsSource = {
+    id,
+    name,
+    label,
+    group,
+    kind: 'feed',
+    url,
+    siteUrl: draft.siteUrl?.trim() || undefined,
+    enabled: true,
+    isCustom: true,
+    createdAt: Date.now(),
+  }
+
+  let nextSources: NewsSource[]
+  if (existingIndex >= 0) {
+    nextSources = [...existingList]
+    nextSources[existingIndex] = { ...existingList[existingIndex], ...newSource }
+  } else {
+    nextSources = [...existingList, newSource]
+  }
+
+  let nextCategorySources = { ...prefs.categorySources }
+  let nextCustomCategories = prefs.customCategories ? [...prefs.customCategories] : []
+
+  if (targetCategoryId) {
+    if (isCustomCategory(targetCategoryId, prefs)) {
+      nextCustomCategories = nextCustomCategories.map((cat) => {
+        if (cat.id === targetCategoryId) {
+          const currentIds = cat.sourceIds ?? []
+          return {
+            ...cat,
+            sourceIds: currentIds.includes(id) ? currentIds : [...currentIds, id],
+          }
+        }
+        return cat
+      })
+    } else {
+      const currentIds = categorySourceIds(targetCategoryId, prefs)
+      if (!currentIds.includes(id)) {
+        nextCategorySources[targetCategoryId] = [...currentIds, id]
+      }
+    }
+  }
+
+  return {
+    nextPrefs: {
+      ...prefs,
+      customSources: nextSources,
+      categorySources: nextCategorySources,
+      customCategories: nextCustomCategories,
+    },
+    newSourceId: id,
+  }
+}
+
+/** 修改自定义 RSS 信源信息 */
+export function updateCustomSource(
+  prefs: Preferences,
+  sourceId: string,
+  patch: Partial<Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'group'>>,
+): Preferences {
+  const list = prefs.customSources ?? []
+  const index = list.findIndex((s) => s.id === sourceId)
+  if (index < 0) return prefs
+
+  const current = list[index]
+  const name = patch.name !== undefined ? (patch.name.trim() || current.name) : current.name
+  const label = patch.label !== undefined ? (patch.label.trim() || name.slice(0, 4)) : current.label
+  const url = patch.url !== undefined ? (patch.url.trim() || current.url) : current.url
+  const siteUrl = patch.siteUrl !== undefined ? (patch.siteUrl.trim() || undefined) : current.siteUrl
+  const group = patch.group ?? current.group
+
+  const updated: NewsSource = {
+    ...current,
+    name,
+    label,
+    url,
+    siteUrl,
+    group,
+  }
+
+  const nextList = [...list]
+  nextList[index] = updated
+
+  return {
+    ...prefs,
+    customSources: nextList,
+  }
+}
+
+/** 删除自定义 RSS 信源，并自动从相关分类中移除 */
+export function deleteCustomSource(prefs: Preferences, sourceId: string): Preferences {
+  const nextCustomSources = (prefs.customSources ?? []).filter((s) => s.id !== sourceId)
+
+  // 清理 categorySources
+  const nextCategorySources: Record<CategoryId, string[]> = {}
+  Object.entries(prefs.categorySources).forEach(([catId, ids]) => {
+    const filtered = ids.filter((id) => id !== sourceId)
+    if (filtered.length) {
+      nextCategorySources[catId] = filtered
+    }
+  })
+
+  // 清理 customCategories
+  const nextCustomCategories = (prefs.customCategories ?? []).map((cat) => ({
+    ...cat,
+    sourceIds: (cat.sourceIds ?? []).filter((id) => id !== sourceId),
+  })).filter((cat) => (cat.sourceIds ?? []).length > 0)
+
+  // 清理分类排序
+  const validCategoryIds = new Set([
+    ...CATEGORIES.map((c) => c.id),
+    ...nextCustomCategories.map((c) => c.id),
+  ])
+  const nextOrder = prefs.categoryOrder.filter((id) => validCategoryIds.has(id))
+  const nextHidden = prefs.hiddenCategoryIds.filter((id) => validCategoryIds.has(id))
+
+  return {
+    ...prefs,
+    customSources: nextCustomSources,
+    categorySources: nextCategorySources,
+    customCategories: nextCustomCategories,
+    categoryOrder: nextOrder,
+    hiddenCategoryIds: nextHidden,
+  }
+}
+
+/** 批量导入信源与分类（支持 OPML 导入） */
+export function batchImportSourcesAndCategories(
+  prefs: Preferences,
+  payloadOrSources:
+    | {
+        sources: NewsSource[]
+        categories?: NewsCategory[]
+        categorySources?: Record<CategoryId, string[]>
+      }
+    | NewsSource[],
+  categoriesOrMode?: NewsCategory[] | 'merge' | 'replace',
+  categorySourcesArg?: Record<CategoryId, string[]>,
+  modeArg: 'merge' | 'replace' = 'merge',
+): Preferences {
+  let sources: NewsSource[] = []
+  let categories: NewsCategory[] | undefined
+  let categorySources: Record<CategoryId, string[]> | undefined
+  let mode: 'merge' | 'replace' = 'merge'
+
+  if (Array.isArray(payloadOrSources)) {
+    sources = payloadOrSources
+    if (Array.isArray(categoriesOrMode)) {
+      categories = categoriesOrMode
+      categorySources = categorySourcesArg
+      mode = modeArg
+    } else if (categoriesOrMode === 'merge' || categoriesOrMode === 'replace') {
+      mode = categoriesOrMode
+    }
+  } else {
+    sources = payloadOrSources.sources ?? []
+    categories = payloadOrSources.categories
+    categorySources = payloadOrSources.categorySources
+    if (typeof categoriesOrMode === 'string') {
+      mode = categoriesOrMode
+    }
+  }
+
+  let nextSources = mode === 'replace' ? [] : [...(prefs.customSources ?? [])]
+  const sourceIdMap = new Map(nextSources.map((s) => [s.id, s]))
+
+  sources.forEach((s) => {
+    sourceIdMap.set(s.id, s)
+  })
+  nextSources = Array.from(sourceIdMap.values())
+
+  let nextCustomCategories = mode === 'replace' ? [] : [...(prefs.customCategories ?? [])]
+  if (categories?.length) {
+    const catMap = new Map(nextCustomCategories.map((c) => [c.id, c]))
+    categories.forEach((c) => {
+      catMap.set(c.id, c)
+    })
+    nextCustomCategories = Array.from(catMap.values())
+  }
+
+  let nextCategorySources = mode === 'replace' ? {} : { ...prefs.categorySources }
+  if (categorySources) {
+    Object.entries(categorySources).forEach(([catId, ids]) => {
+      const existing = nextCategorySources[catId] ?? []
+      nextCategorySources[catId] = [...new Set([...existing, ...ids])]
+    })
+  }
+
+  return normalizePreferences({
+    ...prefs,
+    customSources: nextSources,
+    customCategories: nextCustomCategories,
+    categorySources: nextCategorySources,
+  })
 }
 
 export function resetCategoryLayout(

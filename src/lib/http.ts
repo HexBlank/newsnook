@@ -140,8 +140,12 @@ export async function fetchSourceText(
     return decodeBrowserResponse(response)
   }
 
-  if (options?.url && options.url !== source.url) {
-    return fetchAbsoluteText(options.url, { userAgent: ua, signal })
+  if (
+    source.isCustom ||
+    source.id.startsWith('custom_') ||
+    (options?.url && options.url !== source.url)
+  ) {
+    return fetchAbsoluteText(rawUrl, { userAgent: ua, signal })
   }
 
   const init: RequestInit = { signal }

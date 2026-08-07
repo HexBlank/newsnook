@@ -6,11 +6,12 @@ import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { revealItems } from '../lib/motion'
 import type { SourceStatus } from '../lib/types'
-import { SOURCES, SOURCE_GROUPS, SOURCE_GROUP_ORDER } from '../sources/registry'
+import { SOURCES, SOURCE_GROUPS, SOURCE_GROUP_ORDER, type NewsSource } from '../sources/registry'
 
 interface Props {
   enabledIds: string[]
   statuses: SourceStatus[]
+  allSources?: NewsSource[]
   onToggle: (id: string) => void
   onInspect: (id: string) => void
   onBack: () => void
@@ -38,7 +39,14 @@ function StatusDot({ state }: { state: SourceStatus['state'] }) {
 /**
  * 综合分类的信源启用表：只影响「综合」Tab，也是点进单源列表的入口。
  */
-export function ChannelsScreen({ enabledIds, statuses, onToggle, onInspect, onBack }: Props) {
+export function ChannelsScreen({
+  enabledIds,
+  statuses,
+  allSources = SOURCES,
+  onToggle,
+  onInspect,
+  onBack,
+}: Props) {
   const reduced = useReducedMotion()
   const rootRef = useRef<HTMLDivElement>(null)
   const statusMap = new Map(statuses.map((status) => [status.sourceId, status]))
@@ -50,21 +58,25 @@ export function ChannelsScreen({ enabledIds, statuses, onToggle, onInspect, onBa
   return (
     <SettingsShell
       title="综合频道"
-      caption={`${enabledIds.length} / ${SOURCES.length} 个来源已启用`}
+      caption={`${enabledIds.length} / ${allSources.length} 个来源已启用`}
       onBack={onBack}
     >
       <div ref={rootRef}>
-        {SOURCE_GROUP_ORDER.map((group) => (
-          <div key={group} data-reveal>
-            <div className="page-x flex items-baseline gap-3 pt-6 pb-2">
-              <h2 className="font-display text-[15px] text-paper">{SOURCE_GROUPS[group].title}</h2>
-              <span className="font-mono text-[10px] text-paper-faint">
-                {SOURCE_GROUPS[group].caption}
-              </span>
-            </div>
+        {SOURCE_GROUP_ORDER.map((group) => {
+          const groupSources = allSources.filter((source) => source.group === group)
+          if (!groupSources.length) return null
 
-            <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze xl:grid-cols-3">
-              {SOURCES.filter((source) => source.group === group).map((source) => {
+          return (
+            <div key={group} data-reveal>
+              <div className="page-x flex items-baseline gap-3 pt-6 pb-2">
+                <h2 className="font-display text-[15px] text-paper">{SOURCE_GROUPS[group].title}</h2>
+                <span className="font-mono text-[10px] text-paper-faint">
+                  {SOURCE_GROUPS[group].caption}
+                </span>
+              </div>
+
+              <ul className="divide-y divide-haze border-y border-haze md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-haze xl:grid-cols-3">
+                {groupSources.map((source) => {
                 const status = statusMap.get(source.id)
                 const enabled = enabledIds.includes(source.id)
                 return (
@@ -100,7 +112,8 @@ export function ChannelsScreen({ enabledIds, statuses, onToggle, onInspect, onBa
               })}
             </ul>
           </div>
-        ))}
+        )
+      })}
 
         <SettingsHint>
           这里控制「综合」分类混读哪些信源。点来源名可进入单源列表；其它分类的选源请到「分类与信源」里单独配置。

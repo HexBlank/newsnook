@@ -55,6 +55,8 @@ interface Props {
     onManage: () => void
   }
   translationPrefs?: TranslationPrefs
+  /** 自定义源，用于刷新进度显示名称 */
+  customSources?: NewsSource[]
   onRefresh: () => Promise<void>
   onLoadMore?: () => void
   onOpen: (article: Article) => void
@@ -174,6 +176,7 @@ export const FeedScreen = memo(function FeedScreen({
   articlesForCategory,
   presetSwitcher,
   translationPrefs,
+  customSources,
   onRefresh,
   onLoadMore,
   onOpen,
@@ -615,7 +618,7 @@ export const FeedScreen = memo(function FeedScreen({
               <span className="min-w-0 truncate">
                 {(() => {
                   const currentSource = refreshProgress.pendingSourceIds
-                    .map((id) => findSource(id))
+                    .map((id) => findSource(id, customSources))
                     .find((source) => Boolean(source))
                   const pendingCount = refreshProgress.pendingSourceIds.length
                   return currentSource
@@ -650,7 +653,12 @@ export const FeedScreen = memo(function FeedScreen({
       </header>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <PullIndicator indicatorRef={indicatorRef} phase={phase} progress={refreshProgress} />
+        <PullIndicator
+          indicatorRef={indicatorRef}
+          phase={phase}
+          progress={refreshProgress}
+          customSources={customSources}
+        />
 
         <div
           ref={trackRef}

@@ -303,6 +303,63 @@ function buildArticle(
   }
 }
 
+function parseJsonFeed(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  const data = JSON.parse(payload) as Unknown
+  const items = toArray(data.items)
+  const articles: Article[] = []
+
+  for (const raw of items) {
+    const node = asRecord(raw)
+    if (!node) continue
+    const html =
+      text(node.content_html) ||
+      (text(node.content_text) ? `<p>${text(node.content_text)}</p>` : '')
+    const summaryText =
+      text(node.summary) ||
+      text(node.content_text) ||
+      stripTags(html)
+    const link = text(node.url) || text(node.external_url) || text(node.id)
+    const image =
+      text(node.image) ||
+      text(asRecord(node.attachments)?.url) ||
+      imageOf(node, html)
+
+    const article = buildArticle(
+      source,
+      {
+        title: text(node.title),
+        link,
+        html,
+        summaryText,
+        dateRaw: text(node.date_published) || text(node.date_modified),
+        image,
+      },
+      fetchedAt,
+    )
+    if (article) articles.push(article)
+  }
+
+  return articles
+}
+
+function looksLikeJsonFeed(payload: string): boolean {
+  const trimmed = payload.trim()
+  if (!trimmed.startsWith('{')) return false
+  try {
+    const data = JSON.parse(trimmed) as Unknown
+    return Array.isArray(data.items) && (typeof data.version === 'string' || Boolean(data.title))
+  } catch {
+    return false
+  }
+}
+
+function parseGenericFeed(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  if (looksLikeJsonFeed(payload)) {
+    return parseJsonFeed(source, payload, fetchedAt)
+  }
+  return parseXmlFeed(source, payload, fetchedAt)
+}
+
 function parseXmlFeed(source: NewsSource, payload: string, fetchedAt: number): Article[] {
   const document = parser.parse(payload) as Unknown
   const articles: Article[] = []
@@ -1230,7 +1287,7 @@ type SourceParser = (source: NewsSource, payload: string, fetchedAt: number) => 
  * 用 Record 而非条件分派：新增 SourceKind 时缺失解析器会在编译期报错。
  */
 const PARSERS: Record<SourceKind, SourceParser> = {
-  feed: parseXmlFeed,
+  feed: parseGenericFeed,
   'google-news': parseXmlFeed,
   netease: parseNetease,
   zhihu: parseZhihuDaily,

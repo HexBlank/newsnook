@@ -39,6 +39,7 @@ import { AppearanceScreen } from './screens/settings/AppearanceScreen'
 import { CategorySettingsScreen } from './screens/settings/CategorySettingsScreen'
 import { CategorySourcesScreen } from './screens/settings/CategorySourcesScreen'
 import { CategoryEditScreen } from './screens/settings/CategoryEditScreen'
+import { CustomSourcesScreen } from './screens/settings/CustomSourcesScreen'
 import { HistoryScreen } from './screens/settings/HistoryScreen'
 import { LaterScreen } from './screens/settings/LaterScreen'
 import { PresetListScreen } from './screens/settings/PresetListScreen'
@@ -60,7 +61,11 @@ import {
   FONT_FAMILY_OPTIONS,
   FONT_SCALE_OPTIONS,
   addCustomCategory,
+  addCustomSource,
+  allRegisteredSources,
+  batchImportSourcesAndCategories,
   deleteCustomCategory,
+  deleteCustomSource,
   resetCategoryLayout,
   resetCategorySources,
   resetTypography,
@@ -71,6 +76,7 @@ import {
   toggleCategorySource,
   toggleCategoryVisible,
   updateCustomCategory,
+  updateCustomSource,
   updateTypography,
   visibleCategories,
   type TypographyPrefs,
@@ -107,6 +113,7 @@ type SettingsRoute =
   | { name: 'categories'; returnTo?: 'presets' | 'me' }
   | { name: 'category-sources'; categoryId: CategoryId }
   | { name: 'category-edit'; categoryId?: CategoryId }
+  | { name: 'custom-sources' }
   | { name: 'channels' }
   | { name: 'typography' }
   | { name: 'appearance' }
@@ -123,6 +130,7 @@ interface BodyPrefetchTask {
   article: Article
   shouldPin: () => boolean
   onCacheChange: () => void
+  extraSources?: import('./sources/registry').NewsSource[]
 }
 
 const bodyPrefetchQueue: BodyPrefetchTask[] = []
@@ -139,7 +147,7 @@ function drainBodyPrefetchQueue(): void {
       try {
         // 排队期间已被移出稍后读，不再为未浏览内容消耗弱网流量。
         if (!task.shouldPin()) return
-        const resolved = await resolveArticleBody(task.article)
+        const resolved = await resolveArticleBody(task.article, undefined, task.extraSources)
         if (resolved.bodySource === 'video') return
         const cached = saveCachedBody(
           task.article,
@@ -240,9 +248,9 @@ export default function App() {
   const availableCategorySources = useMemo(
     () =>
       categorySourceIds
-        .map(findSource)
+        .map((id) => findSource(id, prefs.customSources))
         .filter((s): s is NonNullable<ReturnType<typeof findSource>> => Boolean(s)),
-    [categorySourceIds],
+    [categorySourceIds, prefs.customSources],
   )
 
   // 若切换分类导致已选信源不在新分类中，自动重置回全部
@@ -358,7 +366,7 @@ export default function App() {
     paginationState,
     refresh,
     loadMore,
-  } = useFeeds(fetchIds, notifyCacheChange)
+  } = useFeeds(fetchIds, notifyCacheChange, prefs.customSources)
 
   const runRefresh = useCallback(() => refresh(listScopeIds), [refresh, listScopeIds])
 
@@ -423,10 +431,11 @@ export default function App() {
         article,
         shouldPin: () => laterRef.current.some((item) => item.id === article.id),
         onCacheChange: notifyCacheChange,
+        extraSources: prefs.customSources,
       })
     })
     notifyCacheChange()
-  }, [later, notifyCacheChange])
+  }, [later, notifyCacheChange, prefs.customSources])
 
   const openArticle = useCallback((article: Article) => {
     setReading(article)
@@ -450,8 +459,9 @@ export default function App() {
       article,
       shouldPin: () => laterRef.current.some((item) => item.id === article.id),
       onCacheChange: notifyCacheChange,
+      extraSources: prefs.customSources,
     })
-  }, [notifyCacheChange])
+  }, [notifyCacheChange, prefs.customSources])
 
   const removeLater = useCallback((id: string) => {
     const next = laterRef.current.filter((item) => item.id !== id)
@@ -467,7 +477,7 @@ export default function App() {
     )
   }, [])
 
-  const focusSource = focusSourceId ? findSource(focusSourceId) : undefined
+  const focusSource = focusSourceId ? findSource(focusSourceId, prefs.customSources) : undefined
   const focusArticles = useMemo(
     () =>
       focusSource
@@ -515,6 +525,13 @@ export default function App() {
         .map((entry) => entry.article),
     [cacheSnapshot.history, laterIds],
   )
+
+  const customSourcesSummary = useMemo(() => {
+    const count = prefs.customSources?.length ?? 0
+    return count
+      ? `${count} 个自建订阅源 · 支持 OPML 导入与导出`
+      : '添加 RSS/Atom 订阅源 · OPML 导入与导出'
+  }, [prefs.customSources])
 
   // 缓存模块显式刷新快照，避免返回设置页后显示旧统计。
   const storageSummary = useMemo(() => {
@@ -639,9 +656,31 @@ export default function App() {
       )
     }
 
+    if (settingsRoute.name === 'custom-sources') {
+      return (
+        <CustomSourcesScreen
+          prefs={prefs}
+          onAddCustomSource={(source, targetCatId) =>
+            update((prev) => addCustomSource(prev, source, targetCatId).nextPrefs)
+          }
+          onUpdateCustomSource={(sourceId, patch) =>
+            update((prev) => updateCustomSource(prev, sourceId, patch))
+          }
+          onDeleteCustomSource={(sourceId) =>
+            update((prev) => deleteCustomSource(prev, sourceId))
+          }
+          onBatchImport={(sources, categories) =>
+            update((prev) => batchImportSourcesAndCategories(prev, sources, categories))
+          }
+          onBack={() => setSettingsRoute(null)}
+        />
+      )
+    }
+
     if (settingsRoute.name === 'channels') {
       return (
         <ChannelsScreen
+          allSources={allRegisteredSources(prefs)}
           enabledIds={enabledIds}
           statuses={statuses}
           onToggle={toggleSource}
@@ -777,6 +816,7 @@ export default function App() {
           showLead={false}
           offline={offline}
           translationPrefs={prefs.translation}
+          customSources={prefs.customSources}
           onRefresh={runRefresh}
           onLoadMore={() => void loadMore([focusSource.id])}
           onOpen={openArticle}
@@ -791,6 +831,7 @@ export default function App() {
           later={later}
           history={cachedHistory}
           readCount={readIds.size}
+          customSourcesSummary={customSourcesSummary}
           categoriesSummary={`${categories.length} 个启用分类 · ${
             prefs.autoRefreshOnCategorySwitch !== false ? '切换自动刷新开启' : '切换自动刷新已关闭'
           }`}
@@ -804,6 +845,7 @@ export default function App() {
           availableVersion={appUpdate.availableVersion}
           onOpenLater={() => setSettingsRoute({ name: 'later' })}
           onOpenHistory={() => setSettingsRoute({ name: 'history' })}
+          onOpenCustomSources={() => setSettingsRoute({ name: 'custom-sources' })}
           onOpenCategories={() => setSettingsRoute({ name: 'categories', returnTo: 'me' })}
           onOpenPresets={() => setSettingsRoute({ name: 'presets' })}
           onOpenTypographySettings={() => setSettingsRoute({ name: 'typography' })}
@@ -816,7 +858,9 @@ export default function App() {
       )
     }
 
-    const activeFilterSource = categoryFilterSourceId ? findSource(categoryFilterSourceId) : null
+    const activeFilterSource = categoryFilterSourceId
+      ? findSource(categoryFilterSourceId, prefs.customSources)
+      : null
     const displayedArticles = categoryFilterSourceId
       ? articles.filter((item) => item.sourceId === categoryFilterSourceId)
       : articles
@@ -849,6 +893,7 @@ export default function App() {
         articlesForCategory={articlesForCategory}
         presetSwitcher={presetSwitcherConfig}
         translationPrefs={prefs.translation}
+        customSources={prefs.customSources}
         onRefresh={runRefresh}
         onLoadMore={() => void loadMore(listScopeIds)}
         onOpen={openArticle}
@@ -937,6 +982,7 @@ export default function App() {
             onCacheChange={notifyCacheChange}
             overlayCloserRef={readerOverlayCloserRef}
             translationPrefs={prefs.translation}
+            customSources={prefs.customSources}
           />
         </Suspense>
       )}

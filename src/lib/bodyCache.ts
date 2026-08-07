@@ -169,6 +169,7 @@ export function loadCachedBody(articleId: string): CachedBody | null {
   const stale =
     Boolean(body) &&
     ((body!.bodySource === 'feed' && isPartialFeedTeaser(body!.html)) ||
+      body!.bodySource === 'blocked' ||
       hasEmbedNoise(body!.html) ||
       /站内无法嵌入\s*YouTube/i.test(body!.html) ||
       /原站暂不支持站内阅读/i.test(body!.html))

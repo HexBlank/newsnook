@@ -137,8 +137,8 @@ export const neteaseCommentProvider: CommentProvider = {
 
       const totalCount = tab === 'latest' ? (data.newListSize ?? data.hotListSize ?? 0) : (data.hotListSize ?? data.newListSize ?? 0)
       const availableTabs: CommentTab[] = [
-        { id: 'hot', label: '🔥 热门跟贴', count: data.hotListSize },
-        { id: 'latest', label: '⏱️ 最新跟贴', count: data.newListSize },
+        { id: 'hot', label: '热门跟贴', count: data.hotListSize },
+        { id: 'latest', label: '最新跟贴', count: data.newListSize },
       ]
 
       const parsedComments: CommentItem[] = []
@@ -198,8 +198,8 @@ export const neteaseCommentProvider: CommentProvider = {
         comments: [],
         totalCount: 0,
         availableTabs: [
-          { id: 'hot', label: '🔥 热门跟贴' },
-          { id: 'latest', label: '⏱️ 最新跟贴' },
+          { id: 'hot', label: '热门跟贴' },
+          { id: 'latest', label: '最新跟贴' },
         ],
         hasMore: false,
       }

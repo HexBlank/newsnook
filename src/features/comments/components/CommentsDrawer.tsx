@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
+  Clock,
+  FileText,
+  Flame,
   LoaderCircle,
   MessageSquare,
   RefreshCw,
@@ -24,6 +27,21 @@ interface Props {
     sourceId?: string
     originUrl?: string
     neteaseDocId?: string
+  }
+}
+
+function renderTabIcon(tabId: CommentTabId) {
+  switch (tabId) {
+    case 'hot':
+      return <Flame size={13} className="shrink-0" />
+    case 'latest':
+      return <Clock size={13} className="shrink-0" />
+    case 'short':
+      return <MessageSquare size={13} className="shrink-0" />
+    case 'long':
+      return <FileText size={13} className="shrink-0" />
+    default:
+      return null
   }
 }
 
@@ -189,15 +207,16 @@ export function CommentsDrawer({ open, onClose, article }: Props) {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition ${
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition ${
                   activeTab === tab.id
                     ? 'bg-cinnabar text-white shadow-sm'
                     : 'bg-ink-raised border border-haze/60 text-paper-muted hover:bg-haze hover:text-paper'
                 }`}
               >
-                {tab.label}
+                {renderTabIcon(tab.id)}
+                <span>{tab.label}</span>
                 {tab.count != null && tab.count > 0 && (
-                  <span className="ml-1.5 opacity-80 text-[11px]">({tab.count})</span>
+                  <span className="opacity-80 text-[11px]">({tab.count})</span>
                 )}
               </button>
             ))}

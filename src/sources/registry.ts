@@ -7,7 +7,7 @@
 
 import { md5Hex, sha1Hex } from '../lib/hash'
 
-export type SourceGroup = 'cn' | 'intl' | 'tech' | 'ai' | 'special'
+export type SourceGroup = 'cn' | 'intl' | 'tech' | 'ai' | 'special' | 'custom'
 
 export type SourceKind =
   | 'feed'
@@ -36,6 +36,8 @@ export interface NewsSource {
   group: SourceGroup
   kind: SourceKind
   url: string
+  /** 原站主页链接（来自 OPML htmlUrl 或 Feed 抓取） */
+  siteUrl?: string
   /** 上游对 User-Agent 敏感时覆盖默认值 */
   userAgent?: string
   /** 列表请求方法；晚点等接口要求 POST */
@@ -46,6 +48,10 @@ export interface NewsSource {
   requestHeaders?: Record<string, string>
   /** 默认是否出现在「综合」启用列表 */
   enabled: boolean
+  /** 是否为用户自建自定义源 */
+  isCustom?: boolean
+  /** 自建时间戳 */
+  createdAt?: number
 }
 
 export const SOURCE_GROUPS: Record<SourceGroup, { title: string; caption: string }> = {
@@ -54,10 +60,11 @@ export const SOURCE_GROUPS: Record<SourceGroup, { title: string; caption: string
   tech: { title: '科技', caption: '数码、产品与产业报道' },
   ai: { title: 'AI', caption: '实验室、综述与研究向长文' },
   special: { title: '专栏', caption: '日报与轻松阅读' },
+  custom: { title: '自定义', caption: '自建与 OPML 导入订阅' },
 }
 
 /** 频道页 / 分类信源编辑的分组展示顺序 */
-export const SOURCE_GROUP_ORDER: SourceGroup[] = ['cn', 'intl', 'tech', 'ai', 'special']
+export const SOURCE_GROUP_ORDER: SourceGroup[] = ['cn', 'intl', 'tech', 'ai', 'special', 'custom']
 
 const BROWSER_UA =
   'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Mobile Safari/537.36'
@@ -671,7 +678,20 @@ export function userAgentFor(source: NewsSource): string {
   return source.userAgent ?? BROWSER_UA
 }
 
-export function findSource(id: string): NewsSource | undefined {
+export function makeCustomSourceId(url: string): string {
+  const clean = url.trim().toLowerCase().replace(/\/+$/, '')
+  return `custom_${md5Hex(clean).slice(0, 10)}`
+}
+
+export function isCustomSourceId(id: string): boolean {
+  return id.startsWith('custom_')
+}
+
+export function findSource(id: string, extraSources?: NewsSource[]): NewsSource | undefined {
+  if (extraSources?.length) {
+    const extra = extraSources.find((s) => s.id === id)
+    if (extra) return extra
+  }
   return SOURCES.find((s) => s.id === id)
 }
 

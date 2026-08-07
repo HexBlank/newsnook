@@ -46,11 +46,25 @@ export function assertOpenAiConfig(config: CloudTranslationConfig): string {
 
 export function cleanOpenAiTranslation(content: string): string {
   let text = content.trim()
+
+  // 1. 剥离可能由模型回传的 XML 标签包裹（例如 <source_text>...</source_text> 或 <translation>...</translation>）
+  const tagMatch = text.match(
+    /^<(?:source_text|translation|translated_text|target_text|result)>([\s\S]*?)<\/(?:source_text|translation|translated_text|target_text|result)>$/i,
+  )
+  if (tagMatch) text = tagMatch[1].trim()
+
+  // 2. 剥离 Markdown 代码块包裹
   const fence = text.match(/^```(?:\w+)?\r?\n([\s\S]*?)\r?\n```$/)
   if (fence) text = fence[1].trim()
+
+  // 3. 剥离常见的前缀引导词（如 "Translation:", "译文：", "翻译结果：" 等）
+  text = text.replace(/^(?:Translation|Translated(?:\s+text)?|译文|翻译结果)\s*[:：]\s*/i, '').trim()
+
+  // 4. 剥离外层成对的引号（英文半角/全角引号）
   if (
     (text.startsWith('"') && text.endsWith('"') && text.length >= 2) ||
-    (text.startsWith("'") && text.endsWith("'") && text.length >= 2)
+    (text.startsWith("'") && text.endsWith("'") && text.length >= 2) ||
+    (text.startsWith('“') && text.endsWith('”') && text.length >= 2)
   ) {
     text = text.slice(1, -1).trim()
   }

@@ -23,6 +23,7 @@ import {
 import type { TranslatedArticleContent, TranslationPrefs } from '../features/translation/types'
 import { fetchCommentCount, supportsComments } from '../features/comments/service'
 import { CommentsDrawer } from '../features/comments/components/CommentsDrawer'
+import type { NewsSource } from '../sources/registry'
 
 interface Props {
   article: Article
@@ -33,6 +34,7 @@ interface Props {
   /** 返回 true 表示已消费系统返回（例如关闭大图），供 App 回退栈使用 */
   overlayCloserRef?: MutableRefObject<(() => boolean) | null>
   translationPrefs: TranslationPrefs
+  customSources?: NewsSource[]
 }
 
 type LoadState = 'loading' | 'ready' | 'error'
@@ -46,6 +48,7 @@ export function ReaderScreen({
   onCacheChange,
   overlayCloserRef,
   translationPrefs,
+  customSources,
 }: Props) {
   const reduced = useReducedMotion()
   const shellRef = useRef<HTMLDivElement>(null)
@@ -279,7 +282,7 @@ export function ReaderScreen({
     setResolvedOriginUrl(undefined)
     setFromCache(false)
 
-    resolveArticleBody(article, controller.signal)
+    resolveArticleBody(article, controller.signal, customSources)
       .then((resolved) => {
         if (controller.signal.aborted) return
         setHtml(resolved.contentHtml)
@@ -302,7 +305,7 @@ export function ReaderScreen({
       })
 
     return () => controller.abort()
-  }, [article, onCacheChange, retryToken])
+  }, [article, customSources, onCacheChange, retryToken])
 
   useEffect(() => {
     if (loadState === 'ready') {
@@ -373,10 +376,14 @@ export function ReaderScreen({
             ? '已在应用内抽取原文'
             : bodySource === 'video'
               ? '视频报道 · 应用内播放'
-              : null
+              : bodySource === 'blocked'
+                ? '原站限制 · 仅摘要'
+                : null
     if (!origin) return null
     return fromCache ? `${origin} · 离线缓存` : origin
   }, [bodySource, fromCache])
+
+  const isBlockedBody = bodySource === 'blocked'
 
   const openOriginal = async () => {
     const url = resolvedOriginUrl || article.originUrl
@@ -599,6 +606,36 @@ export function ReaderScreen({
               <p className="mt-3 h-[13px] font-mono text-[10px] leading-[13px] tracking-[0.12em] text-paper-faint">
                 {sourceHint}
               </p>
+              {isBlockedBody && loadState === 'ready' && (
+                <div
+                  role="status"
+                  className="mt-3.5 rounded-2xl border border-haze bg-ink-raised/80 p-3.5 text-[12.5px] leading-relaxed text-paper-muted"
+                >
+                  <p className="text-paper">
+                    原站有付费墙或反爬限制，站内只能展示摘要。完整正文请在浏览器打开核对。
+                  </p>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    {(resolvedOriginUrl || article.originUrl) && (
+                      <button
+                        type="button"
+                        onClick={() => void openOriginal()}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-cinnabar px-3 py-1.5 font-mono text-[11px] font-medium text-white hover:bg-cinnabar-soft active:scale-95 transition-all"
+                      >
+                        <Globe size={12} strokeWidth={2} />
+                        打开原文
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setRetryToken((token) => token + 1)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-haze bg-ink px-3 py-1.5 font-mono text-[11px] text-paper-muted hover:text-paper active:scale-95 transition-all"
+                    >
+                      <RefreshCw size={12} strokeWidth={2} />
+                      重新抽取
+                    </button>
+                  </div>
+                </div>
+              )}
               {(showTranslation || translationState === 'loading') && (
                 <p className="mt-2 font-mono text-[9.5px] tracking-[0.1em] text-cinnabar-soft">
                   {translationState === 'loading'

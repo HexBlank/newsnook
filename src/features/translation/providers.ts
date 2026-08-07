@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 
+import { mapConcurrent as sharedMapConcurrent } from '../../lib/asyncPool'
 import {
   BergamotTranslation,
   isBergamotTranslationAvailable,
@@ -7,7 +8,7 @@ import {
   MlKitTranslation,
 } from './native'
 import { assertOpenAiConfig, cleanOpenAiTranslation, extractOpenAiChatContent } from './openai'
-import { openAiTranslationSystemPrompt } from './prompts'
+import { openAiTranslationSystemPrompt, openAiTranslationUserPrompt } from './prompts'
 import type {
   CloudTranslationConfig,
   CloudTranslationProviderId,
@@ -253,21 +254,14 @@ async function mapConcurrent<T, R>(
   signal?: AbortSignal,
   onItemDone?: (result: R, index: number) => void,
 ): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let nextIndex = 0
-
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      if (signal?.aborted) throw new DOMException('翻译已取消', 'AbortError')
-      const currentIndex = nextIndex++
-      const res = await fn(items[currentIndex], currentIndex)
-      results[currentIndex] = res
-      onItemDone?.(res, currentIndex)
+  try {
+    return await sharedMapConcurrent(items, concurrency, fn, signal, onItemDone)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new DOMException('翻译已取消', 'AbortError')
     }
-  })
-
-  await Promise.all(workers)
-  return results
+    throw error
+  }
 }
 
 async function inBatches(
@@ -613,15 +607,16 @@ export class OpenAiProvider extends CloudProvider {
       request.texts,
       concurrency,
       async (text) => {
+        const userPrompt = openAiTranslationUserPrompt(text, request.targetLanguage)
         const response = await postJson(
           url,
           {
             model,
-            temperature: 0.2,
+            temperature: 0.1,
             stream: false,
             messages: [
               { role: 'system', content: system },
-              { role: 'user', content: text },
+              { role: 'user', content: userPrompt },
             ],
           },
           { Authorization: `Bearer ${this.config.apiKey.trim()}` },

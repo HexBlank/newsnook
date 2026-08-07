@@ -4,7 +4,7 @@ import { parseHTML } from 'linkedom'
 import { hydrateNativeTunnelImages } from '../features/proxy/hydrateImages'
 import { currentProxyRuntime } from '../features/proxy/runtime'
 import { resolveProxyTransport } from '../features/proxy/transport'
-import { findSource, userAgentFor } from '../sources/registry'
+import { findSource, userAgentFor, type NewsSource } from '../sources/registry'
 import {
   fetchAbsoluteFormPost,
   fetchAbsoluteText,
@@ -18,7 +18,7 @@ import { sanitizeArticleHtml } from './sanitize'
 import type { Article } from './types'
 import { hasBrokenTextEncoding } from './textEncoding'
 
-export type BodySource = 'feed' | 'readability' | 'netease' | 'video'
+export type BodySource = 'feed' | 'readability' | 'netease' | 'video' | 'blocked'
 
 export interface ResolvedBody {
   contentHtml: string
@@ -27,6 +27,15 @@ export interface ResolvedBody {
   bodySource: BodySource
   /** Google News 等解码后的出版社 URL；外开浏览器优先用 */
   resolvedOriginUrl?: string
+}
+
+/** 正文抓取使用的 UA：优先自定义/额外源表，找不到则 undefined（走 http 默认 UA） */
+export function pageUserAgentForArticle(
+  article: Article,
+  extraSources?: NewsSource[],
+): string | undefined {
+  const source = findSource(article.sourceId, extraSources)
+  return source ? userAgentFor(source) : undefined
 }
 
 function stripTags(html: string): string {
@@ -121,9 +130,17 @@ function buildBlockedPublisherFallback(
       : '<p class="text-paper-muted">订阅源未提供可用摘要。</p>'
   return {
     contentHtml: `${note}${summaryHtml}`,
-    bodySource: 'feed',
+    bodySource: 'blocked',
     resolvedOriginUrl,
   }
+}
+
+/** 测试导出：付费墙/反爬软降级正文 */
+export function buildBlockedPublisherFallbackForTest(
+  article: Article,
+  resolvedOriginUrl?: string,
+): ResolvedBody {
+  return buildBlockedPublisherFallback(article, resolvedOriginUrl)
 }
 
 /**
@@ -611,6 +628,7 @@ async function resolveJiqizhixinBody(
 export async function resolveArticleBody(
   article: Article,
   signal?: AbortSignal,
+  extraSources?: NewsSource[],
 ): Promise<ResolvedBody> {
   if (article.contentType === 'video') {
     return buildVideoBody(article)
@@ -690,8 +708,7 @@ export async function resolveArticleBody(
 
   const tried = new Set<string>()
   let lastError: unknown
-  const source = findSource(article.sourceId)
-  const pageUa = source ? userAgentFor(source) : undefined
+  const pageUa = pageUserAgentForArticle(article, extraSources)
 
   const tryExtract = async (pageUrl: string, userAgent = pageUa): Promise<ResolvedBody> => {
     const pageHtml = await fetchAbsoluteText(pageUrl, {
