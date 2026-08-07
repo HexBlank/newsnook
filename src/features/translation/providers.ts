@@ -8,7 +8,7 @@ import {
   MlKitTranslation,
 } from './native'
 import { assertOpenAiConfig, cleanOpenAiTranslation, extractOpenAiChatContent } from './openai'
-import { openAiTranslationSystemPrompt } from './prompts'
+import { openAiTranslationSystemPrompt, openAiTranslationUserPrompt } from './prompts'
 import type {
   CloudTranslationConfig,
   CloudTranslationProviderId,
@@ -607,15 +607,16 @@ export class OpenAiProvider extends CloudProvider {
       request.texts,
       concurrency,
       async (text) => {
+        const userPrompt = openAiTranslationUserPrompt(text, request.targetLanguage)
         const response = await postJson(
           url,
           {
             model,
-            temperature: 0.2,
+            temperature: 0.1,
             stream: false,
             messages: [
               { role: 'system', content: system },
-              { role: 'user', content: text },
+              { role: 'user', content: userPrompt },
             ],
           },
           { Authorization: `Bearer ${this.config.apiKey.trim()}` },

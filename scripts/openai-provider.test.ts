@@ -71,6 +71,12 @@ assert.equal(cleanOpenAiTranslation('  你好世界  '), '你好世界')
 assert.equal(cleanOpenAiTranslation('"你好世界"'), '你好世界')
 assert.equal(cleanOpenAiTranslation('```\n你好世界\n```'), '你好世界')
 assert.equal(cleanOpenAiTranslation('「你好」'), '「你好」')
+assert.equal(cleanOpenAiTranslation('“你好”'), '你好')
+assert.equal(cleanOpenAiTranslation('<source_text>关于</source_text>'), '关于')
+assert.equal(cleanOpenAiTranslation('<translation>关于</translation>'), '关于')
+assert.equal(cleanOpenAiTranslation('Translation: 关于'), '关于')
+assert.equal(cleanOpenAiTranslation('译文：关于'), '关于')
+assert.equal(cleanOpenAiTranslation('翻译结果：关于我们'), '关于我们')
 
 assert.equal(
   extractOpenAiChatContent(
@@ -100,13 +106,15 @@ assert.throws(
 )
 
 const systemAuto = openAiTranslationSystemPrompt('auto', 'zh-Hans')
-assert.match(systemAuto, /translator|翻译|news|资讯/i)
+assert.match(systemAuto, /translator|翻译|信、达、雅/i)
 assert.doesNotMatch(systemAuto, /from English/i)
 assert.match(systemAuto, /Simplified Chinese|简体/)
+assert.match(systemAuto, /About|NEVER expand/)
 
 const systemEn = openAiTranslationSystemPrompt('en', 'zh-Hans')
 assert.match(systemEn, /English/)
 assert.match(systemEn, /Simplified Chinese|简体/)
+assert.match(systemEn, /About|NEVER expand/)
 
 const originalFetch = globalThis.fetch
 const requests: { url: string; body: Record<string, unknown>; authorization: string | null }[] = []
@@ -121,8 +129,11 @@ globalThis.fetch = async (input, init) => {
   })
   const messages = body.messages as { role: string; content: string }[]
   const user = messages.find((m) => m.role === 'user')?.content ?? ''
+  // 提取 <source_text> 中的文本
+  const match = user.match(/<source_text>\n([\s\S]*?)\n<\/source_text>/)
+  const text = match ? match[1] : user
   return Response.json({
-    choices: [{ message: { content: `AI:${user}` } }],
+    choices: [{ message: { content: `AI:${text}` } }],
   })
 }
 
@@ -148,7 +159,7 @@ assert.equal(requests[0].url, 'https://api.openai.com/v1/chat/completions')
 assert.equal(requests[0].authorization, 'Bearer sk-test')
 assert.equal(requests[0].body.model, 'gpt-4o-mini')
 assert.equal(requests[0].body.stream, false)
-assert.equal(requests[0].body.temperature, 0.2)
+assert.equal(requests[0].body.temperature, 0.1)
 assert.ok(Array.isArray(requests[0].body.messages))
 assert.deepEqual(
   batchIndexes.sort((a, b) => a - b),
