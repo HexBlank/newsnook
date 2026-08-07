@@ -25,6 +25,7 @@
 | 缺 asset | 明确错误提示，不回退 latest |
 | 偏好副作用 | 不写 `availableVersion` / skip / snooze |
 | 平台 | 仅 Android 且 `isAppUpdateSupported()`；其它平台不展示 |
+| UI 壳 | **禁止** `alert` / `confirm` / `prompt` 及系统原生弹窗；一律用应用内主题组件 |
 
 ## 3. 现状约束
 
@@ -51,10 +52,10 @@
         ├─ 有目标 channel asset → LatestReleaseInfo(channel=目标)
         │         → beginUpdate（含未知来源权限）
         │         → 通知栏下载 → 系统安装器
-        └─ 无 asset / 网络错误 → 行内或 toast 级提示，结束
+        └─ 无 asset / 网络错误 → 应用内提示（行 caption / ConfirmDialog），结束
 ```
 
-下载进行中（含「检查更新」触发的下载）：禁止再开切换；提示稍后。
+下载进行中（含「检查更新」触发的下载）：禁止再开切换；用应用内文案提示稍后。
 
 ## 5. API 与数据
 
@@ -84,6 +85,15 @@ fetchReleaseApkForChannel(
 
 ## 6. UI
 
+### 6.0 主题一致性（硬性）
+
+- **禁止**使用 `window.alert` / `window.confirm` / `window.prompt`，以及 Capacitor/系统原生 Alert。
+- 确认、说明、缺包、错误、下载互斥等交互，一律使用现有应用内组件：
+  - `ConfirmDialog`（`src/components/ConfirmDialog.tsx`）做确认与需按钮的错误说明
+  - 关于行副文案 / `updateCaption` 同类行内提示做轻量状态（查找中、失败摘要）
+  - 安装未知来源权限：复用现有应用内引导对话框（与检查更新相同），不另起系统 alert
+- 视觉与文案风格对齐关于页、检查更新、`UpdateDialog`：纸色/墨色主题、圆角设置行，无系统灰底弹窗。
+
 ### 6.1 About「更新」区
 
 在「检查更新」与「更新日志」之间（或紧接检查更新后）增加一行：
@@ -97,24 +107,24 @@ fetchReleaseApkForChannel(
 
 ### 6.2 确认框
 
-复用现有 ConfirmDialog 模式：
+使用 **`ConfirmDialog`**（不得用原生 confirm）：
 
 - 标题：切换安装包
 - 正文：简要对比两渠道差异 + 将下载并安装 `newsnook-{ver}-{target}-release.apk`
 - 主按钮：下载并安装
 - 取消：关闭
 
-可用轻量专用对话框或复用/扩展 `UpdateDialog` 的文案模式；**不要**把切换伪装成「发现新版本」。
+**不要**把切换伪装成「发现新版本」；可另做轻量专用文案，但仍须是应用内 Dialog 壳，禁止系统弹窗。
 
 ### 6.3 状态与错误
 
-| 情况 | 提示 |
+| 情况 | 提示方式 |
 |---|---|
 | 解析中 | 行 caption「正在查找安装包…」或按钮 disabled |
-| no-asset | 「当前版本暂无对应安装包」 |
-| 网络/HTTP 错误 | 展示错误信息 |
-| 已在下载 | 「已有下载任务进行中，请稍后再试」 |
-| 需安装权限 | 复用现有未知来源引导 |
+| no-asset | 行 caption 或 `ConfirmDialog` 单按钮说明：「当前版本暂无对应安装包」 |
+| 网络/HTTP 错误 | 同上，应用内展示错误信息 |
+| 已在下载 | 行 caption 或 `ConfirmDialog`：「已有下载任务进行中，请稍后再试」 |
+| 需安装权限 | 复用现有应用内未知来源引导（与更新同一套） |
 
 ## 7. 非目标
 
@@ -123,6 +133,7 @@ fetchReleaseApkForChannel(
 - Play 商店渠道 / 差分包
 - Web / iOS 伪装入口
 - 改变检查更新的 channel 匹配逻辑（升级仍只下当前渠道）
+- 使用原生 / 浏览器系统弹窗做任何用户可见反馈
 
 ## 8. 验证
 
@@ -132,6 +143,7 @@ fetchReleaseApkForChannel(
 4. 切换过程中再点检查更新/切换：互斥提示
 5. Web：不出现切换入口
 6. 切换成功不产生「有新版本」红点（除非本来就有真正的更新）
+7. 全流程无 `alert`/`confirm`；确认与错误均为应用内主题 Dialog / 行内文案
 
 ## 9. 风险
 
