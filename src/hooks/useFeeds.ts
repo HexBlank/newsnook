@@ -32,6 +32,7 @@ import {
   finishRefreshProgress,
   settleRefreshSource,
 } from '../lib/refreshProgress'
+import { mapWithFeedConcurrency } from '../lib/feedRefreshConcurrency'
 import type { Article, RefreshProgress, SourceStatus } from '../lib/types'
 import {
   CATALOG_PAGE_SIZE,
@@ -488,48 +489,52 @@ export function useFeeds(
     }, REFRESH_TIMEOUT_MS)
 
     try {
-      await Promise.all(
-      ids.map(async (id) => {
-        const source = getSource(id)
-        if (!source) return
-        let synced = false
-        try {
-          const payload = await fetchSourceText(source, controller.signal)
-          if (controller.signal.aborted) return
-          const articles = parseSourcePayload(source, payload)
-          if (!articles.length) throw new Error('返回内容为空')
-          applyHeadPage(id, source, payload, articles)
-          scheduleDetailDateEnrichment(
-            id,
-            source,
-            payload,
-            articles,
-            controller.signal,
-            applyHeadPage,
-          )
-          anySucceeded = true
-          synced = true
-        } catch (error) {
-          if (controller.signal.aborted) return
-          setStatuses((prev) => ({
-            ...prev,
-            [id]: {
-              sourceId: id,
-              state: 'error',
-              count: bucketsRef.current.get(id)?.length ?? 0,
-              error: errorMessage(error),
-              fetchedAt: Date.now(),
-            },
-          }))
-        } finally {
-          if (!controller.signal.aborted) {
-            setRefreshProgress((progress) =>
-              progress ? settleRefreshSource(progress, id, synced) : progress,
+      await mapWithFeedConcurrency(
+        ids,
+        async (id) => {
+          const source = getSource(id)
+          if (!source) return
+          let synced = false
+          try {
+            const payload = await fetchSourceText(source, controller.signal)
+            if (controller.signal.aborted) return
+            const articles = parseSourcePayload(source, payload)
+            if (!articles.length) throw new Error('返回内容为空')
+            applyHeadPage(id, source, payload, articles)
+            scheduleDetailDateEnrichment(
+              id,
+              source,
+              payload,
+              articles,
+              controller.signal,
+              applyHeadPage,
             )
+            anySucceeded = true
+            synced = true
+          } catch (error) {
+            if (controller.signal.aborted) return
+            setStatuses((prev) => ({
+              ...prev,
+              [id]: {
+                sourceId: id,
+                state: 'error',
+                count: bucketsRef.current.get(id)?.length ?? 0,
+                error: errorMessage(error),
+                fetchedAt: Date.now(),
+              },
+            }))
+          } finally {
+            if (!controller.signal.aborted) {
+              setRefreshProgress((progress) =>
+                progress ? settleRefreshSource(progress, id, synced) : progress,
+              )
+            }
           }
-        }
-        }),
+        },
+        controller.signal,
       )
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
     } finally {
       window.clearTimeout(refreshTimer)
     }
@@ -574,40 +579,46 @@ export function useFeeds(
       prefetchControllerRef.current = controller
       let anySucceeded = false
 
-      await Promise.all(
-        missing.map(async (id) => {
-          const source = getSource(id)
-          if (!source) return
-          try {
-            const payload = await fetchSourceText(source, controller.signal)
-            if (controller.signal.aborted) return
-            const articles = parseSourcePayload(source, payload)
-            if (!articles.length) throw new Error('返回内容为空')
-            applyHeadPage(id, source, payload, articles)
-            scheduleDetailDateEnrichment(
-              id,
-              source,
-              payload,
-              articles,
-              controller.signal,
-              applyHeadPage,
-            )
-            anySucceeded = true
-          } catch (error) {
-            if (controller.signal.aborted) return
-            setStatuses((prev) => ({
-              ...prev,
-              [id]: {
-                sourceId: id,
-                state: 'error',
-                count: bucketsRef.current.get(id)?.length ?? 0,
-                error: errorMessage(error),
-                fetchedAt: Date.now(),
-              },
-            }))
-          }
-        }),
-      )
+      try {
+        await mapWithFeedConcurrency(
+          missing,
+          async (id) => {
+            const source = getSource(id)
+            if (!source) return
+            try {
+              const payload = await fetchSourceText(source, controller.signal)
+              if (controller.signal.aborted) return
+              const articles = parseSourcePayload(source, payload)
+              if (!articles.length) throw new Error('返回内容为空')
+              applyHeadPage(id, source, payload, articles)
+              scheduleDetailDateEnrichment(
+                id,
+                source,
+                payload,
+                articles,
+                controller.signal,
+                applyHeadPage,
+              )
+              anySucceeded = true
+            } catch (error) {
+              if (controller.signal.aborted) return
+              setStatuses((prev) => ({
+                ...prev,
+                [id]: {
+                  sourceId: id,
+                  state: 'error',
+                  count: bucketsRef.current.get(id)?.length ?? 0,
+                  error: errorMessage(error),
+                  fetchedAt: Date.now(),
+                },
+              }))
+            }
+          },
+          controller.signal,
+        )
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
+      }
 
       if (prefetchControllerRef.current === controller) prefetchControllerRef.current = null
       if (!controller.signal.aborted && anySucceeded) onCacheChange?.()
@@ -631,8 +642,10 @@ export function useFeeds(
       setLoadingMore(true)
       let anyAdded = false
 
-      await Promise.all(
-        targets.map(async (id) => {
+      try {
+        await mapWithFeedConcurrency(
+          targets,
+          async (id) => {
           const source = getSource(id)
           if (!source) return
           const previous = pagingRef.current[id] ?? { phase: 'uninitialized' as const }
@@ -782,8 +795,12 @@ export function useFeeds(
               error: errorMessage(error),
             })
           }
-        }),
-      )
+          },
+          controller.signal,
+        )
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
+      }
 
       if (loadMoreControllerRef.current === controller) {
         loadMoreControllerRef.current = null
