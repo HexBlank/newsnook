@@ -48,10 +48,15 @@ export interface TranslatedFeedItem {
   translatedAt: number
 }
 
+/** AI 翻译文本场景；其它 provider 可忽略 */
+export type TranslationTextKind = 'headline' | 'paragraph'
+
 export interface TranslationRequest {
   texts: string[]
   sourceLanguage: TranslationSourceLanguage
   targetLanguage: TranslationLanguage
+  /** 与 texts 等长；缺省时 OpenAI 按 paragraph 处理 */
+  textKinds?: TranslationTextKind[]
   signal?: AbortSignal
   onBatch?: (batchTranslations: string[], startIndex: number) => void
 }

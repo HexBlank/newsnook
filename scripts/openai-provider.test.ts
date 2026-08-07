@@ -6,7 +6,10 @@ import {
   extractOpenAiChatContent,
   normalizeOpenAiBaseUrl,
 } from '../src/features/translation/openai'
-import { openAiTranslationSystemPrompt } from '../src/features/translation/prompts'
+import {
+  openAiTranslationSystemPrompt,
+  openAiTranslationUserPrompt,
+} from '../src/features/translation/prompts'
 import { OpenAiProvider } from '../src/features/translation/providers'
 
 const empty = normalizeTranslationPrefs({})
@@ -105,16 +108,28 @@ assert.throws(
   /HTTPS/,
 )
 
-const systemAuto = openAiTranslationSystemPrompt('auto', 'zh-Hans')
+const systemAuto = openAiTranslationSystemPrompt('auto', 'zh-Hans', 'paragraph')
 assert.match(systemAuto, /translator|翻译|信、达、雅/i)
 assert.doesNotMatch(systemAuto, /from English/i)
 assert.match(systemAuto, /Simplified Chinese|简体/)
-assert.match(systemAuto, /About|NEVER expand/)
+assert.match(systemAuto, /natural|通顺|fluently|news prose|journalistic/i)
+assert.doesNotMatch(systemAuto, /literal translation/i)
+assert.match(systemAuto, /About|NEVER expand|UI labels/i)
+assert.doesNotMatch(systemAuto, /news titles/)
 
-const systemEn = openAiTranslationSystemPrompt('en', 'zh-Hans')
-assert.match(systemEn, /English/)
-assert.match(systemEn, /Simplified Chinese|简体/)
-assert.match(systemEn, /About|NEVER expand/)
+const systemHeadline = openAiTranslationSystemPrompt('en', 'zh-Hans', 'headline')
+assert.match(systemHeadline, /headline|news title|新闻标题/i)
+assert.match(systemHeadline, /English/)
+assert.doesNotMatch(systemHeadline, /literal translation/i)
+
+const userHeadline = openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'headline')
+assert.match(userHeadline, /<source_text>\nHello world\n<\/source_text>/)
+assert.match(userHeadline, /headline|新闻标题|title/i)
+assert.doesNotMatch(userHeadline, /literal/i)
+
+const userBody = openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'paragraph')
+assert.match(userBody, /natural|fluently|通顺|原意|meaning/i)
+assert.doesNotMatch(userBody, /literal/i)
 
 const originalFetch = globalThis.fetch
 const requests: { url: string; body: Record<string, unknown>; authorization: string | null }[] = []
