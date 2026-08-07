@@ -56,6 +56,12 @@ export function resolveChannel(): AppUpdateChannel {
   return isLocalTranslationAvailable() ? 'local' : 'cloud'
 }
 
+export function resolveOppositeChannel(
+  channel: AppUpdateChannel = resolveChannel(),
+): AppUpdateChannel {
+  return channel === 'local' ? 'cloud' : 'local'
+}
+
 export function getActiveDownloadId(): number | null {
   return activeDownloadId
 }

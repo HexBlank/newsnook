@@ -1,7 +1,12 @@
 import { CapacitorHttp } from '@capacitor/core'
 
 import { isNewerVersion, normalizeTagVersion } from './semver'
-import type { AppUpdateChannel, UpdateCheckResult } from './types'
+import type { AppUpdateChannel, LatestReleaseInfo, UpdateCheckResult } from './types'
+
+export type FetchReleaseApkResult =
+  | { status: 'ok'; release: LatestReleaseInfo }
+  | { status: 'no-asset'; version: string; channel: AppUpdateChannel }
+  | { status: 'error'; message: string }
 
 export function buildApkFileName(version: string, channel: AppUpdateChannel): string {
   return `newsnook-${version}-${channel}-release.apk`
@@ -117,6 +122,67 @@ export async function fetchLatestRelease(
     return {
       status: 'error',
       message: error instanceof Error ? error.message : '检查更新失败',
+    }
+  }
+}
+
+/** 从 tag Release JSON 解析指定渠道 APK（不发起网络请求） */
+export function releaseApkFromTagPayload(
+  data: {
+    tag_name?: unknown
+    body?: unknown
+    assets?: { name?: string; browser_download_url?: string }[]
+  },
+  version: string,
+  channel: AppUpdateChannel,
+): FetchReleaseApkResult {
+  const normalized = normalizeTagVersion(version)
+  if (!normalized) return { status: 'error', message: '版本号无效' }
+  const assets = (data.assets ?? [])
+    .map((a) => ({
+      name: String(a.name ?? ''),
+      browser_download_url: String(a.browser_download_url ?? ''),
+    }))
+    .filter((a) => a.name && a.browser_download_url)
+  const picked = pickReleaseAsset(assets, normalized, channel)
+  if (!picked) return { status: 'no-asset', version: normalized, channel }
+  return {
+    status: 'ok',
+    release: {
+      version: normalized,
+      tagName: String(data.tag_name ?? `v${normalized}`),
+      notes: truncateReleaseNotes(typeof data.body === 'string' ? data.body : ''),
+      apkUrl: picked.url,
+      apkFileName: picked.fileName,
+      channel,
+    },
+  }
+}
+
+/** 拉取指定版本 Release 上某一渠道的 APK（同版本切换用，不与 latest 比较） */
+export async function fetchReleaseApkForChannel(
+  version: string,
+  channel: AppUpdateChannel,
+): Promise<FetchReleaseApkResult> {
+  const normalized = normalizeTagVersion(version)
+  if (!normalized) return { status: 'error', message: '版本号无效' }
+  try {
+    const response = await CapacitorHttp.get({
+      url: `${RELEASES_TAG_PREFIX}v${encodeURIComponent(normalized)}`,
+      headers: GITHUB_HEADERS,
+    })
+    if (response.status === 404) {
+      return { status: 'error', message: '未找到该版本的发布' }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      return { status: 'error', message: `GitHub HTTP ${response.status}` }
+    }
+    const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+    return releaseApkFromTagPayload(data ?? {}, normalized, channel)
+  } catch (error) {
+    return {
+      status: 'error',
+      message: error instanceof Error ? error.message : '查找安装包失败',
     }
   }
 }

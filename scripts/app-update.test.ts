@@ -8,9 +8,11 @@ import {
 import {
   buildApkFileName,
   pickReleaseAsset,
+  releaseApkFromTagPayload,
   releaseTagUrl,
   truncateReleaseNotes,
 } from '../src/features/appUpdate/github'
+import { resolveOppositeChannel } from '../src/features/appUpdate/service'
 import {
   shouldAutoPrompt,
   shouldFetchForAutoCheck,
@@ -143,3 +145,36 @@ assert.equal(
 )
 
 console.log('✓ asset / gate ok')
+
+console.log('--- app-update flavor switch ---')
+
+assert.equal(resolveOppositeChannel('cloud'), 'local')
+assert.equal(resolveOppositeChannel('local'), 'cloud')
+
+const payload = {
+  tag_name: 'v1.4.6',
+  body: 'x',
+  assets: [
+    {
+      name: 'newsnook-1.4.6-cloud-release.apk',
+      browser_download_url: 'https://example.com/cloud.apk',
+    },
+  ],
+}
+const noLocal = releaseApkFromTagPayload(payload, '1.4.6', 'local')
+assert.equal(noLocal.status, 'no-asset')
+if (noLocal.status === 'no-asset') {
+  assert.equal(noLocal.version, '1.4.6')
+  assert.equal(noLocal.channel, 'local')
+}
+const cloud = releaseApkFromTagPayload(payload, '1.4.6', 'cloud')
+assert.equal(cloud.status, 'ok')
+if (cloud.status === 'ok') {
+  assert.equal(cloud.release.apkFileName, 'newsnook-1.4.6-cloud-release.apk')
+  assert.equal(cloud.release.channel, 'cloud')
+  assert.equal(cloud.release.apkUrl, 'https://example.com/cloud.apk')
+}
+const badVer = releaseApkFromTagPayload(payload, '', 'cloud')
+assert.equal(badVer.status, 'error')
+
+console.log('✓ flavor switch api ok')
