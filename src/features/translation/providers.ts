@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 
+import { mapConcurrent as sharedMapConcurrent } from '../../lib/asyncPool'
 import {
   BergamotTranslation,
   isBergamotTranslationAvailable,
@@ -253,21 +254,14 @@ async function mapConcurrent<T, R>(
   signal?: AbortSignal,
   onItemDone?: (result: R, index: number) => void,
 ): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let nextIndex = 0
-
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      if (signal?.aborted) throw new DOMException('翻译已取消', 'AbortError')
-      const currentIndex = nextIndex++
-      const res = await fn(items[currentIndex], currentIndex)
-      results[currentIndex] = res
-      onItemDone?.(res, currentIndex)
+  try {
+    return await sharedMapConcurrent(items, concurrency, fn, signal, onItemDone)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new DOMException('翻译已取消', 'AbortError')
     }
-  })
-
-  await Promise.all(workers)
-  return results
+    throw error
+  }
 }
 
 async function inBatches(
