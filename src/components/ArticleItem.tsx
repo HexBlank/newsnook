@@ -84,8 +84,8 @@ export const ArticleRow = memo(function ArticleRow({
           <span className="min-w-0 flex-1">
             {/* 顶部信源与时间元数据 */}
             <span
-              className={`flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.12em] ${
-                read ? 'text-paper-faint/75' : 'text-paper-faint'
+              className={`flex items-center gap-1.5 font-mono text-[11px] tracking-[0.08em] ${
+                read ? 'text-paper-faint/80' : 'text-paper-faint'
               }`}
             >
               {!read && (
@@ -111,7 +111,7 @@ export const ArticleRow = memo(function ArticleRow({
               >
                 {article.sourceLabel}
               </span>
-              <span aria-hidden className="text-paper-faint/40">·</span>
+              <span aria-hidden className="text-paper-faint/50">·</span>
               <span>{articleRelativeTime(article)}</span>
               {saved && <BookmarkCheck size={11} strokeWidth={1.8} className="text-cinnabar ml-0.5" />}
               {renderTranslateBadge()}
@@ -119,10 +119,10 @@ export const ArticleRow = memo(function ArticleRow({
 
             {/* 文章标题 */}
             <span
-              className={`row-title mt-1.5 block font-display text-[16px] leading-[1.38] tracking-[0.01em] transition-colors ${
+              className={`row-title mt-1.5 block font-display text-[17px] leading-[1.46] tracking-[0.005em] transition-colors ${
                 read
-                  ? 'font-normal text-paper-muted/65'
-                  : 'font-medium text-paper group-hover:text-cinnabar/90'
+                  ? 'font-normal text-paper-muted/75'
+                  : 'font-medium text-paper group-hover:text-cinnabar'
               }`}
             >
               {activeTitle}
@@ -130,7 +130,7 @@ export const ArticleRow = memo(function ArticleRow({
 
             {/* 双语对照模式下的外文原标题 */}
             {isTranslated && displayMode === 'compare' && (
-              <span className="mt-0.5 block font-sans text-[11.5px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+              <span className="mt-0.5 block font-sans text-[12px] leading-snug text-paper-faint/85 line-clamp-1 italic">
                 {article.title}
               </span>
             )}
@@ -138,8 +138,8 @@ export const ArticleRow = memo(function ArticleRow({
             {/* 清洗后的正文摘要 */}
             {displaySummary && (
               <span
-                className={`mt-1.5 line-clamp-2 text-[12px] leading-[1.58] ${
-                  read ? 'text-paper-faint/75' : 'text-paper-muted/90'
+                className={`mt-1.5 line-clamp-2 text-[13px] leading-[1.62] ${
+                  read ? 'text-paper-faint/80' : 'text-paper-muted'
                 }`}
               >
                 {displaySummary}
@@ -194,7 +194,7 @@ export const ArticleRow = memo(function ArticleRow({
             )}
 
             {/* 信源与时间 */}
-            <div className="flex items-center justify-between gap-2 font-mono text-[10px] tracking-[0.14em] text-paper-faint">
+            <div className="flex items-center justify-between gap-2 font-mono text-[10.5px] tracking-[0.1em] text-paper-faint">
               <div className="flex items-center gap-1.5 min-w-0">
                 {!read && (
                   <span
@@ -229,7 +229,7 @@ export const ArticleRow = memo(function ArticleRow({
 
             {/* 文章标题 */}
             <h2
-              className={`row-title mt-2 font-display text-[17.5px] xl:text-[18.5px] leading-[1.38] tracking-[0.01em] transition-colors duration-200 ${
+              className={`row-title mt-2 font-display text-[18px] xl:text-[19px] leading-[1.42] tracking-[0.005em] transition-colors duration-200 ${
                 read
                   ? 'font-normal text-paper-muted/80'
                   : 'font-medium text-paper group-hover:text-cinnabar'
@@ -240,7 +240,7 @@ export const ArticleRow = memo(function ArticleRow({
 
             {/* 双语对照模式下的外文原标题 */}
             {isTranslated && displayMode === 'compare' && (
-              <p className="mt-1 font-sans text-[12px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+              <p className="mt-1 font-sans text-[12px] leading-snug text-paper-faint/85 line-clamp-1 italic">
                 {article.title}
               </p>
             )}
@@ -248,8 +248,8 @@ export const ArticleRow = memo(function ArticleRow({
             {/* 摘要导读 */}
             {displaySummary && (
               <p
-                className={`mt-2 line-clamp-3 text-[13px] leading-[1.65] ${
-                  read ? 'text-paper-faint/80' : 'text-paper-muted/90'
+                className={`mt-2 line-clamp-3 text-[13.5px] leading-[1.65] ${
+                  read ? 'text-paper-faint/80' : 'text-paper-muted'
                 }`}
               >
                 {displaySummary}
@@ -258,7 +258,7 @@ export const ArticleRow = memo(function ArticleRow({
           </div>
 
           {/* 卡片底栏提示 */}
-          <div className="mt-4 flex items-center justify-between pt-3 border-t border-haze/50 font-mono text-[10px] text-paper-faint">
+          <div className="mt-4 flex items-center justify-between pt-3 border-t border-haze/50 font-mono text-[10.5px] text-paper-faint">
             <span>{read ? '已读 · 点击重温' : '点击阅读全文'}</span>
             <span className="text-paper-muted group-hover:text-cinnabar group-hover:translate-x-0.5 transition-all">
               →
@@ -355,7 +355,7 @@ export const LeadStory = memo(function LeadStory({
 
           <span className="page-x -mt-6 block pb-5 md:pb-6">
             <span
-              className={`flex items-center gap-2 font-mono text-[10px] tracking-[0.2em] ${
+              className={`flex items-center gap-2 font-mono text-[10.5px] tracking-[0.16em] ${
                 read ? 'text-paper-faint' : 'text-cinnabar-soft'
               }`}
             >
@@ -379,27 +379,27 @@ export const LeadStory = memo(function LeadStory({
               {renderTranslateBadge()}
             </span>
             <span
-              className={`lead-title mt-2.5 block font-display text-[21px] leading-[1.28] md:text-[25px] ${
+              className={`lead-title mt-2.5 block font-display text-[22px] leading-[1.34] md:text-[26px] ${
                 read ? 'font-normal text-paper-muted/80 opacity-80' : 'font-medium text-paper'
               }`}
             >
               {activeTitle}
             </span>
             {isTranslated && displayMode === 'compare' && (
-              <span className="mt-1 block font-sans text-[12px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+              <span className="mt-1 block font-sans text-[12px] leading-snug text-paper-faint/85 line-clamp-1 italic">
                 {article.title}
               </span>
             )}
             {displaySummary && (
               <span
-                className={`mt-2 line-clamp-2 text-[13px] leading-[1.65] ${
-                  read ? 'text-paper-faint/85' : 'text-paper-muted'
+                className={`mt-2 line-clamp-2 text-[13.5px] leading-[1.62] ${
+                  read ? 'text-paper-faint/80' : 'text-paper-muted'
                 }`}
               >
                 {displaySummary}
               </span>
             )}
-            <span className="mt-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-paper-faint">
+            <span className="mt-3 flex items-center gap-2 font-mono text-[10.5px] tracking-[0.08em] text-paper-faint">
               <span>{articleRelativeTime(article)}</span>
               <span className="h-px w-3 bg-haze" aria-hidden />
               <span>{read ? '重温正文' : '阅读全文'}</span>
@@ -437,7 +437,7 @@ export const LeadStory = memo(function LeadStory({
             {/* 右侧深度排版区 (5 栅格) */}
             <div className="col-span-5 flex flex-col justify-between h-full py-2">
               <div>
-                <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] text-cinnabar-soft">
+                <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] text-cinnabar-soft">
                   <span className="h-px w-6 bg-cinnabar" aria-hidden />
                   <span
                     role={onSourceClick ? 'button' : undefined}
@@ -459,7 +459,7 @@ export const LeadStory = memo(function LeadStory({
                 </div>
 
                 <h1
-                  className={`lead-title mt-4 font-display text-[26px] xl:text-[30px] leading-[1.3] font-medium transition-colors duration-200 ${
+                  className={`lead-title mt-4 font-display text-[26px] xl:text-[30px] leading-[1.32] font-medium transition-colors duration-200 ${
                     read
                       ? 'text-paper-muted/90'
                       : 'text-paper group-hover:text-cinnabar'
@@ -469,13 +469,13 @@ export const LeadStory = memo(function LeadStory({
                 </h1>
 
                 {isTranslated && displayMode === 'compare' && (
-                  <p className="mt-1.5 font-sans text-[13px] leading-snug text-paper-faint/75 line-clamp-1 italic">
+                  <p className="mt-1.5 font-sans text-[13px] leading-snug text-paper-faint/85 line-clamp-1 italic">
                     {article.title}
                   </p>
                 )}
 
                 {displaySummary && (
-                  <p className="mt-3.5 line-clamp-4 text-[14px] leading-[1.7] text-paper-muted">
+                  <p className={`mt-3.5 line-clamp-4 text-[14px] leading-[1.7] ${read ? 'text-paper-faint/80' : 'text-paper-muted'}`}>
                     {displaySummary}
                   </p>
                 )}

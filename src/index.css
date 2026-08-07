@@ -107,8 +107,8 @@
   --tone-ink-rgb: 14 15 18;
   --tone-ink-raised-rgb: 22 24 29;
   --tone-ink-deep-rgb: 8 9 11;
-  --tone-paper-muted-rgb: 152 146 135;
-  --tone-paper-faint-rgb: 110 105 96;
+  --tone-paper-muted-rgb: 168 161 148;
+  --tone-paper-faint-rgb: 120 114 104;
   --tone-cinnabar-rgb: 196 92 74;
   --tone-cinnabar-soft-rgb: 217 132 116;
 
@@ -116,14 +116,14 @@
   --tone-ink-raised: #16181d;
   --tone-ink-deep: #08090b;
   --tone-paper: #eae4d8;
-  --tone-paper-muted: #989287;
-  --tone-paper-faint: #6e6960;
+  --tone-paper-muted: #a8a194;
+  --tone-paper-faint: #787268;
   --tone-cinnabar: #c45c4a;
   --tone-cinnabar-soft: #d98474;
   --tone-haze: rgb(var(--tone-paper-rgb) / 0.08);
 
-  --tone-body-text: rgb(var(--tone-paper-rgb) / 0.84);
-  --tone-quote-text: rgb(var(--tone-paper-rgb) / 0.7);
+  --tone-body-text: rgb(var(--tone-paper-rgb) / 0.86);
+  --tone-quote-text: rgb(var(--tone-paper-rgb) / 0.72);
   /* 头条图上的压底渐变；浅底需要更厚才压得住图片细节 */
   --lead-veil: rgb(var(--tone-ink-rgb) / 0.7);
   --shadow-lift: 0 12px 40px -16px rgb(0 0 0 / 0.85);
@@ -145,7 +145,7 @@
 
 /*
  * 昼读：宣纸而非白纸。底色带一点暖黄灰，字用饱满深邃的墨黑，
- * 增强未读字体的骨力与清晰度，拉大已读/未读明度差，长时间阅读舒适不刺眼。
+ * 增强未读字体的骨力与清晰度，拉大已读/未读明度差，建立高/中/低三级清晰对比。
  */
 [data-theme='light'] {
   color-scheme: light;
@@ -154,8 +154,8 @@
   --tone-ink-rgb: 246 242 233;
   --tone-ink-raised-rgb: 255 252 245;
   --tone-ink-deep-rgb: 235 228 214;
-  --tone-paper-muted-rgb: 104 96 82;
-  --tone-paper-faint-rgb: 138 128 112;
+  --tone-paper-muted-rgb: 82 76 64;
+  --tone-paper-faint-rgb: 115 107 92;
   --tone-cinnabar-rgb: 180 61 38;
   --tone-cinnabar-soft-rgb: 190 74 51;
 
@@ -163,14 +163,14 @@
   --tone-ink-raised: #fffcf5;
   --tone-ink-deep: #ebe4d6;
   --tone-paper: #1a1815;
-  --tone-paper-muted: #686052;
-  --tone-paper-faint: #8a8070;
+  --tone-paper-muted: #524c40;
+  --tone-paper-faint: #736b5c;
   --tone-cinnabar: #b43d26;
   --tone-cinnabar-soft: #be4a33;
-  --tone-haze: rgb(var(--tone-paper-rgb) / 0.09);
+  --tone-haze: rgb(var(--tone-paper-rgb) / 0.11);
 
-  --tone-body-text: #24221e;
-  --tone-quote-text: #635d50;
+  --tone-body-text: #201e1a;
+  --tone-quote-text: #5c5547;
   --lead-veil: rgb(var(--tone-ink-rgb) / 0.86);
   --shadow-lift: 0 14px 34px -18px rgb(72 58 38 / 0.38);
   --dim-hidden: contrast(0.78) saturate(0.5);

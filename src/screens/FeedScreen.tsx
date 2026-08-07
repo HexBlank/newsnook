@@ -129,8 +129,8 @@ function CategoryPeek({
         )}
         {grouped.map(([bucket, items]) => (
           <div key={bucket}>
-            <div className="page-x flex items-center gap-3 pt-6 pb-2">
-              <span className="font-mono text-[10px] tracking-[0.28em] text-paper-faint">{bucket}</span>
+            <div className="page-x flex items-center gap-2.5 pt-5 pb-1.5">
+              <span className="font-mono text-[11px] tracking-[0.16em] text-paper-muted font-medium">{bucket}</span>
               <span className="h-px flex-1 bg-haze" aria-hidden />
             </div>
             <ul className="divide-y divide-haze">
@@ -415,8 +415,8 @@ export const FeedScreen = memo(function FeedScreen({
       {grouped.map(([bucket, items]) => (
         <div key={bucket}>
           <div className="page-x lg:px-6 xl:px-8 2xl:px-10 flex items-center gap-2.5 pt-4 pb-1.5">
-            <span className="font-mono text-[10.5px] tracking-[0.22em] text-paper-muted/80 font-medium">{bucket}</span>
-            <span className="h-px flex-1 bg-haze/80" aria-hidden />
+            <span className="font-mono text-[11px] tracking-[0.16em] text-paper-muted font-medium">{bucket}</span>
+            <span className="h-px flex-1 bg-haze" aria-hidden />
           </div>
 
           {/* 按平台只渲染一种列表布局，减少 50% DOM 节点与 React Diff 开销 */}

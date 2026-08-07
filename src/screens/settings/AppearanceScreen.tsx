@@ -1,6 +1,11 @@
-import { Check, Monitor, Moon, Sun } from 'lucide-react'
+import { useState } from 'react'
+import { Check, Monitor, Moon, Play, Sun } from 'lucide-react'
 
 import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import {
+  clearStartupSplashSeen,
+  hasSeenStartupSplash,
+} from '../../lib/storage'
 import { THEME_MODES, type ResolvedTheme, type ThemeMode } from '../../lib/theme'
 
 interface Props {
@@ -18,6 +23,12 @@ const MODE_ICONS: Record<ThemeMode, typeof Sun> = {
 
 export function AppearanceScreen({ theme, resolved, onChange, onBack }: Props) {
   const active = THEME_MODES.find((mode) => mode.id === theme)
+  const [replayArmed, setReplayArmed] = useState(() => !hasSeenStartupSplash())
+
+  const armFullSplashOnce = () => {
+    clearStartupSplashSeen()
+    setReplayArmed(true)
+  }
 
   return (
     <SettingsShell
@@ -87,6 +98,32 @@ export function AppearanceScreen({ theme, resolved, onChange, onBack }: Props) {
             )
           })}
         </ul>
+      </SettingsSection>
+
+      <SettingsSection title="启动">
+        <div className="page-x">
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-haze bg-ink-raised p-4 shadow-[var(--shadow-lift)]">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <Play size={15} strokeWidth={1.7} className="shrink-0 text-cinnabar-soft" />
+                <span className="font-display text-[15px] font-medium text-paper">
+                  下次完整开场
+                </span>
+              </div>
+              <p className="mt-1 text-[12px] leading-relaxed text-paper-muted">
+                {replayArmed ? '已安排，下次冷启动播放一次' : '清除标记，仅下次生效'}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={replayArmed}
+              onClick={armFullSplashOnce}
+              className="shrink-0 rounded-full border border-cinnabar/50 bg-cinnabar/12 px-3.5 py-1.5 font-mono text-[11px] text-cinnabar-soft disabled:border-haze disabled:bg-transparent disabled:text-paper-faint"
+            >
+              {replayArmed ? '已安排' : '安排'}
+            </button>
+          </div>
+        </div>
       </SettingsSection>
     </SettingsShell>
   )

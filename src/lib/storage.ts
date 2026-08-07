@@ -200,6 +200,11 @@ export function markStartupSplashSeen(): void {
   write('splash-seen', true)
 }
 
+/** 清除「已看过完整开场」标记，下次冷启动会再播完整动画（播完后仍会重新标记） */
+export function clearStartupSplashSeen(): void {
+  removeKeys(['splash-seen'])
+}
+
 export function loadPreferences(): unknown {
   return read<unknown>('preferences', null)
 }

@@ -17,7 +17,7 @@ export function SettingsShell({ title, caption, action, onBack, children }: Prop
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col bg-ink pt-[var(--sat)]"
+      className="absolute inset-0 z-30 flex flex-col bg-ink"
       style={{ animation: reduced ? undefined : 'settings-in 320ms var(--ease-ink) both' }}
     >
       <style>{`@keyframes settings-in { from { opacity: 0; transform: translateX(18px) } to { opacity: 1; transform: none } }`}</style>
