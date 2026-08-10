@@ -43,7 +43,17 @@ canvas {
     z-index: 2;
 }
 
-.ui-layer.hidden { opacity: 0; pointer-events: none !important; transform: scale(0.98); }
+.ui-layer.hidden {
+    opacity: 0;
+    pointer-events: none !important;
+    transform: scale(0.98);
+    visibility: hidden;
+}
+/* 父层 pointer-events:none 挡不住子级 .btn 的 auto；隐藏时必须显式关掉 */
+.ui-layer.hidden .btn,
+.ui-layer.hidden * {
+    pointer-events: none !important;
+}
 
 h1 {
     font-family: 'Ma Shan Zheng', 'Noto Serif SC', serif;
@@ -1494,6 +1504,8 @@ let foldCaptionShown = false;
 let inkSmoke = [];
 
 function beginFold() {
+    // 仪式进行中 / 已在对局：禁止重入，避免透明按钮再次触发重生
+    if (gameState === 'FOLDING' || gameState === 'DISSOLVING' || gameState === 'PLAYING') return;
     audioSys.init();
     gameState = 'FOLDING';
     foldElapsed = 0;
@@ -1823,12 +1835,14 @@ window.addEventListener('keydown', e => {
 startBtn.addEventListener('click', e => { 
     e.stopPropagation(); 
     e.preventDefault();
+    if (gameState !== 'START') return;
     beginFold(); 
 });
 
 restartBtn.addEventListener('click', e => { 
     e.stopPropagation(); 
     e.preventDefault();
+    if (gameState !== 'GAMEOVER') return;
     resetGame(); 
     beginFold(); 
 });
