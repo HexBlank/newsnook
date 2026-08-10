@@ -626,9 +626,8 @@ const crane = {
         if (this.isDead) return;
         this.x = width * 0.3;
         const s = seasons[weatherSys.currentSeason];
-        // 禅模式减轻重力，否则触底反弹高度只有几十像素，看起来像贴地蹭
-        const gScale = config.zenMode ? 0.4 : s.gravity;
-        this.vy += this.gravity * gScale * frameDt;
+        // 自动驾驶算法已实现真实躲避，不再需要减轻重力
+        this.vy += this.gravity * s.gravity * frameDt;
         this.y += this.vy * frameDt;
         this.rotation = Math.max(-Math.PI / 5, Math.min(Math.PI / 4, this.vy * 0.1));
         if (this.flapTimer > 0) this.flapTimer--;
@@ -655,29 +654,64 @@ const crane = {
         }
         this.trail.length = write;
 
-        if (!config.zenMode) {
-            if (this.y >= height - this.height || this.y <= this.height) {
-                this.die();
+        if (config.zenMode && !this.isDead) {
+            // ===== 1. 找到前方最近的两根竹子 =====
+            let nextB = null, nextNextB = null;
+            for (let i = 0; i < bamboos.items.length; i++) {
+                const b = bamboos.items[i];
+                if (b.x + b.w > this.x) {
+                    if (!nextB) nextB = b;
+                    else if (!nextNextB) { nextNextB = b; break; }
+                }
             }
-        } else {
-            const margin = Math.max(48, height * 0.1);
-            // 偏低或下落过快时轻托一把，保持浮空观赏感
-            if (this.y > height * 0.58 && this.vy > 0.8) {
-                this.vy += this.jump * 0.055 * frameDt;
+
+            // ===== 2. 目标 Y 和安全边界 =====
+            const MARGIN = 18;
+            let targetY = height * 0.45;
+            let safeTop = 25;
+            let safeBot = height - 25;
+
+            if (nextB) {
+                targetY = (nextB.topHeight + nextB.bottomY) / 2;
+                safeTop = nextB.topHeight + MARGIN;
+                safeBot = nextB.bottomY - MARGIN;
+
+                if (nextNextB && this.x > nextB.x + nextB.w * 0.3) {
+                    const nextCenter = (nextNextB.topHeight + nextNextB.bottomY) / 2;
+                    let p = (this.x - nextB.x) / Math.max(1, nextNextB.x - nextB.x);
+                    p = Math.max(0, Math.min(1, p));
+                    const sm = p * p * (3 - 2 * p);
+                    targetY += (nextCenter - targetY) * sm;
+                    safeTop = Math.max(safeTop, nextNextB.topHeight + MARGIN);
+                    safeBot = Math.min(safeBot, nextNextB.bottomY - MARGIN);
+                }
             }
-            if (this.flapTimer <= 0 && frames % 40 === 0 && this.y > height * 0.5) {
-                this.vy = Math.min(this.vy, this.jump * 0.72);
-                this.flapTimer = 14;
+
+            // ===== 3. 运动学预测（帧率无关） =====
+            const g = this.gravity * s.gravity;
+            const T = 9;
+
+            const predNoFlap = this.y + this.vy * T + 0.5 * g * T * T;
+            const predFlap   = this.y + this.jump * T + 0.5 * g * T * T;
+
+            const calcErr = (pred) => {
+                let err = Math.abs(pred - targetY);
+                if (pred < safeTop) err += (safeTop - pred) * 8;
+                if (pred > safeBot) err += (pred - safeBot) * 8;
+                if (pred < 15 || pred > height - 15) err += 50000;
+                return err;
+            };
+
+            // ===== 4. 决策 =====
+            if (calcErr(predFlap) < calcErr(predNoFlap) && this.flapTimer <= 3) {
+                this.flap();
             }
-            if (this.y >= height - margin) {
-                this.y = height - margin;
-                this.vy = this.jump;
-                this.flapTimer = 16;
-            }
-            if (this.y <= margin) {
-                this.y = margin;
-                this.vy = Math.abs(this.jump) * 0.4;
-            }
+        }
+
+
+
+        if (this.y >= height - this.height || this.y <= this.height) {
+            this.die();
         }
     },
 
@@ -842,7 +876,7 @@ const bamboos = {
 
             const cx = crane.x, cy = crane.y, r = 11;
 
-            if (!config.zenMode && !crane.isDead) {
+            if (!crane.isDead) {
                 if (cx + r > b.x && cx - r < b.x + b.w) {
                     if (cy - r < b.topHeight || cy + r > b.bottomY) {
                         crane.die();
@@ -1275,6 +1309,10 @@ function loop(ts) {
         bamboos.draw();
         drawInkExplosion();
         frames++;
+        if (config.zenMode && frames > 180) {
+            resetGame();
+            startGame();
+        }
     }
 
     reqAnimFrame = requestAnimationFrame(loop);
