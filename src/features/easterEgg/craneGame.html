@@ -424,16 +424,36 @@ const audioSys = {
     playDie() {
         if (!config.audioEnabled || !this.ctx) return;
         try {
+            // 墨烟散去：低沉、绵长、音量更轻
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            const filter = this.ctx.createBiquadFilter();
+            osc.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'sine';
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(420, now);
+            filter.frequency.exponentialRampToValueAtTime(90, now + 1.4);
+            osc.frequency.setValueAtTime(110, now);
+            osc.frequency.exponentialRampToValueAtTime(36, now + 1.5);
+            gain.gain.setValueAtTime(0.22, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+            osc.start(now); osc.stop(now + 1.7);
+        } catch(e) {}
+    },
+    playFold() {
+        if (!config.audioEnabled || !this.ctx) return;
+        try {
             const now = this.ctx.currentTime;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
             osc.connect(gain); gain.connect(this.ctx.destination);
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(140, now);
-            osc.frequency.exponentialRampToValueAtTime(28, now + 1);
-            gain.gain.setValueAtTime(0.45, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
-            osc.start(now); osc.stop(now + 1.3);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(380, now);
+            osc.frequency.exponentialRampToValueAtTime(620, now + 0.35);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+            osc.start(now); osc.stop(now + 0.5);
         } catch(e) {}
     },
     canAmbient() {
@@ -653,6 +673,7 @@ const crane = {
     gravity: 0.28, jump: -6.5,
     rotation: 0, flapTimer: 0,
     isDead: false,
+    dissolveAlpha: 1,
     trail: [],
 
     reset() {
@@ -662,6 +683,7 @@ const crane = {
         this.rotation = 0;
         this.flapTimer = 0;
         this.isDead = false;
+        this.dissolveAlpha = 1;
         this.trail = [];
     },
 
@@ -672,7 +694,7 @@ const crane = {
     },
 
     update() {
-        if (this.isDead) return;
+        if (this.isDead || gameState === 'DISSOLVING') return;
         this.x = width * 0.3;
         const s = seasons[weatherSys.currentSeason];
         // 自动驾驶算法已实现真实躲避，不再需要减轻重力
@@ -765,12 +787,12 @@ const crane = {
     },
 
     die() {
-        if (this.isDead) return;
+        if (this.isDead || gameState === 'DISSOLVING') return;
         this.isDead = true;
+        this.dissolveAlpha = 1;
         audioSys.playDie();
-        vibrate(120, true);
-        createInkExplosion(this.x, this.y);
-        gameOver();
+        vibrate(55, true);
+        beginDissolve();
     },
 
     drawTrail() {
@@ -778,7 +800,7 @@ const crane = {
         const s = seasons[weatherSys.currentSeason];
         ctx.globalCompositeOperation = 'multiply';
         for (const p of this.trail) {
-            ctx.fillStyle = s.ink + (p.life * 0.18) + ')';
+            ctx.fillStyle = s.ink + (p.life * 0.18 * this.dissolveAlpha) + ')';
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
             ctx.fill();
@@ -787,13 +809,25 @@ const crane = {
     },
 
     draw() {
-        if (this.isDead) return;
+        if (this.isDead && this.dissolveAlpha <= 0.02) return;
         this.drawTrail();
 
         ctx.save();
+        ctx.globalAlpha = Math.max(0, this.dissolveAlpha);
         ctx.translate(this.x, this.y);
         ctx.rotate(this.rotation);
-        ctx.scale(1.65, 1.65);
+        if (gameState === 'DISSOLVING') {
+            // 消散：向上抽丝
+            const t = 1 - this.dissolveAlpha;
+            ctx.scale(1.65 * (1 - t * 0.25), 1.65 * (1 + t * 0.55));
+        } else if (gameState === 'FOLDING') {
+            // 出生：自烟尘中由虚到实、由散到聚
+            const soft = 1 - this.dissolveAlpha;
+            const s = 1.65 * (1 + soft * 0.4);
+            ctx.scale(s, s);
+        } else {
+            ctx.scale(1.65, 1.65);
+        }
 
         const wingOffset = this.flapTimer > 0
             ? -10 + Math.sin(this.flapTimer * 0.5) * 6
@@ -1449,48 +1483,268 @@ const ambient = {
 };
 
 // ============================================
-// 墨水爆炸
+// 折鹤仪式 · 墨烟消散
 // ============================================
-let inkParticles = [];
+const FOLD_DURATION = reduceMotion ? 0.4 : 2.4;      // 秒：烟尘聚散略留白
+const DISSOLVE_DURATION = reduceMotion ? 0.5 : 1.8;  // 秒
 
-function createInkExplosion(x, y) {
-    for (let i = 0; i < 28; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = Math.random() * 7 + 2;
-        inkParticles.push({
-            x: x, y: y,
-            vx: Math.cos(angle) * speed + weatherSys.wind * 0.4,
-            vy: Math.sin(angle) * speed - 3,
-            life: 1,
-            size: Math.random() * 4 + 2,
-            isRed: Math.random() > 0.4
+let foldElapsed = 0;
+let dissolveElapsed = 0;
+let foldCaptionShown = false;
+let inkSmoke = [];
+
+function beginFold() {
+    audioSys.init();
+    gameState = 'FOLDING';
+    foldElapsed = 0;
+    foldCaptionShown = false;
+    uiStart.classList.add('hidden');
+    uiGameOver.classList.add('hidden');
+    settingsBtn.classList.add('hidden');
+    scoreDisplay.classList.add('hidden');
+    crane.reset();
+    crane.x = width * 0.3;
+    crane.y = height / 2;
+    crane.dissolveAlpha = 0;
+    inkSmoke = [];
+    seedBirthSmoke(crane.x, crane.y);
+    audioSys.playFold();
+    if (!reduceMotion) {
+        haikuDisplay.textContent = '闻 而 后 行';
+        haikuDisplay.classList.add('show');
+        foldCaptionShown = true;
+    }
+}
+
+function finishFoldIntoPlay() {
+    if (foldCaptionShown) {
+        haikuDisplay.classList.remove('show');
+        foldCaptionShown = false;
+    }
+    inkSmoke = [];
+    crane.dissolveAlpha = 1;
+    crane.y = height / 2;
+    crane.rotation = 0;
+    gameState = 'PLAYING';
+    frames = 0;
+    logicalFrames = 0;
+    if (!config.zenMode) scoreDisplay.classList.remove('hidden');
+    const s = seasons[weatherSys.currentSeason];
+    seasonIndicator.innerText = s.name + '\n' + s.poem;
+    seasonIndicator.classList.add('show');
+    setTimeout(() => seasonIndicator.classList.remove('show'), 3500);
+    crane.flap();
+}
+
+function updateFold(dtSec) {
+    foldElapsed += dtSec;
+    const t = Math.min(1, foldElapsed / FOLD_DURATION);
+    updateBirthSmoke(t);
+    if (t >= 1) finishFoldIntoPlay();
+}
+
+/** 出生烟尘：聚拢后缓散，鹤从其中显现 */
+function seedBirthSmoke(x, y) {
+    const count = reduceMotion ? 8 : 42;
+    for (let i = 0; i < count; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const dist = Math.random() * 28;
+        inkSmoke.push({
+            x: x + Math.cos(ang) * dist,
+            y: y + Math.sin(ang) * dist * 0.7,
+            vx: Math.cos(ang) * (0.15 + Math.random() * 0.35),
+            vy: Math.sin(ang) * 0.12 - 0.15 - Math.random() * 0.35,
+            life: 0.85 + Math.random() * 0.25,
+            size: 4 + Math.random() * 9,
+            wobble: Math.random() * Math.PI * 2,
+            isRed: Math.random() > 0.62,
+            birth: true
         });
     }
 }
 
-function drawInkExplosion() {
-    if (!inkParticles.length) return;
-    ctx.globalCompositeOperation = 'multiply';
+function updateBirthSmoke(t) {
+    // 前段略向中心聚，后段随风散开
+    const gather = t < 0.4 ? 1 - t / 0.4 : 0;
+    const disperse = t > 0.45 ? (t - 0.45) / 0.55 : 0;
+
+    if (!reduceMotion && t < 0.5 && Math.random() < 0.4) {
+        const ang = Math.random() * Math.PI * 2;
+        const r = 8 + Math.random() * 16;
+        inkSmoke.push({
+            x: crane.x + Math.cos(ang) * r,
+            y: crane.y + Math.sin(ang) * r * 0.65,
+            vx: Math.cos(ang) * 0.2,
+            vy: -0.2 - Math.random() * 0.3,
+            life: 0.55 + Math.random() * 0.3,
+            size: 3 + Math.random() * 6,
+            wobble: Math.random() * Math.PI * 2,
+            isRed: Math.random() > 0.7,
+            birth: true
+        });
+    }
+
     let write = 0;
-    for (let i = 0; i < inkParticles.length; i++) {
-        const p = inkParticles[i];
-        p.x += p.vx * frameDt;
+    for (let i = 0; i < inkSmoke.length; i++) {
+        const p = inkSmoke[i];
+        p.wobble += 0.035 * frameDt;
+        if (gather > 0.05) {
+            p.vx += (crane.x - p.x) * 0.008 * gather * frameDt;
+            p.vy += (crane.y - p.y) * 0.008 * gather * frameDt;
+        }
+        p.x += (p.vx + Math.sin(p.wobble) * 0.2) * frameDt;
+        p.y += (p.vy + Math.cos(p.wobble * 0.7) * 0.12) * frameDt;
+        p.vy -= 0.008 * frameDt;
+        p.vx *= Math.pow(0.992, frameDt);
+        // 后段加速消散
+        p.life -= (0.008 + disperse * 0.028) * frameDt * (reduceMotion ? 2.2 : 1);
+        p.size += (0.04 + disperse * 0.08) * frameDt;
+        if (p.life > 0) inkSmoke[write++] = p;
+    }
+    inkSmoke.length = write;
+}
+
+/**
+ * 烟尘聚拢 → 鹤形淡出 → 极轻一息 → 振翅起飞
+ * （无方纸/折痕，避免出戏）
+ */
+function drawFoldingCrane() {
+    const t = Math.min(1, foldElapsed / FOLD_DURATION);
+    const baseY = height / 2;
+
+    drawInkSmoke();
+
+    // 鹤自烟中显现（略晚于烟尘聚拢）
+    const appear = t < 0.22
+        ? 0
+        : Math.min(1, (t - 0.22) / 0.38);
+    if (appear <= 0.01) return;
+
+    crane.dissolveAlpha = appear * appear; // 前段更隐，后段实
+    // 从略大的烟团感收束成实体
+    const bloom = 1 + (1 - appear) * 0.45;
+
+    // 一息：低频、小幅，像纸落定，不是弹跳
+    if (t > 0.62 && t < 0.92) {
+        const breath = (t - 0.62) / 0.3;
+        const ease = Math.sin(breath * Math.PI); // 一吸一放
+        crane.y = baseY - ease * 2.2;
+        crane.rotation = -ease * 0.03;
+        crane.flapTimer = Math.floor(ease * 6);
+    } else if (t >= 0.92) {
+        // 将起未起：微抬，衔接到起飞 flap
+        const lift = (t - 0.92) / 0.08;
+        crane.y = baseY - lift * 3;
+        crane.rotation = -lift * 0.06;
+        crane.flapTimer = Math.floor(4 + lift * 8);
+    } else {
+        crane.y = baseY;
+        crane.rotation = 0;
+        crane.flapTimer = 0;
+    }
+
+    // 临时放大再收回：画完还原 scale 逻辑在 draw 内固定 1.65，
+    // 这里用 dissolveAlpha + 轻微 y 表现烟中凝聚即可
+    const savedX = crane.x;
+    ctx.save();
+    // 用一层淡墨晕衬在鹤下，增强「从烟里出来」
+    if (appear < 0.95) {
+        const halo = (1 - appear) * 0.35;
+        const g = ctx.createRadialGradient(crane.x, crane.y, 2, crane.x, crane.y, 36 * bloom);
+        g.addColorStop(0, `rgba(55, 48, 42, ${halo})`);
+        g.addColorStop(1, 'rgba(55, 48, 42, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(crane.x, crane.y, 36 * bloom, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+
+    crane.draw();
+    crane.x = savedX;
+    crane.dissolveAlpha = 1;
+}
+
+function beginDissolve() {
+    gameState = 'DISSOLVING';
+    dissolveElapsed = 0;
+    inkSmoke = [];
+    createInkSmoke(crane.x, crane.y);
+    scoreDisplay.classList.add('hidden');
+}
+
+function createInkSmoke(x, y) {
+    const count = reduceMotion ? 10 : 36;
+    for (let i = 0; i < count; i++) {
+        inkSmoke.push({
+            x: x + (Math.random() - 0.5) * 18,
+            y: y + (Math.random() - 0.5) * 10,
+            vx: (Math.random() - 0.5) * 0.35 + weatherSys.wind * 0.08,
+            vy: -0.4 - Math.random() * 1.1,
+            life: 0.75 + Math.random() * 0.35,
+            size: 3 + Math.random() * 7,
+            wobble: Math.random() * Math.PI * 2,
+            isRed: Math.random() > 0.55
+        });
+    }
+}
+
+function updateDissolve(dtSec) {
+    dissolveElapsed += dtSec;
+    const t = Math.min(1, dissolveElapsed / DISSOLVE_DURATION);
+    // 前半形体在，后半几乎只剩烟
+    crane.dissolveAlpha = Math.max(0, 1 - t * 1.35);
+    crane.y -= 0.35 * frameDt;
+    crane.rotation *= 0.98;
+
+    // 中段再吐一缕烟
+    if (!reduceMotion && t > 0.15 && t < 0.55 && Math.random() < 0.35) {
+        inkSmoke.push({
+            x: crane.x + (Math.random() - 0.5) * 10,
+            y: crane.y + (Math.random() - 0.5) * 6,
+            vx: (Math.random() - 0.5) * 0.25 + weatherSys.wind * 0.06,
+            vy: -0.55 - Math.random() * 0.7,
+            life: 0.6 + Math.random() * 0.3,
+            size: 2.5 + Math.random() * 5,
+            wobble: Math.random() * Math.PI * 2,
+            isRed: Math.random() > 0.65
+        });
+    }
+
+    updateInkSmoke();
+    if (t >= 1) gameOver();
+}
+
+function updateInkSmoke() {
+    let write = 0;
+    for (let i = 0; i < inkSmoke.length; i++) {
+        const p = inkSmoke[i];
+        p.wobble += 0.04 * frameDt;
+        p.x += (p.vx + Math.sin(p.wobble) * 0.25) * frameDt;
         p.y += p.vy * frameDt;
-        p.vy += 0.25 * frameDt;
-        p.vx *= Math.pow(0.99, frameDt);
-        p.life -= 0.013 * frameDt;
-        p.size += 0.09 * frameDt;
+        p.vy -= 0.012 * frameDt;
+        p.vx *= Math.pow(0.995, frameDt);
+        p.life -= (reduceMotion ? 0.035 : 0.011) * frameDt;
+        p.size += 0.06 * frameDt;
+        if (p.life > 0) inkSmoke[write++] = p;
+    }
+    inkSmoke.length = write;
+}
 
-        if (p.life <= 0) continue;
-
-        const baseColor = p.isRed ? '163, 67, 67' : '40, 40, 40';
-        ctx.fillStyle = `rgba(${baseColor}, ${p.life})`;
+function drawInkSmoke() {
+    if (!inkSmoke.length) return;
+    ctx.globalCompositeOperation = 'multiply';
+    for (const p of inkSmoke) {
+        const baseColor = p.isRed ? '120, 55, 55' : '45, 42, 38';
+        const a = Math.max(0, p.life * 0.55);
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+        g.addColorStop(0, `rgba(${baseColor}, ${a})`);
+        g.addColorStop(1, `rgba(${baseColor}, 0)`);
+        ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
-        inkParticles[write++] = p;
     }
-    inkParticles.length = write;
     ctx.globalCompositeOperation = 'source-over';
 }
 
@@ -1546,10 +1800,11 @@ function handleCanvasInput(e) {
     if (gameState === 'PLAYING') {
         crane.flap();
     } else if (gameState === 'START') {
-        startGame();
+        beginFold();
     } else if (gameState === 'GAMEOVER') {
-        if (frames > 30) { resetGame(); startGame(); }
+        if (frames > 30) { resetGame(); beginFold(); }
     }
+    // FOLDING / DISSOLVING：忽略输入，完成仪式
 }
 
 // canvas 上的鼠标和触摸事件
@@ -1568,14 +1823,14 @@ window.addEventListener('keydown', e => {
 startBtn.addEventListener('click', e => { 
     e.stopPropagation(); 
     e.preventDefault();
-    startGame(); 
+    beginFold(); 
 });
 
 restartBtn.addEventListener('click', e => { 
     e.stopPropagation(); 
     e.preventDefault();
     resetGame(); 
-    startGame(); 
+    beginFold(); 
 });
 
 // 设置面板
@@ -1622,23 +1877,15 @@ toggleTrail.addEventListener('change', e => {
 // 游戏流程
 // ============================================
 function startGame() {
-    audioSys.init();
-    gameState = 'PLAYING';
-    uiStart.classList.add('hidden');
-    uiGameOver.classList.add('hidden');
-    settingsBtn.classList.add('hidden');
-    if (!config.zenMode) scoreDisplay.classList.remove('hidden');
-    const s = seasons[weatherSys.currentSeason];
-    seasonIndicator.innerText = s.name + '\n' + s.poem;
-    seasonIndicator.classList.add('show');
-    setTimeout(() => seasonIndicator.classList.remove('show'), 3500);
-    crane.flap();
+    beginFold();
 }
 
 function gameOver() {
     gameState = 'GAMEOVER';
     frames = 0;
     logicalFrames = 0;
+    crane.dissolveAlpha = 0;
+    inkSmoke = [];
     scoreDisplay.classList.add('hidden');
     uiGameOver.classList.remove('hidden');
     settingsBtn.classList.remove('hidden');
@@ -1661,11 +1908,14 @@ function resetGame() {
     scoreDisplay.innerText = score;
     frames = 0;
     logicalFrames = 0;
+    foldElapsed = 0;
+    dissolveElapsed = 0;
+    foldCaptionShown = false;
     shownHaikus.clear();
     haikuDisplay.classList.remove('show');
     crane.reset();
     bamboos.reset();
-    inkParticles = [];
+    inkSmoke = [];
     weatherSys.currentSeason = 0;
     weatherSys.curBg = [...seasons[0].bg];
     weatherSys.curBgEnd = [...seasons[0].bgEnd];
@@ -1683,6 +1933,7 @@ function loop(ts) {
     const rawDt = Math.min(48, Math.max(8, now - lastTs));
     lastTs = now;
     frameDt = rawDt / (1000 / 60);
+    const dtSec = rawDt / 1000;
 
     weatherSys.update();
     weatherSys.drawSky();
@@ -1698,24 +1949,37 @@ function loop(ts) {
         crane.draw();
         frames++;
         logicalFrames += frameDt;
+    } else if (gameState === 'FOLDING') {
+        updateFold(dtSec);
+        if (gameState === 'FOLDING') drawFoldingCrane();
+        frames++;
     } else if (gameState === 'PLAYING') {
         bamboos.update();
         bamboos.draw();
         ambient.drawOnBamboo();
         crane.update();
         crane.draw();
-        drawInkExplosion();
         frames++;
         logicalFrames += frameDt;
+    } else if (gameState === 'DISSOLVING') {
+        // 竹林静止，鹤化墨烟
+        bamboos.draw();
+        ambient.drawOnBamboo();
+        updateDissolve(dtSec);
+        if (gameState === 'DISSOLVING') {
+            crane.draw();
+            drawInkSmoke();
+        }
+        frames++;
     } else if (gameState === 'GAMEOVER') {
         bamboos.draw();
         ambient.drawOnBamboo();
-        drawInkExplosion();
+        drawInkSmoke();
         frames++;
         logicalFrames += frameDt;
         if (config.zenMode && logicalFrames > 180) {
             resetGame();
-            startGame();
+            beginFold();
         }
     }
 

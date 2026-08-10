@@ -108,7 +108,7 @@ export function CurrentEasterEgg({ onClose }: EasterEggProps): JSX.Element
 
 本版彩蛋为 **纸鹤行**（`current.tsx` + `craneGame.html`）：和纸鹤穿越水墨竹节（侘寂版）。
 
-含：天气/远山视差、难度缓增、墨爆死亡、历史最高分（`localStorage`）、音效与禅模式设置、手机触控与桌面点击/空格。整页自绘；换版时删除上述文件，不得归档旧实现。
+含：折鹤仪式开场（「闻而后行」）、天气/远山视差、难度缓增、墨烟消散死亡、历史最高分（`localStorage`）、音效与禅模式设置、手机触控与桌面点击/空格。整页自绘；换版时删除上述文件，不得归档旧实现。
 
 ## 6. 发版约定
 
