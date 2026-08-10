@@ -332,8 +332,9 @@ const toggleTrail = document.getElementById('toggle-trail');
 // 全局状态
 let width = 0, height = 0, dpr = 1;
 let frames = 0;
+let logicalFrames = 0;
 let score = 0;
-let highScore = +localStorage.getItem('zhihexing_highscore_v2') || 0;
+let highScore = parseInt(localStorage.getItem('zhihexing_highscore_v2')) || 0;
 let gameState = 'START';
 let reqAnimFrame;
 let lastTs = 0;
@@ -354,7 +355,10 @@ const PERF = {
     particleCount: 40,
     trailCap: 28,
     mountainStep: 28,
+    ambientCap: 12,
 };
+
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // 画布响应式
 function resize() {
@@ -431,6 +435,46 @@ const audioSys = {
             gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
             osc.start(now); osc.stop(now + 1.3);
         } catch(e) {}
+    },
+    canAmbient() {
+        return config.audioEnabled && !config.zenMode && !!this.ctx && !reduceMotion;
+    },
+    playAmbient(kind) {
+        if (!this.canAmbient()) return;
+        try {
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            if (kind === 'chirp') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1400, now);
+                osc.frequency.exponentialRampToValueAtTime(900, now + 0.08);
+                gain.gain.setValueAtTime(0.035, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                osc.start(now); osc.stop(now + 0.14);
+            } else if (kind === 'cicada') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(2200, now);
+                gain.gain.setValueAtTime(0.02, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                osc.start(now); osc.stop(now + 0.4);
+            } else if (kind === 'bug') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(680, now);
+                osc.frequency.exponentialRampToValueAtTime(420, now + 0.2);
+                gain.gain.setValueAtTime(0.025, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+                osc.start(now); osc.stop(now + 0.3);
+            } else if (kind === 'drip') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(980, now);
+                osc.frequency.exponentialRampToValueAtTime(320, now + 0.1);
+                gain.gain.setValueAtTime(0.03, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                osc.start(now); osc.stop(now + 0.16);
+            }
+        } catch (e) {}
     }
 };
 
@@ -450,7 +494,8 @@ const seasons = [
         mountain: [140, 110, 115],
         leaf: 'rgba(85, 80, 75, 0.42)',
         ink: 'rgba(85, 50, 55, ',
-        gravity: 1.0
+        gravity: 1.0,
+        ambient: { flock: 0.55, lone: 0.25, dew: 0.2, cicada: 0, bug: 0.12, frost: 0 },
     },
     {
         name: '夏', poem: '蝉 声 入 岩 静 无 痕',
@@ -460,7 +505,8 @@ const seasons = [
         mountain: [100, 120, 100],
         leaf: 'rgba(55, 80, 55, 0.5)',
         ink: 'rgba(40, 50, 40, ',
-        gravity: 1.15
+        gravity: 1.15,
+        ambient: { flock: 0.15, lone: 0.2, dew: 0.7, cicada: 0.65, bug: 0.2, frost: 0 },
     },
     {
         name: '秋', poem: '秋 月 何 时 照 白 璧',
@@ -470,7 +516,8 @@ const seasons = [
         mountain: [150, 110, 80],
         leaf: 'rgba(140, 90, 50, 0.5)',
         ink: 'rgba(70, 40, 30, ',
-        gravity: 1.0
+        gravity: 1.0,
+        ambient: { flock: 0.45, lone: 0.25, dew: 0.12, cicada: 0.1, bug: 0.7, frost: 0 },
     },
     {
         name: '冬', poem: '独 钓 寒 江 雪 满 身',
@@ -480,7 +527,8 @@ const seasons = [
         mountain: [120, 130, 140],
         leaf: 'rgba(60, 70, 80, 0.4)',
         ink: 'rgba(60, 70, 80, ',
-        gravity: 0.85
+        gravity: 0.85,
+        ambient: { flock: 0.12, lone: 0.7, dew: 0, cicada: 0, bug: 0, frost: 0.35 },
     }
 ];
 
@@ -503,6 +551,7 @@ const weatherSys = {
             seasonIndicator.classList.add('show');
             setTimeout(() => seasonIndicator.classList.remove('show'), 4500);
             particles.regenerate(0.4);
+            ambient.onSeasonChange(target);
         }
 
         const s = seasons[this.currentSeason];
@@ -837,7 +886,7 @@ const bamboos = {
             bottomDetails: this.genDetails(bottomY, height - bottomY),
             sway: Math.random() * Math.PI * 2
         });
-        this.lastSpawnFrame = frames;
+        this.lastSpawnFrame = logicalFrames;
         this.firstSpawned = true;
     },
 
@@ -860,12 +909,12 @@ const bamboos = {
         // 首竹更近；后续间距随分数收紧
         const spawnRate = Math.max(70, 96 - Math.floor(score * 1.2));
         if (!this.firstSpawned) {
-            if (frames >= 18) {
+            if (logicalFrames >= 18) {
                 // 落在鹤前方不远处，避免开局长空等第一根
                 const nearX = Math.min(width - 8, crane.x + Math.max(160, width * 0.28));
                 this.add(nearX);
             }
-        } else if (frames - this.lastSpawnFrame >= spawnRate) {
+        } else if (logicalFrames - this.lastSpawnFrame >= spawnRate) {
             this.add();
         }
 
@@ -1060,6 +1109,346 @@ const particles = {
 };
 
 // ============================================
+// 物候氛围（不参与玩法）
+// ============================================
+const ambient = {
+    items: [],
+    nextAt: 0,
+    seasonIdx: 0,
+
+    init() { this.reset(); },
+
+    reset() {
+        this.items = [];
+        this.nextAt = logicalFrames + 40;
+        this.seasonIdx = weatherSys.currentSeason;
+    },
+
+    onSeasonChange(i) {
+        this.seasonIdx = i;
+        for (const e of this.items) e.fade = true;
+        this.nextAt = logicalFrames + 30;
+    },
+
+    playing() { return gameState === 'PLAYING'; },
+
+    densityMul() {
+        let m = this.playing() ? 2 : 1;
+        if (config.zenMode) m *= 1.35;
+        return m;
+    },
+
+    alphaMul() {
+        return this.playing() ? 0.6 : 1;
+    },
+
+    pickKind(w) {
+        const entries = [
+            ['flock', w.flock], ['lone', w.lone], ['dew', w.dew],
+            ['cicada', w.cicada], ['bug', w.bug], ['frost', w.frost],
+        ].filter(([, v]) => v > 0);
+        if (!entries.length) return null;
+        let sum = 0;
+        for (const [, v] of entries) sum += v;
+        let r = Math.random() * sum;
+        for (const [k, v] of entries) {
+            r -= v;
+            if (r <= 0) return k;
+        }
+        return entries[0][0];
+    },
+
+    bambooSway(b) {
+        return Math.sin(b.sway) * 0.6 + weatherSys.wind * 0.3;
+    },
+
+    spawn() {
+        if (this.items.length >= PERF.ambientCap) return;
+        const w = seasons[this.seasonIdx].ambient;
+        let kind = this.pickKind(w);
+        if (!kind) return;
+
+        if (reduceMotion) {
+            if (kind !== 'cicada' && kind !== 'frost') {
+                if (w.cicada > 0) kind = 'cicada';
+                else if (w.frost > 0) kind = 'frost';
+                else return;
+            }
+        }
+
+        const am = this.alphaMul();
+
+        if (kind === 'flock' || kind === 'lone') {
+            const fromLeft = Math.random() > 0.5;
+            const n = kind === 'lone' ? 1 : 3 + Math.floor(Math.random() * 5);
+            const birds = [];
+            for (let i = 0; i < n; i++) {
+                birds.push({
+                    dx: (Math.random() - 0.5) * (kind === 'lone' ? 6 : 28),
+                    dy: (Math.random() - 0.5) * (kind === 'lone' ? 4 : 18),
+                    phase: Math.random() * Math.PI * 2
+                });
+            }
+            const yMax = kind === 'lone' ? height * 0.28 : height * 0.42;
+            this.items.push({
+                type: kind,
+                x: fromLeft ? -40 : width + 40,
+                y: height * 0.08 + Math.random() * yMax,
+                vx: (fromLeft ? 1 : -1) * (0.35 + Math.random() * 0.45) * (kind === 'lone' ? 0.85 : 1),
+                birds,
+                life: 0,
+                maxLife: 520 + Math.floor(Math.random() * 200),
+                alpha: (kind === 'lone' ? 0.18 : 0.28) * am,
+                fade: false
+            });
+            if (Math.random() < 0.22) audioSys.playAmbient('chirp');
+            return;
+        }
+
+        if (kind === 'bug') {
+            this.items.push({
+                type: 'bug',
+                x: Math.random() * width,
+                y: height * 0.35 + Math.random() * height * 0.4,
+                t: Math.random() * Math.PI * 2,
+                amp: 6 + Math.random() * 10,
+                vx: (Math.random() - 0.5) * 0.35,
+                life: 0,
+                maxLife: 360 + Math.floor(Math.random() * 180),
+                alpha: 0.22 * am,
+                fade: false
+            });
+            if (Math.random() < 0.18) audioSys.playAmbient('bug');
+            return;
+        }
+
+        // 贴竹：需有竹
+        if (!bamboos.items.length) return;
+        const bi = Math.floor(Math.random() * bamboos.items.length);
+        const b = bamboos.items[bi];
+        const onTop = Math.random() > 0.45;
+        const details = onTop ? b.topDetails : b.bottomDetails;
+        if (!details.length && (kind === 'dew')) return;
+
+        if (kind === 'dew') {
+            const di = Math.floor(Math.random() * details.length);
+            this.items.push({
+                type: 'dew',
+                bamboo: b,
+                detailIndex: di,
+                onTop,
+                drip: false,
+                dripY: 0,
+                life: 0,
+                maxLife: 280 + Math.floor(Math.random() * 160),
+                alpha: 0.4 * am,
+                fade: false
+            });
+            return;
+        }
+
+        if (kind === 'cicada') {
+            const partH = onTop ? b.topHeight : (height - b.bottomY);
+            this.items.push({
+                type: 'cicada',
+                bamboo: b,
+                onTop,
+                yRel: 20 + Math.random() * Math.max(20, partH - 40),
+                wing: 0,
+                life: 0,
+                maxLife: 420 + Math.floor(Math.random() * 200),
+                alpha: 0.32 * am,
+                fade: false
+            });
+            if (Math.random() < 0.28) audioSys.playAmbient('cicada');
+            return;
+        }
+
+        if (kind === 'frost') {
+            const partH = onTop ? b.topHeight : (height - b.bottomY);
+            this.items.push({
+                type: 'frost',
+                bamboo: b,
+                onTop,
+                yRel: 12 + Math.random() * Math.max(12, partH - 24),
+                ox: (Math.random() - 0.5) * b.w * 0.6,
+                life: 0,
+                maxLife: 500 + Math.floor(Math.random() * 200),
+                alpha: 0.35 * am,
+                fade: false
+            });
+        }
+    },
+
+    update() {
+        if (frameDt > 1.8 && this.items.length > 6) this.items.length = 6;
+
+        const interval = Math.floor(90 * this.densityMul());
+        if (logicalFrames >= this.nextAt) {
+            this.spawn();
+            this.nextAt = logicalFrames + interval + Math.floor(Math.random() * interval);
+        }
+
+        let write = 0;
+        for (let i = 0; i < this.items.length; i++) {
+            const e = this.items[i];
+            e.life += frameDt;
+            if (e.fade) e.alpha *= Math.pow(0.97, frameDt);
+
+            let alive = e.life < e.maxLife && e.alpha > 0.02;
+
+            if (e.type === 'flock' || e.type === 'lone') {
+                e.x += e.vx * frameDt;
+                e.y += Math.sin(frames * 0.02 + e.birds[0].phase) * 0.12 * frameDt;
+                if (e.x < -80 || e.x > width + 80) alive = false;
+            } else if (e.type === 'bug') {
+                e.t += 0.04 * frameDt;
+                e.x += e.vx * frameDt;
+                e.y += Math.sin(e.t) * 0.35 * frameDt;
+                if (e.x < -30 || e.x > width + 30) alive = false;
+            } else if (e.type === 'dew') {
+                const b = e.bamboo;
+                if (!bamboos.items.includes(b)) { alive = false; }
+                else if (!reduceMotion && !e.drip && e.life > e.maxLife * 0.55 && Math.random() < 0.008 * frameDt) {
+                    e.drip = true;
+                    e.dripY = 0;
+                    audioSys.playAmbient('drip');
+                }
+                if (e.drip) {
+                    e.dripY += 1.2 * frameDt;
+                    if (e.dripY > 48) alive = false;
+                }
+            } else if (e.type === 'cicada') {
+                if (!bamboos.items.includes(e.bamboo)) alive = false;
+                else if (!reduceMotion) e.wing = Math.sin(frames * 0.15 + e.life) * 0.35;
+            } else if (e.type === 'frost') {
+                if (!bamboos.items.includes(e.bamboo)) alive = false;
+            }
+
+            if (alive) this.items[write++] = e;
+        }
+        this.items.length = write;
+    },
+
+    drawBird(x, y, scale, alpha) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = 'rgba(44, 42, 38, 0.85)';
+        ctx.lineWidth = 1.15;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x - 4.5 * scale, y);
+        ctx.lineTo(x, y - 2.2 * scale);
+        ctx.lineTo(x + 4.5 * scale, y);
+        ctx.stroke();
+        ctx.restore();
+    },
+
+    drawFar() {
+        for (const e of this.items) {
+            if (e.type !== 'flock' && e.type !== 'lone') continue;
+            const scale = e.type === 'lone' ? 0.75 : 1;
+            for (const b of e.birds) {
+                const flap = reduceMotion ? 0 : Math.sin(frames * 0.18 + b.phase) * 1.2;
+                this.drawBird(e.x + b.dx, e.y + b.dy + flap, scale, e.alpha);
+            }
+        }
+    },
+
+    drawMid() {
+        for (const e of this.items) {
+            if (e.type !== 'bug') continue;
+            ctx.save();
+            ctx.globalAlpha = e.alpha;
+            ctx.fillStyle = 'rgba(44, 42, 38, 0.7)';
+            const bx = e.x + Math.cos(e.t) * e.amp * 0.15;
+            const by = e.y + Math.sin(e.t) * e.amp * 0.4;
+            ctx.beginPath();
+            ctx.arc(bx, by, 1.1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(44, 42, 38, 0.35)';
+            ctx.lineWidth = 0.7;
+            ctx.beginPath();
+            ctx.moveTo(bx - 3, by);
+            ctx.quadraticCurveTo(bx, by - 2, bx + 3, by + 1);
+            ctx.stroke();
+            ctx.restore();
+        }
+    },
+
+    drawOnBamboo() {
+        for (const e of this.items) {
+            if (e.type !== 'dew' && e.type !== 'cicada' && e.type !== 'frost') continue;
+            const b = e.bamboo;
+            if (!b || !bamboos.items.includes(b)) continue;
+            const sway = this.bambooSway(b);
+            const bx = b.x + sway;
+
+            if (e.type === 'dew') {
+                const details = e.onTop ? b.topDetails : b.bottomDetails;
+                const d = details[e.detailIndex];
+                if (!d) continue;
+                const startY = e.onTop ? 0 : b.bottomY;
+                const lx = d.leafLeft ? bx : bx + b.w;
+                const y = startY + d.y + (e.drip ? e.dripY : 0);
+                ctx.save();
+                ctx.globalAlpha = e.alpha;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.beginPath();
+                if (e.drip) {
+                    ctx.ellipse(lx, y, 1.2, 2.2, 0, 0, Math.PI * 2);
+                } else {
+                    ctx.arc(lx, y, 1.6, 0, Math.PI * 2);
+                }
+                ctx.fill();
+                ctx.fillStyle = 'rgba(180, 200, 210, 0.45)';
+                ctx.beginPath();
+                ctx.arc(lx - 0.4, y - 0.5, 0.55, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            } else if (e.type === 'cicada') {
+                const y = (e.onTop ? 0 : b.bottomY) + e.yRel;
+                const cx = bx + b.w * 0.5;
+                ctx.save();
+                ctx.globalAlpha = e.alpha;
+                ctx.translate(cx, y);
+                ctx.fillStyle = 'rgba(50, 55, 45, 0.75)';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 3.2, 5.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(50, 55, 45, 0.55)';
+                ctx.lineWidth = 0.9;
+                const wing = e.wing || 0;
+                ctx.beginPath();
+                ctx.moveTo(0, -1);
+                ctx.quadraticCurveTo(-7, -4 + wing * 3, -5, 6);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, -1);
+                ctx.quadraticCurveTo(7, -4 - wing * 3, 5, 6);
+                ctx.stroke();
+                ctx.restore();
+            } else if (e.type === 'frost') {
+                const y = (e.onTop ? 0 : b.bottomY) + e.yRel;
+                const cx = bx + b.w * 0.5 + e.ox;
+                ctx.save();
+                ctx.globalAlpha = e.alpha;
+                ctx.strokeStyle = 'rgba(220, 230, 235, 0.85)';
+                ctx.lineWidth = 0.9;
+                ctx.beginPath();
+                ctx.moveTo(cx - 2.2, y);
+                ctx.lineTo(cx + 2.2, y);
+                ctx.moveTo(cx, y - 2.2);
+                ctx.lineTo(cx, y + 2.2);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+        ctx.globalAlpha = 1;
+    }
+};
+
+// ============================================
 // 墨水爆炸
 // ============================================
 let inkParticles = [];
@@ -1202,9 +1591,12 @@ closeSettings.addEventListener('click', e => {
 
 document.getElementById('egg-close')?.addEventListener('click', e => {
     e.stopPropagation();
-    try {
+    toggleFullScreen(false);
+    if (window.parent !== window) {
         parent.postMessage({ type: 'newsnook-easter-egg-close' }, '*');
-    } catch (_) {}
+    } else {
+        window.history.back();
+    }
 });
 
 toggleAudio.addEventListener('change', e => {
@@ -1246,6 +1638,7 @@ function startGame() {
 function gameOver() {
     gameState = 'GAMEOVER';
     frames = 0;
+    logicalFrames = 0;
     scoreDisplay.classList.add('hidden');
     uiGameOver.classList.remove('hidden');
     settingsBtn.classList.remove('hidden');
@@ -1267,6 +1660,7 @@ function resetGame() {
     score = 0;
     scoreDisplay.innerText = score;
     frames = 0;
+    logicalFrames = 0;
     shownHaikus.clear();
     haikuDisplay.classList.remove('show');
     crane.reset();
@@ -1276,6 +1670,7 @@ function resetGame() {
     weatherSys.curBg = [...seasons[0].bg];
     weatherSys.curBgEnd = [...seasons[0].bgEnd];
     parallax.init();
+    ambient.reset();
 }
 
 // ============================================
@@ -1292,24 +1687,33 @@ function loop(ts) {
     weatherSys.update();
     weatherSys.drawSky();
     parallax.draw();
+    ambient.update();
+    ambient.drawFar();
     particles.updateAndDraw();
+    ambient.drawMid();
 
     if (gameState === 'START') {
         crane.x = width * 0.3;
         crane.y = height / 2 + Math.sin(now / 500) * 12;
         crane.draw();
+        frames++;
+        logicalFrames += frameDt;
     } else if (gameState === 'PLAYING') {
         bamboos.update();
         bamboos.draw();
+        ambient.drawOnBamboo();
         crane.update();
         crane.draw();
         drawInkExplosion();
         frames++;
+        logicalFrames += frameDt;
     } else if (gameState === 'GAMEOVER') {
         bamboos.draw();
+        ambient.drawOnBamboo();
         drawInkExplosion();
         frames++;
-        if (config.zenMode && frames > 180) {
+        logicalFrames += frameDt;
+        if (config.zenMode && logicalFrames > 180) {
             resetGame();
             startGame();
         }
@@ -1318,10 +1722,30 @@ function loop(ts) {
     reqAnimFrame = requestAnimationFrame(loop);
 }
 
+// 全屏控制
+function toggleFullScreen(isFullscreen) {
+    const nativeBridge = window.NewsNookNative || (window.parent && window.parent.NewsNookNative);
+    if (nativeBridge && nativeBridge.setFullScreen) {
+        nativeBridge.setFullScreen(isFullscreen);
+    } else {
+        if (isFullscreen) {
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+    }
+}
+
 // 初始化（resize 依赖 parallax，须放在其后）
 resize();
 particles.init();
+ambient.init();
 resetGame();
+toggleFullScreen(true);
 reqAnimFrame = requestAnimationFrame(loop);
 </script>
 </body>

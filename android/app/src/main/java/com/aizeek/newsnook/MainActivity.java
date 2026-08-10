@@ -50,6 +50,11 @@ public class MainActivity extends BridgeActivity {
         public void setSystemTheme(String theme) {
             runOnUiThread(() -> applySystemTheme("light".equalsIgnoreCase(theme)));
         }
+
+        @JavascriptInterface
+        public void setFullScreen(boolean fullScreen) {
+            runOnUiThread(() -> applyFullScreen(fullScreen));
+        }
     }
 
     private void applySystemTheme(boolean isLight) {
@@ -59,6 +64,20 @@ public class MainActivity extends BridgeActivity {
         if (controller != null) {
             controller.setAppearanceLightStatusBars(isLight);
             controller.setAppearanceLightNavigationBars(isLight);
+        }
+    }
+
+    private void applyFullScreen(boolean fullScreen) {
+        Window window = getWindow();
+        if (window == null) return;
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
+        if (controller != null) {
+            if (fullScreen) {
+                controller.hide(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+                controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            } else {
+                controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+            }
         }
     }
 
