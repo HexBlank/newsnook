@@ -311,7 +311,7 @@ input:checked + .slider::before { transform: translateX(20px); }
 // ============================================
 
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true }) || canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false }) || canvas.getContext('2d');
 
 // UI 元素
 const uiStart = document.getElementById('start-screen');
@@ -542,7 +542,6 @@ const parallax = {
         const sampleN = 48;
         const sampleStep = 40;
         this.period = sampleN * sampleStep;
-        const stripW = this.period;
 
         for (let i = 0; i < 3; i++) {
             const pts = [];
@@ -550,23 +549,13 @@ const parallax = {
             const yBase = h * (0.45 + i * 0.13);
             for (let j = 0; j < sampleN; j++) pts.push(Math.random() * amp);
 
-            const oc = document.createElement('canvas');
-            oc.width = Math.max(1, Math.ceil(stripW * dpr));
-            oc.height = Math.max(1, Math.ceil(height * dpr));
-            const octx = oc.getContext('2d');
-            octx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
             this.layers.push({
                 points: pts,
-                canvas: oc,
-                ctx: octx,
-                offset: Math.random() * stripW,
+                offset: Math.random() * this.period,
                 speed: 0.12 + i * 0.22,
                 yBase,
-                opacity: 0.06 + i * 0.05,
-                season: -1,
+                opacity: 0.06 + i * 0.05
             });
-            this._paintLayer(this.layers[i], seasons[weatherSys.currentSeason]);
         }
     },
 
@@ -580,40 +569,28 @@ const parallax = {
         return pts[dataIdx] + (pts[nextIdx] - pts[dataIdx]) * (localX / 40);
     },
 
-    _paintLayer(layer, season) {
-        const octx = layer.ctx;
-        const stripW = this.period;
-        octx.clearRect(0, 0, stripW, height);
-        const m = season.mountain;
-        octx.fillStyle = `rgba(${m[0]},${m[1]},${m[2]},${layer.opacity})`;
-        octx.beginPath();
-        octx.moveTo(0, height);
-        const step = PERF.mountainStep;
-        for (let x = 0; x <= stripW + step; x += step) {
-            octx.lineTo(x, layer.yBase - this._sampleY(layer, x));
-        }
-        octx.lineTo(stripW + step, height);
-        octx.closePath();
-        octx.fill();
-        layer.season = weatherSys.currentSeason;
-    },
-
     draw() {
         const season = seasons[weatherSys.currentSeason];
         const period = this.period || 1;
+        
         for (const layer of this.layers) {
-            if (layer.season !== weatherSys.currentSeason) {
-                this._paintLayer(layer, season);
-            }
             if (gameState === 'PLAYING' || gameState === 'GAMEOVER') {
                 layer.offset += layer.speed * frameDt;
             }
-            // 无缝平铺离屏条带
-            let x = -((layer.offset % period) + period) % period;
-            while (x < width) {
-                ctx.drawImage(layer.canvas, x, 0, period, height);
-                x += period;
+            
+            const m = season.mountain;
+            ctx.fillStyle = `rgba(${m[0]},${m[1]},${m[2]},${layer.opacity})`;
+            ctx.beginPath();
+            
+            ctx.moveTo(0, height);
+            const step = PERF.mountainStep;
+            for (let x = 0; x <= width + step; x += step) {
+                const sampleX = x + layer.offset;
+                ctx.lineTo(x, layer.yBase - this._sampleY(layer, sampleX));
             }
+            ctx.lineTo(width + step, height);
+            ctx.closePath();
+            ctx.fill();
         }
     }
 };
@@ -649,7 +626,9 @@ const crane = {
         if (this.isDead) return;
         this.x = width * 0.3;
         const s = seasons[weatherSys.currentSeason];
-        this.vy += this.gravity * s.gravity * frameDt;
+        // 禅模式减轻重力，否则触底反弹高度只有几十像素，看起来像贴地蹭
+        const gScale = config.zenMode ? 0.4 : s.gravity;
+        this.vy += this.gravity * gScale * frameDt;
         this.y += this.vy * frameDt;
         this.rotation = Math.max(-Math.PI / 5, Math.min(Math.PI / 4, this.vy * 0.1));
         if (this.flapTimer > 0) this.flapTimer--;
@@ -681,13 +660,23 @@ const crane = {
                 this.die();
             }
         } else {
-            if (this.y >= height - this.height) {
-                this.y = height - this.height;
-                this.vy = this.jump * 0.8;
+            const margin = Math.max(48, height * 0.1);
+            // 偏低或下落过快时轻托一把，保持浮空观赏感
+            if (this.y > height * 0.58 && this.vy > 0.8) {
+                this.vy += this.jump * 0.055 * frameDt;
             }
-            if (this.y <= this.height) {
-                this.y = this.height;
-                this.vy = Math.abs(this.jump) * 0.5;
+            if (this.flapTimer <= 0 && frames % 40 === 0 && this.y > height * 0.5) {
+                this.vy = Math.min(this.vy, this.jump * 0.72);
+                this.flapTimer = 14;
+            }
+            if (this.y >= height - margin) {
+                this.y = height - margin;
+                this.vy = this.jump;
+                this.flapTimer = 16;
+            }
+            if (this.y <= margin) {
+                this.y = margin;
+                this.vy = Math.abs(this.jump) * 0.4;
             }
         }
     },
@@ -1143,6 +1132,9 @@ function handleCanvasInput(e) {
 // canvas 上的鼠标和触摸事件
 canvas.addEventListener('mousedown', handleCanvasInput);
 canvas.addEventListener('touchstart', handleCanvasInput, { passive: false });
+
+// 阻止移动端的橡皮筋效果和滚动抖动（抖动拖拽感觉）
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
 // 键盘事件
 window.addEventListener('keydown', e => { 
