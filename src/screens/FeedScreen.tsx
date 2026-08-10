@@ -61,6 +61,8 @@ interface Props {
   onLoadMore?: () => void
   onOpen: (article: Article) => void
   onBack?: () => void
+  /** 仅主今日流品牌名「有所闻」时传入；单源标题不启用 */
+  onBrandTap?: () => void
 }
 
 /** 邻页预览：排版与正式列表对齐，并恢复该分类上次滚动位置，避免滑入时先顶后跳 */
@@ -181,6 +183,7 @@ export const FeedScreen = memo(function FeedScreen({
   onLoadMore,
   onOpen,
   onBack,
+  onBrandTap,
 }: Props) {
   const isDesktop = useIsDesktop()
   const reduced = useReducedMotion()
@@ -539,9 +542,19 @@ export const FeedScreen = memo(function FeedScreen({
                 <ChevronLeft size={18} strokeWidth={1.5} className="text-paper-muted" />
               </button>
             )}
-            <h1 className="shrink-0 font-display text-[18px] leading-tight text-paper md:text-[20px] lg:text-[22px]">
-              {title}
-            </h1>
+            {title === '有所闻' && onBrandTap ? (
+              <button
+                type="button"
+                onClick={onBrandTap}
+                className="shrink-0 font-display text-[18px] leading-tight text-paper md:text-[20px] lg:text-[22px]"
+              >
+                {title}
+              </button>
+            ) : (
+              <h1 className="shrink-0 font-display text-[18px] leading-tight text-paper md:text-[20px] lg:text-[22px]">
+                {title}
+              </h1>
+            )}
             <p className="hidden md:inline-block min-w-0 truncate font-mono text-[11px] lg:text-[11.5px] tracking-[0.12em] text-paper-faint">
               {activeCategory?.caption || caption}
             </p>

@@ -10,6 +10,7 @@
     "test:cache": "rolldown scripts/cache-behavior.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/cache-behavior.test.mjs && node node_modules/.cache/newsnook/cache-behavior.test.mjs",
     "test:encoding": "rolldown scripts/text-encoding.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/text-encoding.test.mjs && node node_modules/.cache/newsnook/text-encoding.test.mjs",
     "test:edge-swipe": "rolldown scripts/edge-swipe-back.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/edge-swipe-back.test.mjs && node node_modules/.cache/newsnook/edge-swipe-back.test.mjs",
+    "test:easter-egg": "npx tsx scripts/easter-egg-trigger.test.ts",
     "test:category-order": "rolldown scripts/category-settings-order.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/category-settings-order.test.mjs && node node_modules/.cache/newsnook/category-settings-order.test.mjs",
     "test:custom-category": "rolldown scripts/custom-category-lifecycle.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/custom-category-lifecycle.test.mjs && node node_modules/.cache/newsnook/custom-category-lifecycle.test.mjs",
     "test:custom-sources": "npx tsx scripts/custom-sources-opml.test.ts",

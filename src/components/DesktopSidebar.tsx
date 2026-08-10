@@ -38,6 +38,7 @@ interface Props {
   onNavigateHistory: () => void
   onNavigateSettings: () => void
   onNavigateAbout: () => void
+  onBrandTap?: () => void
 }
 
 export const DesktopSidebar = memo(function DesktopSidebar({
@@ -57,6 +58,7 @@ export const DesktopSidebar = memo(function DesktopSidebar({
   onNavigateHistory,
   onNavigateSettings,
   onNavigateAbout,
+  onBrandTap,
 }: Props) {
   const isHomeActive = activeTab === 'today' && !settingsRouteName
   const isLaterActive = settingsRouteName === 'later'
@@ -92,9 +94,19 @@ export const DesktopSidebar = memo(function DesktopSidebar({
 
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-[21px] font-medium tracking-wide text-paper">
-                有所闻
-              </span>
+              {onBrandTap ? (
+                <button
+                  type="button"
+                  onClick={onBrandTap}
+                  className="font-display text-[21px] font-medium tracking-wide text-paper"
+                >
+                  有所闻
+                </button>
+              ) : (
+                <span className="font-display text-[21px] font-medium tracking-wide text-paper">
+                  有所闻
+                </span>
+              )}
               <span className="font-mono text-[9px] tracking-[0.14em] text-cinnabar-soft font-semibold">
                 NEWSNOOK
               </span>

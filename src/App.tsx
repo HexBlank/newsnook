@@ -48,6 +48,12 @@ import { TypographyScreen } from './screens/settings/TypographyScreen'
 import { TranslationScreen } from './screens/settings/TranslationScreen'
 import { ProxyScreen } from './screens/settings/ProxyScreen'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import {
+  BRAND_TITLE,
+  CurrentEasterEgg,
+  EasterEggShell,
+  useEasterEggTrigger,
+} from './features/easterEgg'
 import { proxyModeLabel } from './features/proxy/config'
 import { UpdateDialog } from './features/appUpdate/UpdateDialog'
 import { useAppUpdate } from './features/appUpdate/useAppUpdate'
@@ -202,6 +208,9 @@ export default function App() {
   })
   const [reading, setReading] = useState<Article | null>(null)
   const readerOverlayCloserRef = useRef<(() => boolean) | null>(null)
+  const [eggOpen, setEggOpen] = useState(false)
+  const openEgg = useCallback(() => setEggOpen(true), [])
+  const { onTap: onBrandTap } = useEasterEggTrigger(openEgg)
   const [focusSourceId, setFocusSourceId] = useState<string | null>(null)
   const [categoryFilterSourceId, setCategoryFilterSourceId] = useState<string | null>(null)
   const [later, setLater] = useState<Article[]>(() => loadLaterArticles())
@@ -305,6 +314,10 @@ export default function App() {
     let removeListener: (() => Promise<void>) | undefined
 
     void CapacitorApp.addListener('backButton', () => {
+      if (eggOpen) {
+        setEggOpen(false)
+        return
+      }
       if (reading && readerOverlayCloserRef.current?.()) {
         return
       }
@@ -353,7 +366,7 @@ export default function App() {
       disposed = true
       if (removeListener) void removeListener()
     }
-  }, [closeSourceFeed, focusSourceId, reading, settingsRoute, tab])
+  }, [closeSourceFeed, eggOpen, focusSourceId, reading, settingsRoute, tab])
 
   const {
     articles: fetchedArticles,
@@ -874,7 +887,7 @@ export default function App() {
 
     return (
       <FeedScreen
-        title="有所闻"
+        title={BRAND_TITLE}
         caption={
           activeFilterSource
             ? `${chineseDate()} · ${activeCategory?.label ?? ''} · ${activeFilterSource.name}`
@@ -904,6 +917,7 @@ export default function App() {
         onRefresh={runRefresh}
         onLoadMore={() => void loadMore(listScopeIds)}
         onOpen={openArticle}
+        onBrandTap={onBrandTap}
       />
     )
   }
@@ -949,6 +963,7 @@ export default function App() {
             setSettingsRoute(null)
           }}
           onNavigateAbout={() => setSettingsRoute({ name: 'about' })}
+          onBrandTap={onBrandTap}
         />
 
         <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-ink">
@@ -970,6 +985,10 @@ export default function App() {
           {renderSettings()}
         </main>
       </div>
+
+      <EasterEggShell open={eggOpen} onClose={() => setEggOpen(false)}>
+        <CurrentEasterEgg onClose={() => setEggOpen(false)} />
+      </EasterEggShell>
 
       {reading && (
         <Suspense
