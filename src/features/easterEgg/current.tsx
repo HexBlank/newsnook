@@ -19,7 +19,16 @@ export function CurrentEasterEgg({ onClose }: { onClose: () => void }) {
       }
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      // 确保无论通过何种方式（如 Android 物理返回键/右滑返回）销毁组件时，都退出沉浸式全屏
+      const nativeBridge = (window as any).NewsNookNative
+      if (nativeBridge && nativeBridge.setFullScreen) {
+        nativeBridge.setFullScreen(false)
+      } else if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {})
+      }
+    }
   }, [onClose])
 
   return (
