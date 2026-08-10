@@ -16,7 +16,7 @@ export function EasterEggShell({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex h-dvh max-h-dvh flex-col bg-transparent pt-[var(--sat)] pb-[var(--sab)]"
+      className="fixed inset-0 z-[100] flex h-dvh max-h-dvh flex-col bg-[rgb(232,228,217)] pt-[var(--sat)] pb-[var(--sab)]"
       role="dialog"
       aria-modal="true"
       aria-label="有所闻"

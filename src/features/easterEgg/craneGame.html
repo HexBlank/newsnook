@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>纸鹤行 · Wabi-Sabi</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@200;300;400;500;700&family=Ma+Shan+Zheng&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: transparent;
+    font-family: 'Noto Serif SC', 'Songti SC', 'Ma Shan Zheng', serif;
+    color: #2c2a26;
+}
+
+#game-container {
+    position: relative; width: 100%; height: 100%;
+    overflow: hidden;
+    background-color: rgb(232, 228, 217);
+}
+
+#washi-overlay {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.09'/%3E%3C/svg%3E");
+}
+
+canvas {
+    display: block; width: 100%; height: 100%;
+    position: absolute; inset: 0; z-index: 0;
+}
+
+.ui-layer {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    pointer-events: none;
+    transition: opacity 0.8s ease, transform 0.8s ease;
+    z-index: 2;
+}
+
+.ui-layer.hidden { opacity: 0; pointer-events: none !important; transform: scale(0.98); }
+
+h1 {
+    font-family: 'Ma Shan Zheng', 'Noto Serif SC', serif;
+    font-size: 5.2rem; font-weight: 400;
+    letter-spacing: 0.25em; color: #2c2a26;
+    text-shadow: 0 0 24px rgba(0,0,0,0.08);
+    margin-bottom: 0.8rem;
+    writing-mode: vertical-rl;
+    line-height: 1.15;
+}
+
+.subtitle {
+    font-size: 1rem; color: #5a574f;
+    letter-spacing: 0.5em; margin-bottom: 2.2rem;
+    font-weight: 300;
+}
+
+.score-info {
+    font-size: 0.85rem; color: #7a776f;
+    margin-bottom: 2.5rem; letter-spacing: 0.25em;
+    font-weight: 300;
+}
+
+.btn {
+    pointer-events: auto; padding: 14px 42px;
+    font-size: 1rem; background: rgba(232, 228, 217, 0.4);
+    border: 1px solid rgba(44, 42, 38, 0.45);
+    color: #2c2a26; cursor: pointer; font-family: inherit;
+    letter-spacing: 0.35em; font-weight: 400;
+    transition: all 0.5s ease; position: relative;
+    backdrop-filter: blur(4px);
+}
+
+.btn:hover {
+    background: rgba(232, 228, 217, 0.7);
+    border-color: #2c2a26;
+    letter-spacing: 0.45em;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+.btn::before, .btn::after {
+    content: ''; position: absolute;
+    width: 10px; height: 10px;
+    border-color: #8c3b3b;
+}
+.btn::before { top: -1px; left: -1px; border-top: 1px solid; border-left: 1px solid; }
+.btn::after { bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid; }
+
+#score-display {
+    position: absolute; top: 7%; left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    font-size: 2.8rem; color: rgba(140, 59, 59, 0.55);
+    font-weight: 200; letter-spacing: 0.05em;
+    transition: opacity 0.5s ease, transform 0.3s ease, color 1.5s ease;
+    text-shadow: 0 0 16px rgba(0,0,0,0.04);
+    font-family: 'Noto Serif SC', serif;
+}
+
+#score-display.pop { transform: translateX(-50%) scale(1.25); color: rgba(140, 59, 59, 0.85); }
+
+#season-indicator {
+    position: absolute; top: 30px; left: 30px;
+    z-index: 2;
+    font-size: 0.9rem; color: rgba(44, 42, 38, 0.55);
+    letter-spacing: 0.3em; font-weight: 300;
+    writing-mode: vertical-rl; opacity: 0;
+    transition: opacity 1.2s ease;
+    font-family: 'Ma Shan Zheng', serif;
+    line-height: 1.8;
+}
+
+#season-indicator.show { opacity: 1; }
+
+#haiku-display {
+    position: absolute; top: 38%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    font-size: 1.6rem; font-weight: 300;
+    color: rgba(44, 42, 38, 0.85);
+    text-align: center; letter-spacing: 0.4em;
+    pointer-events: none; opacity: 0;
+    transition: opacity 1.8s ease;
+    text-shadow: 0 0 30px rgba(232, 228, 217, 0.9), 0 0 60px rgba(232, 228, 217, 0.5);
+    font-family: 'Ma Shan Zheng', serif;
+    white-space: pre-line; line-height: 2;
+    max-width: 80%;
+}
+
+#haiku-display.show { opacity: 1; }
+
+.seal {
+    position: absolute; bottom: 28px; right: 28px;
+    z-index: 2;
+    padding: 14px 9px; border: 2px solid #8c3b3b;
+    color: #8c3b3b; writing-mode: vertical-rl;
+    text-orientation: upright; font-size: 1rem;
+    letter-spacing: 8px; font-weight: 500;
+    opacity: 0.55; pointer-events: none;
+    background: rgba(140, 59, 59, 0.04);
+    box-shadow: inset 0 0 8px rgba(140, 59, 59, 0.18);
+    border-radius: 3px;
+    font-family: 'Ma Shan Zheng', serif;
+}
+
+#settings-btn {
+    position: absolute; top: max(22px, env(safe-area-inset-top, 0px));
+    right: max(64px, calc(env(safe-area-inset-right, 0px) + 52px));
+    width: 34px; height: 34px; cursor: pointer;
+    opacity: 0.45; transition: all 0.5s ease;
+    pointer-events: auto; z-index: 10;
+}
+
+#egg-close {
+    position: absolute; top: max(18px, env(safe-area-inset-top, 0px));
+    right: max(18px, env(safe-area-inset-right, 0px));
+    z-index: 12; pointer-events: auto;
+    width: 40px; height: 40px; border-radius: 999px;
+    border: 1px solid rgba(90, 87, 79, 0.35);
+    background: rgba(232, 228, 217, 0.85);
+    color: #5a574f; font-size: 1.05rem; line-height: 1;
+    font-family: 'Ma Shan Zheng', 'Noto Serif SC', serif;
+    letter-spacing: 0.12em; cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease;
+}
+#egg-close:hover { border-color: rgba(90, 87, 79, 0.7); color: #2c2a26; }
+
+#settings-btn:hover { opacity: 1; transform: rotate(60deg); }
+
+#settings-panel {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0.95);
+    background: rgba(232, 228, 217, 0.97);
+    border: 1px solid rgba(44, 42, 38, 0.3);
+    padding: 38px 48px; z-index: 20;
+    opacity: 0; pointer-events: none;
+    transition: all 0.4s ease;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    backdrop-filter: blur(12px); min-width: 280px;
+}
+
+#settings-panel.show {
+    opacity: 1; pointer-events: auto;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+#settings-panel h3 {
+    text-align: center; font-weight: 300;
+    letter-spacing: 0.5em; margin-bottom: 28px;
+    font-size: 1.2rem; color: #2c2a26;
+    font-family: 'Ma Shan Zheng', serif;
+}
+
+.setting-row {
+    display: flex; justify-content: space-between;
+    align-items: center; font-size: 0.95rem;
+    color: #2c2a26; letter-spacing: 0.25em;
+    margin-bottom: 20px; font-weight: 300;
+}
+
+.switch { position: relative; width: 40px; height: 20px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: rgba(100, 100, 100, 0.3);
+    transition: 0.4s; border-radius: 20px;
+}
+.slider::before {
+    content: ''; position: absolute;
+    height: 14px; width: 14px; left: 3px; bottom: 3px;
+    background: #f5f2eb; transition: 0.4s;
+    border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+input:checked + .slider { background: rgba(140, 59, 59, 0.65); }
+input:checked + .slider::before { transform: translateX(20px); }
+
+#close-settings {
+    margin-top: 26px; text-align: center;
+    font-size: 0.85rem; cursor: pointer;
+    color: #8c3b3b; letter-spacing: 0.4em;
+    transition: opacity 0.3s;
+    font-family: 'Ma Shan Zheng', serif;
+}
+#close-settings:hover { opacity: 0.7; }
+
+.intro-text {
+    position: absolute; bottom: 14%; left: 50%;
+    transform: translateX(-50%); font-size: 0.75rem;
+    color: rgba(90, 87, 79, 0.55); letter-spacing: 0.3em;
+    text-align: center; font-weight: 300;
+    pointer-events: none;
+}
+
+#final-haiku {
+    font-family: 'Ma Shan Zheng', serif;
+    font-size: 1.1rem !important; opacity: 0.6 !important;
+    margin-top: -0.8rem !important; margin-bottom: 2rem !important;
+    white-space: pre-line; line-height: 1.7;
+    letter-spacing: 0.3em !important;
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 3.8rem; }
+    #score-display { font-size: 2.2rem; }
+    #haiku-display { font-size: 1.3rem; }
+}
+</style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="washi-overlay" aria-hidden="true"></div>
+
+    <div id="score-display" class="hidden">0</div>
+    <div id="season-indicator"></div>
+    <div id="haiku-display"></div>
+
+    <button type="button" id="egg-close" aria-label="关闭">归</button>
+
+    <svg id="settings-btn" viewBox="0 0 24 24" fill="none" stroke="#2c2a26" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+
+    <div id="settings-panel">
+        <h3>设 · 静</h3>
+        <div class="setting-row">
+            <span>音 · 声</span>
+            <label class="switch"><input type="checkbox" id="toggle-audio"><span class="slider"></span></label>
+        </div>
+        <div class="setting-row">
+            <span>禅 · 心</span>
+            <label class="switch"><input type="checkbox" id="toggle-zen"><span class="slider"></span></label>
+        </div>
+        <div class="setting-row">
+            <span>墨 · 韵</span>
+            <label class="switch"><input type="checkbox" id="toggle-trail" checked><span class="slider"></span></label>
+        </div>
+        <div id="close-settings">完 · 归</div>
+    </div>
+
+    <div id="start-screen" class="ui-layer">
+        <h1>纸鹤行</h1>
+        <p class="subtitle">万 物 静 观 皆 自 得</p>
+        <div class="score-info" id="high-score-start">— 历史至高 · 0 节 —</div>
+        <button class="btn" id="start-btn">起 · 飞</button>
+        <p class="intro-text">空 格 · 触 屏 · 鼠 标</p>
+    </div>
+
+    <div id="game-over-screen" class="ui-layer hidden">
+        <h1 style="font-size: 4.2rem;">形如朝露</h1>
+        <p class="subtitle" id="final-score-text">— 越过 0 节竹 —</p>
+        <p class="subtitle" id="final-haiku"></p>
+        <button class="btn" id="restart-btn">重 · 入 · 轮 · 回</button>
+    </div>
+
+    <div class="seal">有 所 闻</div>
+</div>
+
+<script>
+// ============================================
+// 纸鹤行 · 侘寂之境
+// ============================================
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true }) || canvas.getContext('2d');
+
+// UI 元素
+const uiStart = document.getElementById('start-screen');
+const uiGameOver = document.getElementById('game-over-screen');
+const scoreDisplay = document.getElementById('score-display');
+const startBtn = document.getElementById('start-btn');
+const restartBtn = document.getElementById('restart-btn');
+const highScoreText = document.getElementById('high-score-start');
+const seasonIndicator = document.getElementById('season-indicator');
+const haikuDisplay = document.getElementById('haiku-display');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsPanel = document.getElementById('settings-panel');
+const closeSettings = document.getElementById('close-settings');
+const toggleAudio = document.getElementById('toggle-audio');
+const toggleZen = document.getElementById('toggle-zen');
+const toggleTrail = document.getElementById('toggle-trail');
+
+// 全局状态
+let width = 0, height = 0, dpr = 1;
+let frames = 0;
+let score = 0;
+let highScore = +localStorage.getItem('zhihexing_highscore_v2') || 0;
+let gameState = 'START';
+let reqAnimFrame;
+let lastTs = 0;
+let frameDt = 1; // 相对 60fps 的倍率，用于平滑位移
+
+highScoreText.innerText = `— 历史至高 · ${highScore} 节 —`;
+
+const config = {
+    audioEnabled: false,
+    zenMode: false,
+    trailEnabled: true,
+    hapticsEnabled: 'vibrate' in navigator
+};
+
+const PERF = {
+    // 高分屏上限 2x，避免 3x 像素量拖垮主循环
+    maxDpr: 2,
+    particleCount: 40,
+    trailCap: 28,
+    mountainStep: 28,
+};
+
+// 画布响应式
+function resize() {
+    const container = canvas.parentElement;
+    width = container.clientWidth || window.innerWidth;
+    height = container.clientHeight || window.innerHeight;
+    dpr = Math.min(window.devicePixelRatio || 1, PERF.maxDpr);
+    canvas.width = Math.max(1, Math.floor(width * dpr));
+    canvas.height = Math.max(1, Math.floor(height * dpr));
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    parallax.init();
+}
+window.addEventListener('resize', resize);
+
+// ============================================
+// 音频系统
+// ============================================
+const audioSys = {
+    ctx: null,
+    init() {
+        try {
+            if (!this.ctx) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) this.ctx = new AC();
+            }
+            if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+        } catch(e) {
+            console.warn('音频初始化失败:', e);
+        }
+    },
+    playFlap() {
+        if (!config.audioEnabled || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(520, now);
+            osc.frequency.exponentialRampToValueAtTime(180, now + 0.18);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            osc.start(now); osc.stop(now + 0.3);
+        } catch(e) {}
+    },
+    playPass() {
+        if (!config.audioEnabled || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(950, now);
+            osc.frequency.exponentialRampToValueAtTime(420, now + 0.15);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            osc.start(now); osc.stop(now + 0.25);
+        } catch(e) {}
+    },
+    playDie() {
+        if (!config.audioEnabled || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(140, now);
+            osc.frequency.exponentialRampToValueAtTime(28, now + 1);
+            gain.gain.setValueAtTime(0.45, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+            osc.start(now); osc.stop(now + 1.3);
+        } catch(e) {}
+    }
+};
+
+function vibrate(ms, strong = false) {
+    if (config.hapticsEnabled) navigator.vibrate(strong ? [ms, 40, ms] : ms);
+}
+
+// ============================================
+// 季节系统
+// ============================================
+const seasons = [
+    {
+        name: '春', poem: '春 风 又 绿 江 南 岸',
+        bg: [238, 224, 220], bgEnd: [218, 198, 195],
+        particle: 'sakura',
+        bamboo: 'rgba(110, 105, 100, 0.42)',
+        mountain: [140, 110, 115],
+        leaf: 'rgba(85, 80, 75, 0.42)',
+        ink: 'rgba(85, 50, 55, ',
+        gravity: 1.0
+    },
+    {
+        name: '夏', poem: '蝉 声 入 岩 静 无 痕',
+        bg: [225, 220, 195], bgEnd: [180, 200, 170],
+        particle: 'rain',
+        bamboo: 'rgba(70, 90, 70, 0.45)',
+        mountain: [100, 120, 100],
+        leaf: 'rgba(55, 80, 55, 0.5)',
+        ink: 'rgba(40, 50, 40, ',
+        gravity: 1.15
+    },
+    {
+        name: '秋', poem: '秋 月 何 时 照 白 璧',
+        bg: [228, 210, 180], bgEnd: [185, 145, 105],
+        particle: 'leaf',
+        bamboo: 'rgba(115, 80, 55, 0.45)',
+        mountain: [150, 110, 80],
+        leaf: 'rgba(140, 90, 50, 0.5)',
+        ink: 'rgba(70, 40, 30, ',
+        gravity: 1.0
+    },
+    {
+        name: '冬', poem: '独 钓 寒 江 雪 满 身',
+        bg: [228, 232, 234], bgEnd: [195, 210, 220],
+        particle: 'snow',
+        bamboo: 'rgba(85, 95, 100, 0.4)',
+        mountain: [120, 130, 140],
+        leaf: 'rgba(60, 70, 80, 0.4)',
+        ink: 'rgba(60, 70, 80, ',
+        gravity: 0.85
+    }
+];
+
+const weatherSys = {
+    currentSeason: 0,
+    curBg: [...seasons[0].bg],
+    curBgEnd: [...seasons[0].bgEnd],
+    wind: 0,
+    _bgKey: '',
+
+    update() {
+        let target = config.zenMode
+            ? Math.floor((frames / 60) / 22) % 4
+            : Math.floor(score / 8) % 4;
+
+        if (target !== this.currentSeason) {
+            this.currentSeason = target;
+            const s = seasons[target];
+            seasonIndicator.innerText = s.name + '\n' + s.poem;
+            seasonIndicator.classList.add('show');
+            setTimeout(() => seasonIndicator.classList.remove('show'), 4500);
+            particles.regenerate(0.4);
+        }
+
+        const s = seasons[this.currentSeason];
+        // 按帧时缩放插值，掉帧时仍接近目标色
+        const lerp = 1 - Math.pow(1 - 0.015, frameDt);
+        for (let i = 0; i < 3; i++) {
+            this.curBg[i] += (s.bg[i] - this.curBg[i]) * lerp;
+            this.curBgEnd[i] += (s.bgEnd[i] - this.curBgEnd[i]) * lerp;
+        }
+
+        this.wind = Math.sin(frames * 0.012) * 1.6 + Math.sin(frames * 0.03) * 0.5;
+    },
+
+    /** 在 canvas 上铺季节渐变，杜绝每帧写 DOM style */
+    drawSky() {
+        const c0 = this.curBg;
+        const c1 = this.curBgEnd;
+        const g = ctx.createLinearGradient(0, 0, width * 0.15, height);
+        g.addColorStop(0, `rgb(${c0[0]|0},${c0[1]|0},${c0[2]|0})`);
+        g.addColorStop(1, `rgb(${c1[0]|0},${c1[1]|0},${c1[2]|0})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, width, height);
+    }
+};
+
+// ============================================
+// 视差远山（离屏条带滚动，避免每帧重建折线）
+// ============================================
+const parallax = {
+    layers: [],
+    period: 0,
+
+    init() {
+        this.layers = [];
+        if (width < 2 || height < 2) return;
+        const h = Math.max(height, 400);
+        const sampleN = 48;
+        const sampleStep = 40;
+        this.period = sampleN * sampleStep;
+        const stripW = this.period;
+
+        for (let i = 0; i < 3; i++) {
+            const pts = [];
+            const amp = 50 + i * 35;
+            const yBase = h * (0.45 + i * 0.13);
+            for (let j = 0; j < sampleN; j++) pts.push(Math.random() * amp);
+
+            const oc = document.createElement('canvas');
+            oc.width = Math.max(1, Math.ceil(stripW * dpr));
+            oc.height = Math.max(1, Math.ceil(height * dpr));
+            const octx = oc.getContext('2d');
+            octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            this.layers.push({
+                points: pts,
+                canvas: oc,
+                ctx: octx,
+                offset: Math.random() * stripW,
+                speed: 0.12 + i * 0.22,
+                yBase,
+                opacity: 0.06 + i * 0.05,
+                season: -1,
+            });
+            this._paintLayer(this.layers[i], seasons[weatherSys.currentSeason]);
+        }
+    },
+
+    _sampleY(layer, x) {
+        const pts = layer.points;
+        const n = pts.length;
+        const t = ((x % (n * 40)) + n * 40) % (n * 40);
+        const dataIdx = Math.floor(t / 40) % n;
+        const nextIdx = (dataIdx + 1) % n;
+        const localX = t % 40;
+        return pts[dataIdx] + (pts[nextIdx] - pts[dataIdx]) * (localX / 40);
+    },
+
+    _paintLayer(layer, season) {
+        const octx = layer.ctx;
+        const stripW = this.period;
+        octx.clearRect(0, 0, stripW, height);
+        const m = season.mountain;
+        octx.fillStyle = `rgba(${m[0]},${m[1]},${m[2]},${layer.opacity})`;
+        octx.beginPath();
+        octx.moveTo(0, height);
+        const step = PERF.mountainStep;
+        for (let x = 0; x <= stripW + step; x += step) {
+            octx.lineTo(x, layer.yBase - this._sampleY(layer, x));
+        }
+        octx.lineTo(stripW + step, height);
+        octx.closePath();
+        octx.fill();
+        layer.season = weatherSys.currentSeason;
+    },
+
+    draw() {
+        const season = seasons[weatherSys.currentSeason];
+        const period = this.period || 1;
+        for (const layer of this.layers) {
+            if (layer.season !== weatherSys.currentSeason) {
+                this._paintLayer(layer, season);
+            }
+            if (gameState === 'PLAYING' || gameState === 'GAMEOVER') {
+                layer.offset += layer.speed * frameDt;
+            }
+            // 无缝平铺离屏条带
+            let x = -((layer.offset % period) + period) % period;
+            while (x < width) {
+                ctx.drawImage(layer.canvas, x, 0, period, height);
+                x += period;
+            }
+        }
+    }
+};
+
+// ============================================
+// 纸鹤
+// ============================================
+const crane = {
+    x: 0, y: 0, vy: 0,
+    width: 32, height: 22,
+    gravity: 0.28, jump: -6.5,
+    rotation: 0, flapTimer: 0,
+    isDead: false,
+    trail: [],
+
+    reset() {
+        this.x = width * 0.3;
+        this.y = height / 2;
+        this.vy = 0;
+        this.rotation = 0;
+        this.flapTimer = 0;
+        this.isDead = false;
+        this.trail = [];
+    },
+
+    flap() {
+        this.vy = this.jump;
+        this.flapTimer = 18;
+        audioSys.playFlap();
+    },
+
+    update() {
+        if (this.isDead) return;
+        this.x = width * 0.3;
+        const s = seasons[weatherSys.currentSeason];
+        this.vy += this.gravity * s.gravity * frameDt;
+        this.y += this.vy * frameDt;
+        this.rotation = Math.max(-Math.PI / 5, Math.min(Math.PI / 4, this.vy * 0.1));
+        if (this.flapTimer > 0) this.flapTimer--;
+
+        if (config.trailEnabled && frames % 2 === 0) {
+            this.trail.push({
+                x: this.x - 5 + Math.random() * 3,
+                y: this.y + Math.random() * 4 - 2,
+                size: 2 + Math.random() * 2.5,
+                life: 1,
+                vy: (Math.random() - 0.5) * 0.4,
+                vx: -0.5 - Math.random() * 0.5
+            });
+            if (this.trail.length > PERF.trailCap) this.trail.shift();
+        }
+        let write = 0;
+        for (let i = 0; i < this.trail.length; i++) {
+            const p = this.trail[i];
+            p.life -= 0.018 * frameDt;
+            p.size += 0.09 * frameDt;
+            p.y += p.vy * frameDt;
+            p.x += p.vx * frameDt;
+            if (p.life > 0) this.trail[write++] = p;
+        }
+        this.trail.length = write;
+
+        if (!config.zenMode) {
+            if (this.y >= height - this.height || this.y <= this.height) {
+                this.die();
+            }
+        } else {
+            if (this.y >= height - this.height) {
+                this.y = height - this.height;
+                this.vy = this.jump * 0.8;
+            }
+            if (this.y <= this.height) {
+                this.y = this.height;
+                this.vy = Math.abs(this.jump) * 0.5;
+            }
+        }
+    },
+
+    die() {
+        if (this.isDead) return;
+        this.isDead = true;
+        audioSys.playDie();
+        vibrate(120, true);
+        createInkExplosion(this.x, this.y);
+        gameOver();
+    },
+
+    drawTrail() {
+        if (!config.trailEnabled) return;
+        const s = seasons[weatherSys.currentSeason];
+        ctx.globalCompositeOperation = 'multiply';
+        for (const p of this.trail) {
+            ctx.fillStyle = s.ink + (p.life * 0.18) + ')';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+    },
+
+    draw() {
+        if (this.isDead) return;
+        this.drawTrail();
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        ctx.scale(1.65, 1.65);
+
+        const wingOffset = this.flapTimer > 0
+            ? -10 + Math.sin(this.flapTimer * 0.5) * 6
+            : Math.sin(frames * 0.08) * 2;
+
+        ctx.lineWidth = 0.7;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(80, 30, 30, 0.55)';
+
+        ctx.fillStyle = 'rgba(155, 55, 55, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(0, 2);
+        ctx.lineTo(9, -11 + wingOffset * 1.2);
+        ctx.lineTo(5, 0);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = 'rgba(170, 65, 65, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(0, 5);
+        ctx.lineTo(-16, -10);
+        ctx.lineTo(-5, 3);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = 'rgba(185, 75, 75, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(-5, 3);
+        ctx.lineTo(4, 9);
+        ctx.lineTo(15, -5);
+        ctx.lineTo(10, -1);
+        ctx.lineTo(2, 4);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = 'rgba(200, 90, 90, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(15, -5);
+        ctx.lineTo(22, -3);
+        ctx.lineTo(13, -1);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = 'rgba(215, 95, 95, 0.92)';
+        ctx.beginPath();
+        ctx.moveTo(-4, 3);
+        ctx.lineTo(2, -15 + wingOffset);
+        ctx.lineTo(6, 5);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#1a1a17';
+        ctx.beginPath();
+        ctx.arc(14, -2.5, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+};
+
+// ============================================
+// 竹林
+// ============================================
+const bamboos = {
+    items: [],
+    gap: 160, dx: 2.2,
+    lastSpawnFrame: -999,
+    firstSpawned: false,
+
+    reset() {
+        this.items = [];
+        this.lastSpawnFrame = -999;
+        this.firstSpawned = false;
+    },
+
+    add(startX) {
+        this.gap = Math.max(140, height * 0.3);
+        const minH = 50;
+        const maxH = Math.max(minH + 1, height - this.gap - minH);
+        const h = Math.floor(Math.random() * (maxH - minH + 1)) + minH;
+        const w = 38 + Math.random() * 14;
+        const bottomY = h + this.gap;
+        this.items.push({
+            x: startX !== undefined ? startX : width,
+            topHeight: h,
+            bottomY: bottomY,
+            w: w,
+            passed: false,
+            topDetails: this.genDetails(0, h),
+            bottomDetails: this.genDetails(bottomY, height - bottomY),
+            sway: Math.random() * Math.PI * 2
+        });
+        this.lastSpawnFrame = frames;
+        this.firstSpawned = true;
+    },
+
+    genDetails(startY, partHeight) {
+        const details = [];
+        for (let ny = startY + 25; ny < startY + partHeight - 10; ny += 35 + Math.random() * 30) {
+            details.push({
+                y: ny - startY,
+                slant: Math.random() * 4 - 2,
+                hasLeaf: Math.random() > 0.35,
+                leafLeft: Math.random() > 0.5,
+                leafSize: 0.7 + Math.random() * 0.5,
+                leafType: Math.random() * 10
+            });
+        }
+        return details;
+    },
+
+    update() {
+        // 首竹更近；后续间距随分数收紧
+        const spawnRate = Math.max(70, 96 - Math.floor(score * 1.2));
+        if (!this.firstSpawned) {
+            if (frames >= 18) {
+                // 落在鹤前方不远处，避免开局长空等第一根
+                const nearX = Math.min(width - 8, crane.x + Math.max(160, width * 0.28));
+                this.add(nearX);
+            }
+        } else if (frames - this.lastSpawnFrame >= spawnRate) {
+            this.add();
+        }
+
+        for (let i = 0; i < this.items.length; i++) {
+            const b = this.items[i];
+            b.x -= (this.dx + score * 0.015) * frameDt;
+            b.sway += 0.04 * frameDt;
+
+            const cx = crane.x, cy = crane.y, r = 11;
+
+            if (!config.zenMode && !crane.isDead) {
+                if (cx + r > b.x && cx - r < b.x + b.w) {
+                    if (cy - r < b.topHeight || cy + r > b.bottomY) {
+                        crane.die();
+                    }
+                }
+            }
+
+            if (b.x + b.w < cx && !b.passed && !crane.isDead) {
+                score++;
+                scoreDisplay.innerText = score;
+                scoreDisplay.classList.add('pop');
+                setTimeout(() => scoreDisplay.classList.remove('pop'), 280);
+                b.passed = true;
+                audioSys.playPass();
+                vibrate(15);
+                checkHaiku(score);
+            }
+
+            if (b.x + b.w < 0) {
+                this.items.splice(i, 1);
+                i--;
+            }
+        }
+    },
+
+    draw() {
+        const s = seasons[weatherSys.currentSeason];
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = s.bamboo;
+
+        for (const b of this.items) {
+            const sway = Math.sin(b.sway) * 0.6 + weatherSys.wind * 0.3;
+            ctx.fillRect(b.x + sway, 0, b.w, b.topHeight);
+            this.drawDetails(b.x + sway, b.w, 0, b.topDetails);
+            ctx.fillRect(b.x + sway, b.bottomY, b.w, height - b.bottomY);
+            this.drawDetails(b.x + sway, b.w, b.bottomY, b.bottomDetails);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+    },
+
+    drawDetails(x, w, startY, details) {
+        const s = seasons[weatherSys.currentSeason];
+        ctx.strokeStyle = 'rgba(30, 35, 30, 0.55)';
+        ctx.lineWidth = 2.2;
+
+        for (const d of details) {
+            const absY = startY + d.y;
+            ctx.beginPath();
+            ctx.moveTo(x - 2, absY);
+            ctx.lineTo(x + w + 2, absY + d.slant);
+            ctx.stroke();
+
+            if (d.hasLeaf) {
+                ctx.save();
+                const lx = d.leafLeft ? x : x + w;
+                const dir = d.leafLeft ? -1 : 1;
+                const rot = weatherSys.wind * 0.09 * dir + 
+                           Math.sin(frames * 0.05 + d.leafType) * 0.06;
+                ctx.translate(lx, absY);
+                ctx.rotate(rot);
+                ctx.scale(d.leafSize, d.leafSize);
+
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(22 * dir, -12, 32 * dir, 8);
+                ctx.quadraticCurveTo(12 * dir, 4, 0, 0);
+                ctx.fillStyle = s.leaf;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+    }
+};
+
+// ============================================
+// 粒子系统
+// ============================================
+const particles = {
+    items: [],
+
+    init() {
+        this.items = [];
+        for (let i = 0; i < PERF.particleCount; i++) this.items.push(this.spawn());
+    },
+
+    spawn(x, y) {
+        const type = seasons[weatherSys.currentSeason].particle;
+        return {
+            x: x !== undefined ? x : Math.random() * width,
+            y: y !== undefined ? y : Math.random() * height,
+            vx: type === 'snow' ? (Math.random() - 0.5) * 1.5 :
+                type === 'rain' ? -1 - Math.random() :
+                type === 'leaf' ? -1 - Math.random() * 2 :
+                -0.3 - Math.random() * 0.5,
+            vy: type === 'rain' ? 11 + Math.random() * 6 :
+                type === 'snow' ? 1 + Math.random() * 1.5 :
+                type === 'leaf' ? 1 + Math.random() * 1.5 :
+                0.2 + Math.random() * 0.4,
+            size: type === 'rain' ? 1.5 :
+                  type === 'snow' ? Math.random() * 2 + 1 :
+                  type === 'leaf' ? Math.random() * 3 + 2 :
+                  Math.random() * 1.5 + 0.5,
+            alpha: Math.random() * 0.5 + 0.2,
+            rot: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 0.05,
+            color: Math.random()
+        };
+    },
+
+    regenerate(ratio) {
+        const count = Math.floor(this.items.length * ratio);
+        for (let i = 0; i < count; i++) {
+            const idx = Math.floor(Math.random() * this.items.length);
+            this.items[idx] = this.spawn(Math.random() * width, Math.random() * height);
+        }
+    },
+
+    updateAndDraw() {
+        const type = seasons[weatherSys.currentSeason].particle;
+        const wind = weatherSys.wind;
+        const windEffect = type === 'snow' ? 0.6 :
+                           type === 'rain' ? 0.2 :
+                           type === 'leaf' ? 0.8 : 0.1;
+
+        for (let i = 0; i < this.items.length; i++) {
+            const p = this.items[i];
+            p.x += (p.vx + wind * windEffect) * frameDt;
+            p.y += p.vy * frameDt;
+            p.rot += p.rotSpeed * frameDt;
+
+            if (p.x < -20 || p.x > width + 20 || p.y > height + 20) {
+                this.items[i] = this.spawn(Math.random() * width, -10);
+            }
+
+            ctx.globalAlpha = p.alpha;
+
+            if (type === 'rain') {
+                ctx.strokeStyle = 'rgba(100, 115, 125, 0.55)';
+                ctx.lineWidth = p.size;
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x - p.vx * 2, p.y - p.vy * 2);
+                ctx.stroke();
+            } else if (type === 'snow') {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (type === 'leaf') {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.rot);
+                const r = 170 + p.color * 40;
+                const g = 90 + p.color * 50;
+                const b = 40 + p.color * 30;
+                ctx.fillStyle = `rgba(${r|0},${g|0},${b|0},0.65)`;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, p.size * 1.6, p.size * 0.7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            } else if (type === 'sakura') {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.rot);
+                const g = 175 + p.color * 30;
+                const b = 195 + p.color * 20;
+                ctx.fillStyle = `rgba(255,${g|0},${b|0},0.75)`;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, p.size * 1.4, p.size * 0.7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            } else {
+                ctx.fillStyle = 'rgba(80, 70, 60, 0.45)';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = 1;
+    }
+};
+
+// ============================================
+// 墨水爆炸
+// ============================================
+let inkParticles = [];
+
+function createInkExplosion(x, y) {
+    for (let i = 0; i < 28; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 7 + 2;
+        inkParticles.push({
+            x: x, y: y,
+            vx: Math.cos(angle) * speed + weatherSys.wind * 0.4,
+            vy: Math.sin(angle) * speed - 3,
+            life: 1,
+            size: Math.random() * 4 + 2,
+            isRed: Math.random() > 0.4
+        });
+    }
+}
+
+function drawInkExplosion() {
+    if (!inkParticles.length) return;
+    ctx.globalCompositeOperation = 'multiply';
+    let write = 0;
+    for (let i = 0; i < inkParticles.length; i++) {
+        const p = inkParticles[i];
+        p.x += p.vx * frameDt;
+        p.y += p.vy * frameDt;
+        p.vy += 0.25 * frameDt;
+        p.vx *= Math.pow(0.99, frameDt);
+        p.life -= 0.013 * frameDt;
+        p.size += 0.09 * frameDt;
+
+        if (p.life <= 0) continue;
+
+        const baseColor = p.isRed ? '163, 67, 67' : '40, 40, 40';
+        ctx.fillStyle = `rgba(${baseColor}, ${p.life})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        inkParticles[write++] = p;
+    }
+    inkParticles.length = write;
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+// ============================================
+// 俳句系统
+// ============================================
+const haikus = [
+    { threshold: 3,  text: '一 花 一 世 界\n一 叶 一 菩 提' },
+    { threshold: 8,  text: '空 山 新 雨 后\n天 气 晚 来 秋' },
+    { threshold: 15, text: '行 到 水 穷 处\n坐 看 云 起 时' },
+    { threshold: 22, text: '蝉 噪 林 逾 静\n鸟 鸣 山 更 幽' },
+    { threshold: 30, text: '万 物 静 观 皆 自 得\n四 时 佳 兴 与 人 同' },
+    { threshold: 40, text: '人 生 如 逆 旅\n我 亦 是 行 人' },
+    { threshold: 55, text: '本 来 无 一 物\n何 处 惹 尘 埃' },
+    { threshold: 75, text: '此 中 有 真 意\n欲 辨 已 忘 言' }
+];
+
+const shownHaikus = new Set();
+
+function checkHaiku(s) {
+    for (const h of haikus) {
+        if (s === h.threshold && !shownHaikus.has(h.threshold)) {
+            shownHaikus.add(h.threshold);
+            haikuDisplay.textContent = h.text;
+            haikuDisplay.classList.add('show');
+            setTimeout(() => haikuDisplay.classList.remove('show'), 4200);
+            break;
+        }
+    }
+}
+
+const deathHaikus = [
+    '一 期 一 会\n后 会 无 期',
+    '落 花 有 意\n流 水 无 情',
+    '万 事 皆 空\n唯 余 静 默',
+    '形 如 朝 露\n转 瞬 即 逝',
+    '心 如 止 水\n身 化 尘 埃',
+    '色 即 是 空\n空 即 是 色'
+];
+
+// ============================================
+// 输入处理 — 修复版
+// ============================================
+
+// 处理 canvas 上的输入（点击空白区域）
+function handleCanvasInput(e) {
+    if (settingsPanel.classList.contains('show')) return;
+
+    if (e.type === 'touchstart' || (e.type === 'keydown' && e.code === 'Space')) {
+        e.preventDefault();
+    }
+
+    if (gameState === 'PLAYING') {
+        crane.flap();
+    } else if (gameState === 'START') {
+        startGame();
+    } else if (gameState === 'GAMEOVER') {
+        if (frames > 30) { resetGame(); startGame(); }
+    }
+}
+
+// canvas 上的鼠标和触摸事件
+canvas.addEventListener('mousedown', handleCanvasInput);
+canvas.addEventListener('touchstart', handleCanvasInput, { passive: false });
+
+// 键盘事件
+window.addEventListener('keydown', e => { 
+    if (e.code === 'Space') handleCanvasInput(e); 
+});
+
+// 按钮事件 — 独立处理，不与 canvas 冲突
+startBtn.addEventListener('click', e => { 
+    e.stopPropagation(); 
+    e.preventDefault();
+    startGame(); 
+});
+
+restartBtn.addEventListener('click', e => { 
+    e.stopPropagation(); 
+    e.preventDefault();
+    resetGame(); 
+    startGame(); 
+});
+
+// 设置面板
+settingsBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    settingsPanel.classList.toggle('show');
+});
+
+closeSettings.addEventListener('click', e => {
+    e.stopPropagation();
+    settingsPanel.classList.remove('show');
+});
+
+document.getElementById('egg-close')?.addEventListener('click', e => {
+    e.stopPropagation();
+    try {
+        parent.postMessage({ type: 'newsnook-easter-egg-close' }, '*');
+    } catch (_) {}
+});
+
+toggleAudio.addEventListener('change', e => {
+    config.audioEnabled = e.target.checked;
+    if (config.audioEnabled) audioSys.init();
+});
+
+toggleZen.addEventListener('change', e => {
+    config.zenMode = e.target.checked;
+    resetGame();
+    if (config.zenMode) {
+        gameState = 'START';
+        uiStart.classList.remove('hidden');
+    }
+});
+
+toggleTrail.addEventListener('change', e => {
+    config.trailEnabled = e.target.checked;
+    if (!config.trailEnabled) crane.trail = [];
+});
+
+// ============================================
+// 游戏流程
+// ============================================
+function startGame() {
+    audioSys.init();
+    gameState = 'PLAYING';
+    uiStart.classList.add('hidden');
+    uiGameOver.classList.add('hidden');
+    settingsBtn.classList.add('hidden');
+    if (!config.zenMode) scoreDisplay.classList.remove('hidden');
+    const s = seasons[weatherSys.currentSeason];
+    seasonIndicator.innerText = s.name + '\n' + s.poem;
+    seasonIndicator.classList.add('show');
+    setTimeout(() => seasonIndicator.classList.remove('show'), 3500);
+    crane.flap();
+}
+
+function gameOver() {
+    gameState = 'GAMEOVER';
+    frames = 0;
+    scoreDisplay.classList.add('hidden');
+    uiGameOver.classList.remove('hidden');
+    settingsBtn.classList.remove('hidden');
+
+    if (!config.zenMode && score > highScore) {
+        highScore = score;
+        localStorage.setItem('zhihexing_highscore_v2', highScore);
+        highScoreText.innerText = `— 历史至高 · ${highScore} 节 —`;
+    }
+
+    document.getElementById('final-score-text').innerText =
+        config.zenMode ? '— 一 期 一 会 —' : `— 越过 ${score} 节竹 —`;
+
+    const deathText = deathHaikus[Math.floor(Math.random() * deathHaikus.length)];
+    document.getElementById('final-haiku').innerText = deathText;
+}
+
+function resetGame() {
+    score = 0;
+    scoreDisplay.innerText = score;
+    frames = 0;
+    shownHaikus.clear();
+    haikuDisplay.classList.remove('show');
+    crane.reset();
+    bamboos.reset();
+    inkParticles = [];
+    weatherSys.currentSeason = 0;
+    weatherSys.curBg = [...seasons[0].bg];
+    weatherSys.curBgEnd = [...seasons[0].bgEnd];
+    parallax.init();
+}
+
+// ============================================
+// 主循环
+// ============================================
+function loop(ts) {
+    if (!lastTs) lastTs = ts || performance.now();
+    const now = ts || performance.now();
+    // 钳制 dt，避免切后台回来猛冲一帧
+    const rawDt = Math.min(48, Math.max(8, now - lastTs));
+    lastTs = now;
+    frameDt = rawDt / (1000 / 60);
+
+    weatherSys.update();
+    weatherSys.drawSky();
+    parallax.draw();
+    particles.updateAndDraw();
+
+    if (gameState === 'START') {
+        crane.x = width * 0.3;
+        crane.y = height / 2 + Math.sin(now / 500) * 12;
+        crane.draw();
+    } else if (gameState === 'PLAYING') {
+        bamboos.update();
+        bamboos.draw();
+        crane.update();
+        crane.draw();
+        drawInkExplosion();
+        frames++;
+    } else if (gameState === 'GAMEOVER') {
+        bamboos.draw();
+        drawInkExplosion();
+        frames++;
+    }
+
+    reqAnimFrame = requestAnimationFrame(loop);
+}
+
+// 初始化（resize 依赖 parallax，须放在其后）
+resize();
+particles.init();
+resetGame();
+reqAnimFrame = requestAnimationFrame(loop);
+</script>
+</body>
+</html>
