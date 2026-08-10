@@ -137,7 +137,7 @@ export function MeScreen({
           <SettingsRow
             icon={Bookmark}
             title="稍后读"
-            caption={later.length ? `${later.length} 篇待读` : '列表右滑可加入'}
+            caption={later.length ? `${later.length} 篇待读` : '阅读器顶栏可收藏'}
             badge={later.length > 0 ? later.length : null}
             onClick={onOpenLater}
           />
