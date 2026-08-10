@@ -677,6 +677,231 @@ const parallax = {
 // ============================================
 // 纸鹤
 // ============================================
+// AUTO_PILOT_START
+const autoPilot = {
+    cooldown: 0,
+    minFlapInterval: 6,
+    beamWidth: 72,
+    queuedMask: 0,
+    queuedSteps: 0,
+    plannedDt: 1,
+    plannedGravity: 0,
+    plannedScore: -1,
+    plannedObstacles: [],
+    skipQueueClearOnce: false,
+
+    reset() {
+        this.cooldown = 0;
+        this.skipQueueClearOnce = false;
+        this.clearPlan();
+    },
+
+    clearPlan() {
+        this.queuedMask = 0;
+        this.queuedSteps = 0;
+        this.plannedObstacles = [];
+    },
+
+    tick(dt) {
+        this.cooldown = Math.max(0, this.cooldown - dt);
+    },
+
+    onFlap() {
+        this.cooldown = this.minFlapInterval;
+        if (this.skipQueueClearOnce) {
+            this.skipQueueClearOnce = false;
+        } else {
+            // 玩家在禅模式中也可拍翅；外部输入后必须基于新速度重新规划。
+            this.clearPlan();
+        }
+    },
+
+    /**
+     * 用和游戏完全相同的重力、拍翅速度及竹子横移速度滚动预测。
+     * 搜索器只能选择“拍/不拍”，不会改坐标、速度、碰撞区或竹子。
+     */
+    shouldFlap(bird, gravity) {
+        const dt = Math.max(0.5, Math.min(2.88, frameDt));
+        const speed = bamboos.dx + score * 0.015;
+        const radius = 17; // 比真实碰撞区多 6px，吸收正常帧间波动
+        const wallMargin = bird.height + 3;
+        const minY = wallMargin;
+        const maxY = height - wallMargin;
+
+        const obstacles = bamboos.items
+            .filter(b => b.x + b.w >= bird.x - radius)
+            .slice()
+            .sort((a, b) => a.x - b.x);
+
+        const worldUnchanged = this.queuedSteps > 0
+            && Math.abs(dt - this.plannedDt) <= 0.4
+            && gravity === this.plannedGravity
+            && score === this.plannedScore
+            && obstacles.length === this.plannedObstacles.length
+            && obstacles.every((b, i) => b === this.plannedObstacles[i]);
+        if (worldUnchanged) {
+            const flap = (this.queuedMask & 1) === 1;
+            this.queuedMask >>>= 1;
+            this.queuedSteps--;
+            if (!flap || this.cooldown <= 0) {
+                if (flap) this.skipQueueClearOnce = true;
+                return flap;
+            }
+            this.clearPlan();
+        }
+
+        const furthest = obstacles.length
+            ? obstacles[obstacles.length - 1].x + obstacles[obstacles.length - 1].w
+            : bird.x + speed * 45;
+        const visibleTravel = Math.max(0, (furthest - (bird.x - radius)) / speed);
+        const horizonFrames = Math.max(64, Math.min(160, visibleTravel + 34));
+        const steps = Math.max(28, Math.ceil(horizonFrames / dt));
+
+        // 竹子的运动与鹤的选择无关，先把每个未来时刻的安全走廊算好。
+        const timeline = [];
+        for (let step = 1; step <= steps; step++) {
+            const elapsed = step * dt;
+            let corridorTop = minY;
+            let corridorBottom = maxY;
+            let targetY = height * 0.5;
+            let targetDistance = Infinity;
+
+            for (let i = 0; i < obstacles.length; i++) {
+                const b = obstacles[i];
+                const bx = b.x - speed * elapsed;
+                const right = bx + b.w;
+
+                if (right >= bird.x - radius && bx <= bird.x + radius) {
+                    corridorTop = Math.max(corridorTop, b.topHeight + radius);
+                    corridorBottom = Math.min(corridorBottom, b.bottomY - radius);
+                }
+
+                if (right >= bird.x - radius) {
+                    const distance = Math.max(0, bx - bird.x);
+                    if (distance < targetDistance) {
+                        targetDistance = distance;
+                        targetY = (b.topHeight + b.bottomY) * 0.5;
+                    }
+                }
+            }
+
+            const urgency = Number.isFinite(targetDistance)
+                ? Math.max(0, Math.min(1, 1 - targetDistance / Math.max(1, speed * 75)))
+                : 0;
+            timeline.push({ corridorTop, corridorBottom, targetY, urgency });
+        }
+
+        const makeSeed = (flap) => ({
+            y: bird.y,
+            vy: flap ? bird.jump : bird.vy,
+            cooldown: flap ? this.minFlapInterval : this.cooldown,
+            cost: flap ? 2.6 + Math.max(0, -bird.vy) * 0.35 : 0,
+            firstFlap: flap,
+            actionMask: flap ? 1 : 0,
+        });
+
+        let beam = [makeSeed(false)];
+        if (this.cooldown <= 0) beam.push(makeSeed(true));
+
+        for (let step = 0; step < timeline.length && beam.length; step++) {
+            const guide = timeline[step];
+            const next = [];
+
+            for (let i = 0; i < beam.length; i++) {
+                const state = beam[i];
+
+                // 下一帧先移动竹子并判定鹤当前的位置，顺序与主循环一致。
+                if (state.y < guide.corridorTop || state.y > guide.corridorBottom) continue;
+
+                const vy = state.vy + gravity * dt;
+                const y = state.y + vy * dt;
+                if (y < minY || y > maxY) continue;
+
+                const cooldown = Math.max(0, state.cooldown - dt);
+                const error = y - guide.targetY;
+                const trackingWeight = 0.00045 + guide.urgency * 0.0028;
+                const baseCost = state.cost
+                    + error * error * trackingWeight * dt
+                    + vy * vy * 0.006 * dt;
+
+                next.push({
+                    y,
+                    vy,
+                    cooldown,
+                    cost: baseCost,
+                    firstFlap: state.firstFlap,
+                    actionMask: state.actionMask,
+                });
+
+                if (cooldown <= 0) {
+                    next.push({
+                        y,
+                        vy: bird.jump,
+                        cooldown: this.minFlapInterval,
+                        cost: baseCost + 2.6 + Math.max(0, -vy) * 0.35,
+                        firstFlap: state.firstFlap,
+                        actionMask: step < 11
+                            ? state.actionMask | (1 << (step + 1))
+                            : state.actionMask,
+                    });
+                }
+            }
+
+            // 按位置、速度和冷却时间合并近似轨迹；保留首拍动作，避免搜索偏向一侧。
+            const cells = new Map();
+            for (let i = 0; i < next.length; i++) {
+                const state = next[i];
+                const key = `${state.firstFlap ? 1 : 0}|${Math.round(state.y / 8)}|${Math.round(state.vy)}|${Math.ceil(state.cooldown / 3)}`;
+                const previous = cells.get(key);
+                if (!previous || state.cost < previous.cost) cells.set(key, state);
+            }
+            const ranked = Array.from(cells.values()).sort((a, b) => a.cost - b.cost);
+            const diverse = new Map();
+            for (let i = 0; i < ranked.length; i++) {
+                const state = ranked[i];
+                const key = `${state.firstFlap ? 1 : 0}|${Math.round(state.y / 14)}|${Math.round(state.vy / 2.5)}`;
+                if (!diverse.has(key)) diverse.set(key, state);
+            }
+            const selected = Array.from(diverse.values()).slice(0, this.beamWidth);
+            if (selected.length < this.beamWidth) {
+                const selectedSet = new Set(selected);
+                for (let i = 0; i < ranked.length && selected.length < this.beamWidth; i++) {
+                    if (!selectedSet.has(ranked[i])) selected.push(ranked[i]);
+                }
+            }
+            beam = selected;
+        }
+
+        if (beam.length) {
+            beam.sort((a, b) => a.cost - b.cost);
+            const best = beam[0];
+            const commitSteps = 6;
+            this.queuedMask = best.actionMask >>> 1;
+            this.queuedSteps = commitSteps - 1;
+            this.plannedDt = dt;
+            this.plannedGravity = gravity;
+            this.plannedScore = score;
+            this.plannedObstacles = obstacles;
+            if (best.firstFlap) this.skipQueueClearOnce = true;
+            return best.firstFlap;
+        }
+
+        // 极端掉帧导致保守走廊无解时，仍只使用一次合法拍翅自救。
+        const nearest = obstacles[0];
+        const emergencyTarget = nearest
+            ? (nearest.topHeight + nearest.bottomY) * 0.5
+            : height * 0.5;
+        const liftHeight = bird.jump * bird.jump / Math.max(0.01, 2 * gravity);
+        const flapLine = Math.min(maxY - 18, emergencyTarget + liftHeight * 0.62);
+        const reachedTargetBand = bird.y >= flapLine && bird.vy > -1;
+        const wallRisk = bird.y > maxY - 30;
+        const flap = this.cooldown <= 0 && (reachedTargetBand || wallRisk);
+        if (flap) this.skipQueueClearOnce = true;
+        return flap;
+    },
+};
+// AUTO_PILOT_END
+
 const crane = {
     x: 0, y: 0, vy: 0,
     width: 32, height: 22,
@@ -695,11 +920,13 @@ const crane = {
         this.isDead = false;
         this.dissolveAlpha = 1;
         this.trail = [];
+        autoPilot.reset();
     },
 
     flap() {
         this.vy = this.jump;
         this.flapTimer = 18;
+        autoPilot.onFlap();
         audioSys.playFlap();
     },
 
@@ -712,6 +939,7 @@ const crane = {
         this.y += this.vy * frameDt;
         this.rotation = Math.max(-Math.PI / 5, Math.min(Math.PI / 4, this.vy * 0.1));
         if (this.flapTimer > 0) this.flapTimer--;
+        autoPilot.tick(frameDt);
 
         if (config.trailEnabled && frames % 2 === 0) {
             this.trail.push({
@@ -736,57 +964,8 @@ const crane = {
         this.trail.length = write;
 
         if (config.zenMode && !this.isDead) {
-            // ===== 1. 找到前方最近的两根竹子 =====
-            let nextB = null, nextNextB = null;
-            for (let i = 0; i < bamboos.items.length; i++) {
-                const b = bamboos.items[i];
-                if (b.x + b.w > this.x) {
-                    if (!nextB) nextB = b;
-                    else if (!nextNextB) { nextNextB = b; break; }
-                }
-            }
-
-            // ===== 2. 目标 Y 和安全边界 =====
-            const MARGIN = 18;
-            let targetY = height * 0.45;
-            let safeTop = 25;
-            let safeBot = height - 25;
-
-            if (nextB) {
-                targetY = (nextB.topHeight + nextB.bottomY) / 2;
-                safeTop = nextB.topHeight + MARGIN;
-                safeBot = nextB.bottomY - MARGIN;
-
-                if (nextNextB && this.x > nextB.x + nextB.w * 0.3) {
-                    const nextCenter = (nextNextB.topHeight + nextNextB.bottomY) / 2;
-                    let p = (this.x - nextB.x) / Math.max(1, nextNextB.x - nextB.x);
-                    p = Math.max(0, Math.min(1, p));
-                    const sm = p * p * (3 - 2 * p);
-                    targetY += (nextCenter - targetY) * sm;
-                    safeTop = Math.max(safeTop, nextNextB.topHeight + MARGIN);
-                    safeBot = Math.min(safeBot, nextNextB.bottomY - MARGIN);
-                }
-            }
-
-            // ===== 3. 运动学预测（帧率无关） =====
-            const g = this.gravity * s.gravity;
-            const T = 9;
-
-            const predNoFlap = this.y + this.vy * T + 0.5 * g * T * T;
-            const predFlap   = this.y + this.jump * T + 0.5 * g * T * T;
-
-            const calcErr = (pred) => {
-                let err = Math.abs(pred - targetY);
-                if (pred < safeTop) err += (safeTop - pred) * 8;
-                if (pred > safeBot) err += (pred - safeBot) * 8;
-                if (pred < 15 || pred > height - 15) err += 50000;
-                return err;
-            };
-
-            // ===== 4. 决策 =====
-            if (calcErr(predFlap) < calcErr(predNoFlap) && this.flapTimer <= 3) {
-                this.flap();
-            }
+            const gravity = this.gravity * s.gravity;
+            if (autoPilot.shouldFlap(this, gravity)) this.flap();
         }
 
 
