@@ -1,16 +1,26 @@
-import { useEffect } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect } from 'react'
 
 import craneGameUrl from './craneGame.html?url'
+import { enterEasterEggScreenChrome, exitEasterEggScreenChrome } from './screenChrome'
 
 const CLOSE_MSG = 'newsnook-easter-egg-close'
 
 /** 本版彩蛋：纸鹤行侘寂版（换版时删除本文件与 craneGame.html） */
 export function CurrentEasterEgg({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const nativeBridge = (window as any).NewsNookNative
-    nativeBridge?.setKeepScreenOn?.(true)
-    nativeBridge?.setFullScreen?.(true)
+  const handleClose = useEffectEvent(onClose)
 
+  // 布局前进入沉浸态，避免首帧先画出系统栏再闪隐藏
+  useLayoutEffect(() => {
+    enterEasterEggScreenChrome()
+    // Pixel 等机型：首帧 insets/layout 可能把栏又显示出来，再断言一次
+    const t = window.setTimeout(() => enterEasterEggScreenChrome(), 50)
+    return () => {
+      window.clearTimeout(t)
+      exitEasterEggScreenChrome()
+    }
+  }, [])
+
+  useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const data = event.data
       if (
@@ -19,21 +29,12 @@ export function CurrentEasterEgg({ onClose }: { onClose: () => void }) {
         'type' in data &&
         (data as { type?: string }).type === CLOSE_MSG
       ) {
-        onClose()
+        handleClose()
       }
     }
     window.addEventListener('message', onMessage)
-    return () => {
-      window.removeEventListener('message', onMessage)
-      // 确保无论通过何种方式（如 Android 物理返回键/右滑返回）销毁组件时，都恢复系统行为
-      if (nativeBridge && nativeBridge.setFullScreen) {
-        nativeBridge.setFullScreen(false)
-        nativeBridge.setKeepScreenOn?.(false)
-      } else if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {})
-      }
-    }
-  }, [onClose])
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   return (
     <div className="relative -mt-[var(--sat)] -mb-[var(--sab)] flex min-h-0 flex-1 flex-col overflow-hidden">

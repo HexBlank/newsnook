@@ -2045,7 +2045,7 @@ closeSettings.addEventListener('click', e => {
 
 document.getElementById('egg-close')?.addEventListener('click', e => {
     e.stopPropagation();
-    toggleFullScreen(false);
+    // 全屏/常亮由宿主 CurrentEasterEgg 统一进出，避免 iframe 晚到的 true 覆盖宿主 cleanup 的 false
     if (window.parent !== window) {
         parent.postMessage({ type: 'newsnook-easter-egg-close' }, '*');
     } else {
@@ -2185,30 +2185,12 @@ function loop(ts) {
     reqAnimFrame = requestAnimationFrame(loop);
 }
 
-// 全屏控制
-function toggleFullScreen(isFullscreen) {
-    const nativeBridge = window.NewsNookNative || (window.parent && window.parent.NewsNookNative);
-    if (nativeBridge && nativeBridge.setFullScreen) {
-        nativeBridge.setFullScreen(isFullscreen);
-    } else {
-        if (isFullscreen) {
-            if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(() => {});
-            }
-        } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen().catch(() => {});
-            }
-        }
-    }
-}
-
 // 初始化（resize 依赖 parallax，须放在其后）
+// 系统全屏由宿主 React 层管理，此处不再 toggleFullScreen，防止卸载后晚到的 true 把新闻页锁在沉浸态
 resize();
 particles.init();
 ambient.init();
 resetGame();
-toggleFullScreen(true);
 reqAnimFrame = requestAnimationFrame(loop);
 </script>
 </body>

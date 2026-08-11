@@ -78,15 +78,27 @@ public class MainActivity extends BridgeActivity {
     private void applyFullScreen(boolean fullScreen) {
         Window window = getWindow();
         if (window == null) return;
-        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
-        if (controller != null) {
-            if (fullScreen) {
+        View decorView = window.getDecorView();
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decorView);
+        if (controller == null) return;
+
+        if (fullScreen) {
+            controller.hide(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            // 勿在 enter 时 requestApplyInsets：Pixel 等机会在 insets 回传后把系统栏又显示出来
+            decorView.post(() -> {
                 controller.hide(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
-                controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            } else {
-                controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
-            }
+                controller.setSystemBarsBehavior(
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                );
+            });
+            return;
         }
+
+        // 退出沉浸态时复位 behavior，避免部分机型 show() 后仍被 transient 策略吃掉
+        controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
+        controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+        ViewCompat.requestApplyInsets(decorView);
     }
 
     private void applyKeepScreenOn(boolean keepScreenOn) {

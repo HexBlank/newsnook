@@ -32,6 +32,7 @@
         <item name="windowSplashScreenIconBackgroundColor">#0E0F12</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_transparent</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <!-- 与边到边一致：透明栏，开屏底色由 windowSplashScreenBackground 透出 -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>

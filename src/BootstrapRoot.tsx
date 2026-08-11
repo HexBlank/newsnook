@@ -37,18 +37,20 @@ function prepareApp(): Promise<void> {
   return bootstrapPromise
 }
 
-/** index.html 里的深色壳只防 WebView 首帧露白，画面仍由 React StartupSplash 绘制 */
-function clearBootSplash(): void {
+/** 摘掉 HTML 深色壳；保留 data-boot=splash，直到 React 启动页交还后再改系统栏颜色 */
+function clearBootSplashShell(): void {
   document.getElementById('boot-splash')?.remove()
-  delete document.documentElement.dataset.boot
   delete document.documentElement.dataset.bootSplash
+}
 
-  const theme = document.documentElement.dataset.theme
-  if (theme === 'light' || theme === 'dark') {
-    document
-      .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-      ?.setAttribute('content', THEME_SURFACE[theme])
-  }
+/** 启动页结束：允许按真实主题着色状态栏 / theme-color */
+async function endSplashBoot(): Promise<void> {
+  delete document.documentElement.dataset.boot
+  const theme = applyTheme(normalizePreferences(loadPreferences()).theme)
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute('content', THEME_SURFACE[theme])
+  await applyNativeChrome(theme)
 }
 
 export function BootstrapRoot() {
@@ -62,16 +64,17 @@ export function BootstrapRoot() {
   const splashLeaving = splashComplete && appReady
   const showSplash = SPLASH_ENABLED && !splashDetached
 
-  // React 启动页（含静态竖排）一旦进入 DOM，立刻摘掉 HTML 深色壳
+  // React 启动页（含静态竖排）一旦进入 DOM，立刻摘掉 HTML 深色壳（仍保留 data-boot）
   useLayoutEffect(() => {
     bootMark('react-splash')
     if (!SPLASH_ENABLED) {
-      clearBootSplash()
+      clearBootSplashShell()
+      void endSplashBoot()
       setSplashComplete(true)
       setSplashDetached(true)
       return
     }
-    clearBootSplash()
+    clearBootSplashShell()
   }, [])
 
   useEffect(() => {
@@ -81,6 +84,7 @@ export function BootstrapRoot() {
     const timer = window.setTimeout(() => {
       setSplashDetached(true)
       bootMark('splash-detached')
+      void endSplashBoot()
     }, SPLASH_EXIT_MS)
     return () => window.clearTimeout(timer)
   }, [splashLeaving])
