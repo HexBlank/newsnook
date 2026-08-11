@@ -44,6 +44,7 @@ export interface PagedReaderApi {
   pageHeight: number
   goPrev: () => void
   goNext: () => void
+  setPageIndex: (index: number) => void
   handleTap: (clientX: number, width: number) => 'prev' | 'next' | 'toggleChrome'
   pageOffset: number
   pageSliceHeight: number
@@ -162,6 +163,17 @@ export function usePagedReader({
     })
   }, [articleId, pages.length])
 
+  const setPageIndex = useCallback(
+    (index: number) => {
+      setPageIndexState(() => {
+        const next = clampPageIndex(index, pages.length)
+        writeStoredPage(articleId, next)
+        return next
+      })
+    },
+    [articleId, pages.length],
+  )
+
   const handleTap = useCallback((clientX: number, width: number) => {
     return resolvePageTapZone(clientX, width)
   }, [])
@@ -188,6 +200,7 @@ export function usePagedReader({
     pageHeight,
     goPrev,
     goNext,
+    setPageIndex,
     handleTap,
     pageOffset,
     pageSliceHeight,

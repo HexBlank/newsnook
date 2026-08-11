@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Browser } from '@capacitor/browser'
 import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, MessageSquare, RefreshCw, X } from 'lucide-react'
 
 import { ImageLightbox } from '../components/ImageLightbox'
+import { EinkReaderMenu } from '../components/EinkReaderMenu'
 import { InkImage } from '../components/InkImage'
 import { InkVideoPlayer } from '../components/InkVideoPlayer'
 import { InlineArticleVideos } from '../components/InlineArticleVideos'
 import { loadCachedBody, saveCachedBody } from '../lib/bodyCache'
+import { addVolumePageTurnListener, setVolumePageTurnEnabled } from '../lib/volumePageTurn'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { usePagedReader } from '../hooks/usePagedReader'
 import { useProgressiveImages } from '../hooks/useProgressiveImages'
@@ -15,6 +17,7 @@ import { revealReader } from '../lib/motion'
 import { resolveArticleBody, type BodySource } from '../lib/resolveBody'
 import { articleRelativeTime } from '../lib/time'
 import type { Article } from '../lib/types'
+import type { TypographyPrefs } from '../sources/preferences'
 import { createTranslationService } from '../features/translation/service'
 import {
   translationDisplayModeLabel,
@@ -38,6 +41,11 @@ interface Props {
   customSources?: NewsSource[]
   /** 墨水屏模式：分页阅读；false/缺省时保持滚动阅读 */
   einkMode?: boolean
+  /** 当前正文字号倍率（墨水屏菜单调节） */
+  fontScale?: number
+  onTypographyChange?: (patch: Partial<TypographyPrefs>) => void
+  /** 墨水屏菜单「设置」：打开应用设置并保留返回阅读 */
+  onOpenSettings?: () => void
 }
 
 type LoadState = 'loading' | 'ready' | 'error'
@@ -53,6 +61,9 @@ export function ReaderScreen({
   translationPrefs,
   customSources,
   einkMode = false,
+  fontScale = 1,
+  onTypographyChange,
+  onOpenSettings,
 }: Props) {
   const reduced = useReducedMotion()
   const shellRef = useRef<HTMLDivElement>(null)
@@ -97,8 +108,25 @@ export function ReaderScreen({
     return () => controller.abort()
   }, [article, resolvedOriginUrl, canComment])
 
+  const [pillVisible, setPillVisible] = useState(true)
+  const [chromeVisible, setChromeVisible] = useState(true)
+  const [einkMenuOpen, setEinkMenuOpen] = useState(false)
+  const lastScrollTopRef = useRef(0)
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollRafRef = useRef(0)
+
   useEffect(() => {
     if (!overlayCloserRef) return
+    if (einkMenuOpen) {
+      const prev = overlayCloserRef.current
+      overlayCloserRef.current = () => {
+        setEinkMenuOpen(false)
+        return true
+      }
+      return () => {
+        overlayCloserRef.current = prev
+      }
+    }
     if (commentsOpen) {
       const prev = overlayCloserRef.current
       overlayCloserRef.current = () => {
@@ -109,13 +137,7 @@ export function ReaderScreen({
         overlayCloserRef.current = prev
       }
     }
-  }, [commentsOpen, overlayCloserRef])
-
-  const [pillVisible, setPillVisible] = useState(true)
-  const [chromeVisible, setChromeVisible] = useState(true)
-  const lastScrollTopRef = useRef(0)
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const scrollRafRef = useRef(0)
+  }, [commentsOpen, einkMenuOpen, overlayCloserRef])
 
   const handleScroll = useCallback(() => {
     if (einkMode) return
@@ -208,7 +230,7 @@ export function ReaderScreen({
   useEdgeSwipeBack({
     containerRef: shellRef,
     onBack: onClose,
-    disabled: Boolean(lightbox || commentsOpen),
+    disabled: Boolean(lightbox || commentsOpen || einkMenuOpen),
     reduced,
   })
 
@@ -217,6 +239,7 @@ export function ReaderScreen({
     if (!root || loadState !== 'ready') return
 
     const onClick = (event: MouseEvent) => {
+      if (einkMode) return
       const target = event.target
       if (!(target instanceof HTMLImageElement)) return
       if (target.classList.contains('async-img-failed')) return
@@ -234,7 +257,7 @@ export function ReaderScreen({
 
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
-  }, [html, loadState, showTranslation, translated])
+  }, [einkMode, html, loadState, showTranslation, translated])
 
   useEffect(() => {
     translationAbortRef.current?.abort()
@@ -362,22 +385,75 @@ export function ReaderScreen({
     if (el) el.scrollTop = 0
   }, [einkMode, paged.pageIndex])
 
-  const onEinkPageTap = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (!einkMode) return
+  // 墨水屏：捕获阶段处理分区，避免图片/InkImage 先打开大图
+  useEffect(() => {
+    if (!einkMode) return
+    const el = rootRef.current
+    if (!el) return
+
+    const onCaptureClick = (event: MouseEvent) => {
       if (lightbox || commentsOpen) return
+      if (einkMenuOpen) return
       const target = event.target
       if (!(target instanceof Element)) return
-      if (target.closest('a, button, [role="button"], input, video, [data-no-page-tap]')) return
 
-      const rect = event.currentTarget.getBoundingClientRect()
+      const interactive = target.closest(
+        'a[href], button, input, textarea, select, video, [data-no-page-tap]',
+      )
+      const isZoomImage = Boolean(target.closest('[aria-label="查看大图"]'))
+      if (interactive && !isZoomImage) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const rect = el.getBoundingClientRect()
       const zone = paged.handleTap(event.clientX - rect.left, rect.width)
       if (zone === 'prev') paged.goPrev()
       else if (zone === 'next') paged.goNext()
-      else setChromeVisible((v) => !v)
-    },
-    [commentsOpen, einkMode, lightbox, paged],
-  )
+      else setEinkMenuOpen(true)
+    }
+
+    el.addEventListener('click', onCaptureClick, true)
+    return () => el.removeEventListener('click', onCaptureClick, true)
+  }, [commentsOpen, einkMenuOpen, einkMode, lightbox, paged])
+
+  // 墨水屏：音量键翻页（原生）+ 方向方向键（Web/桌面）
+  useEffect(() => {
+    if (!einkMode) {
+      void setVolumePageTurnEnabled(false)
+      return
+    }
+
+    const canTurn = () => !lightbox && !commentsOpen && !einkMenuOpen
+
+    void setVolumePageTurnEnabled(true)
+    let removeNative: (() => void) | undefined
+    void addVolumePageTurnListener((direction) => {
+      if (!canTurn()) return
+      if (direction === 'prev') paged.goPrev()
+      else paged.goNext()
+    }).then((dispose) => {
+      removeNative = dispose
+    })
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!canTurn()) return
+      if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+        event.preventDefault()
+        paged.goPrev()
+      } else if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+        event.preventDefault()
+        paged.goNext()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      removeNative?.()
+      void setVolumePageTurnEnabled(false)
+    }
+  }, [commentsOpen, einkMenuOpen, einkMode, lightbox, paged])
 
   const commentsArticle = useMemo(
     () => ({
@@ -581,9 +657,7 @@ export function ReaderScreen({
               <ArrowLeft size={18} strokeWidth={1.6} className="text-paper" />
             </button>
             <span className="min-w-0 flex-1 truncate text-center font-mono text-[10px] lg:text-[11px] tracking-[0.18em] text-paper-faint">
-              {einkMode && paged.pages.length > 0
-                ? `${paged.pageIndex + 1} / ${paged.pages.length}`
-                : article.sourceName}
+              {article.sourceName}
             </span>
             <div className="flex shrink-0 items-center gap-1">
               <button
@@ -654,7 +728,6 @@ export function ReaderScreen({
         <div
           ref={rootRef}
           onScroll={einkMode ? undefined : handleScroll}
-          onClick={einkMode ? onEinkPageTap : undefined}
           className={`scroll-hidden min-h-0 flex-1 overflow-x-hidden ${
             einkMode
               ? paged.pageSliceHeight > paged.pageHeight
@@ -784,7 +857,9 @@ export function ReaderScreen({
                   eager
                   collapseOnError
                   className="h-[220px] w-full sm:h-[300px] md:h-[380px] lg:h-[420px] rounded-xl overflow-hidden"
-                  onOpen={(src) => setLightbox({ src, alt: article.title })}
+                  onOpen={
+                    einkMode ? undefined : (src) => setLightbox({ src, alt: article.title })
+                  }
                 />
               </div>
             )}
@@ -902,10 +977,43 @@ export function ReaderScreen({
             </div>
           </div>
         </div>
+
+      {einkMode && loadState === 'ready' && !einkMenuOpen && (
+        <div
+          data-surface="reader-chrome"
+          className="shrink-0 border-t border-haze/40 bg-ink pb-[max(var(--sab),8px)] pt-1.5"
+        >
+          <p className="text-center font-mono text-[11px] tracking-[0.12em] text-paper-faint">
+            {paged.pageIndex + 1} / {Math.max(paged.pages.length, 1)}
+          </p>
+        </div>
+      )}
       </div>
 
+      {einkMode && (
+        <EinkReaderMenu
+          open={einkMenuOpen}
+          pageIndex={paged.pageIndex}
+          pageCount={paged.pages.length}
+          fontScale={fontScale}
+          saved={saved}
+          translating={translationState === 'loading'}
+          showTranslation={showTranslation}
+          onClose={() => setEinkMenuOpen(false)}
+          onFontScale={(next) => onTypographyChange?.({ fontScale: next })}
+          onJumpPage={(index) => paged.setPageIndex(index)}
+          onToggleTranslation={() => void toggleTranslation()}
+          onToggleLater={() => onToggleLater(article)}
+          onBackToList={onClose}
+          onOpenSettings={() => {
+            setEinkMenuOpen(false)
+            onOpenSettings?.()
+          }}
+        />
+      )}
+
       {/* 底部右下角悬浮跟贴胶囊（随时一触即达） */}
-      {canComment && !commentsOpen && (
+      {canComment && !commentsOpen && !einkMode && (
         <div
           className={`fixed bottom-[max(var(--sab),20px)] right-4 z-40 transition-all duration-300 pointer-events-auto ${
             (einkMode ? chromeVisible : pillVisible)

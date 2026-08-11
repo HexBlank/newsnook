@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewParent;
@@ -19,6 +20,8 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginHandle;
 import com.getcapacitor.WebViewListener;
 import java.util.Locale;
 
@@ -97,6 +100,7 @@ public class MainActivity extends BridgeActivity {
 
         TranslationPluginRegistrar.register(this);
         registerPlugin(DeviceMediaControlsPlugin.class);
+        registerPlugin(VolumePageTurnPlugin.class);
         registerPlugin(ProxiedHttpPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
         bridgeBuilder.addWebViewListener(
@@ -143,6 +147,22 @@ public class MainActivity extends BridgeActivity {
 
         // 极端情况下 commit 回调没来：超时也撤系统开屏，避免卡死
         getWindow().getDecorView().postDelayed(() -> webContentReady = true, 2500L);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (bridge != null) {
+            PluginHandle handle = bridge.getPlugin("VolumePageTurn");
+            if (handle != null) {
+                Plugin plugin = handle.getInstance();
+                if (plugin instanceof VolumePageTurnPlugin) {
+                    if (((VolumePageTurnPlugin) plugin).handleKeyEvent(event)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override

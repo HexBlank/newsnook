@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import {
+  ArrowLeft,
   Bookmark,
   ChevronRight,
   Contrast,
@@ -43,6 +44,8 @@ interface Props {
   onOpenProxySettings: () => void
   onOpenStorageSettings: () => void
   onOpenAbout: () => void
+  /** 从阅读中区进入时：显示返回并回到原文 */
+  onBackToReading?: () => void
 }
 
 interface SettingsRowProps {
@@ -106,6 +109,7 @@ export function MeScreen({
   onOpenProxySettings,
   onOpenStorageSettings,
   onOpenAbout,
+  onBackToReading,
 }: Props) {
   const reduced = useReducedMotion()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -118,10 +122,26 @@ export function MeScreen({
     <section className="flex min-h-0 flex-1 flex-col">
       <header className="shrink-0 pt-2 pb-3">
         <div className="page-x lg:px-8 max-w-4xl mx-auto w-full">
-          <h1 className="font-display text-[26px] leading-none text-paper md:text-[30px]">我的</h1>
-          <p className="mt-1.5 font-mono text-[10px] tracking-[0.16em] text-paper-faint">
-            稍后读 {later.length} · 已读 {readCount}
-          </p>
+          <div className="flex items-start gap-2">
+            {onBackToReading && (
+              <button
+                type="button"
+                onClick={onBackToReading}
+                aria-label="返回阅读"
+                className="-ml-1.5 shrink-0 p-1.5 hover:text-paper"
+              >
+                <ArrowLeft size={19} strokeWidth={1.6} className="text-paper" />
+              </button>
+            )}
+            <div className="min-w-0 flex-1">
+              <h1 className="font-display text-[26px] leading-none text-paper md:text-[30px]">我的</h1>
+              <p className="mt-1.5 font-mono text-[10px] tracking-[0.16em] text-paper-faint">
+                {onBackToReading
+                  ? '返回可继续阅读 · 稍后读 ' + later.length + ' · 已读 ' + readCount
+                  : `稍后读 ${later.length} · 已读 ${readCount}`}
+              </p>
+            </div>
+          </div>
           <div className="mt-3 h-px w-full bg-haze" />
         </div>
       </header>

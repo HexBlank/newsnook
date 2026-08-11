@@ -116,7 +116,7 @@ export function AppearanceScreen({
             <div className="min-w-0 flex-1">
               <span className="font-display text-[15px] font-medium text-paper">墨水屏模式</span>
               <p className="mt-1 text-[12px] leading-relaxed text-paper-muted">
-                关闭动画与装饰效果，文章改为左右点击翻页。颜色仍跟随上方主题。关闭后恢复原有阅读与动效。
+                关闭动画与装饰效果；文章左右点击翻页，中间打开阅读菜单；音量键亦可翻页。颜色仍跟随上方主题。
               </p>
             </div>
             <ToggleSwitch

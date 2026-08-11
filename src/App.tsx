@@ -208,6 +208,8 @@ export default function App() {
     setEnabledIds,
   })
   const [reading, setReading] = useState<Article | null>(null)
+  /** 墨水屏中区进设置时暂存文章，从「我的」返回时恢复阅读 */
+  const [readerReturnArticle, setReaderReturnArticle] = useState<Article | null>(null)
   const readerOverlayCloserRef = useRef<(() => boolean) | null>(null)
   const [eggOpen, setEggOpen] = useState(false)
   const openEgg = useCallback(() => setEggOpen(true), [])
@@ -308,6 +310,13 @@ export default function App() {
     }
   }, [focusReturnRoute])
 
+  const restoreReaderFromSettings = useCallback(() => {
+    if (!readerReturnArticle) return
+    setSettingsRoute(null)
+    setReading(readerReturnArticle)
+    setReaderReturnArticle(null)
+  }, [readerReturnArticle])
+
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
 
@@ -346,6 +355,10 @@ export default function App() {
         setSettingsRoute(null)
         return
       }
+      if (readerReturnArticle) {
+        restoreReaderFromSettings()
+        return
+      }
       if (focusSourceId) {
         closeSourceFeed()
         return
@@ -367,7 +380,7 @@ export default function App() {
       disposed = true
       if (removeListener) void removeListener()
     }
-  }, [closeSourceFeed, eggOpen, focusSourceId, reading, settingsRoute, tab])
+  }, [closeSourceFeed, eggOpen, focusSourceId, readerReturnArticle, reading, restoreReaderFromSettings, settingsRoute, tab])
 
   const {
     articles: fetchedArticles,
@@ -452,6 +465,7 @@ export default function App() {
   }, [later, notifyCacheChange, prefs.customSources])
 
   const openArticle = useCallback((article: Article) => {
+    setReaderReturnArticle(null)
     setReading(article)
     setReadIds((prev) => new Set(prev).add(article.id))
   }, [])
@@ -866,6 +880,7 @@ export default function App() {
           storageSummary={storageSummary}
           hasUpdate={appUpdate.hasUpdate}
           availableVersion={appUpdate.availableVersion}
+          onBackToReading={readerReturnArticle ? restoreReaderFromSettings : undefined}
           onOpenLater={() => setSettingsRoute({ name: 'later' })}
           onOpenHistory={() => setSettingsRoute({ name: 'history' })}
           onOpenCustomSources={() => setSettingsRoute({ name: 'custom-sources' })}
@@ -980,6 +995,7 @@ export default function App() {
               onChange={(key) => {
                 setFocusSourceId(null)
                 setFocusReturnRoute(null)
+                if (key !== 'me') setReaderReturnArticle(null)
                 setTab(key)
               }}
             />
@@ -1013,6 +1029,14 @@ export default function App() {
             translationPrefs={prefs.translation}
             customSources={prefs.customSources}
             einkMode={Boolean(prefs.einkMode)}
+            fontScale={prefs.typography.fontScale}
+            onTypographyChange={(patch) => update((prev) => updateTypography(prev, patch))}
+            onOpenSettings={() => {
+              setReaderReturnArticle(reading)
+              setReading(null)
+              setSettingsRoute(null)
+              setTab('me')
+            }}
           />
         </Suspense>
       )}
