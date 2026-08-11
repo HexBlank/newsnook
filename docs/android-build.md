@@ -107,8 +107,8 @@ npm run assets
 ```
 
 只更新 Android 各密度的 `splash.png`（含 night），**不会**改动 Adaptive Icon。
-源图优先 `assets/splash.png` / `assets/splash-dark.png`；没有则用 `assets/logo.svg` 合成。
-启动图标请改 `newsnook_adaptive_icon/` 后复制进 `android/.../res`，旧版 PNG 用 `node scripts/generate-legacy-launcher-icons.mjs`。
+源图优先 `assets/splash.png` / `assets/splash-dark.png`；没有则用 `public/logo-light.svg` 合成。
+启动图标维护于 `android/app/src/main/res/`（Adaptive Icon 层 + `values/colors.xml`），可编辑 SVG 源在 `assets/android-icon/`；旧版 PNG 用 `node scripts/generate-legacy-launcher-icons.mjs` 重生成。
 
 ## 开发和调试
 

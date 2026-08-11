@@ -13,6 +13,7 @@ import sharp from 'sharp'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(__dirname, '..')
 const assetsDir = join(projectRoot, 'assets')
+const publicDir = join(projectRoot, 'public')
 const resRoot = join(projectRoot, 'android', 'app', 'src', 'main', 'res')
 
 const LOGO_SCALE = 0.2
@@ -50,11 +51,21 @@ const SPLASH_TARGETS = [
 ]
 
 const ICON_MARKERS = [
-  'drawable/ic_launcher_background.xml',
-  'drawable/ic_launcher_foreground.xml',
-  'drawable/ic_launcher_monochrome.xml',
+  'values/colors.xml',
   'mipmap-anydpi-v26/ic_launcher.xml',
   'mipmap-anydpi-v26/ic_launcher_round.xml',
+  'mipmap-anydpi-v33/ic_launcher.xml',
+  'mipmap-anydpi-v33/ic_launcher_round.xml',
+  'drawable-mdpi/ic_launcher_foreground.png',
+  'drawable-mdpi/ic_launcher_monochrome.png',
+  'drawable-hdpi/ic_launcher_foreground.png',
+  'drawable-hdpi/ic_launcher_monochrome.png',
+  'drawable-xhdpi/ic_launcher_foreground.png',
+  'drawable-xhdpi/ic_launcher_monochrome.png',
+  'drawable-xxhdpi/ic_launcher_foreground.png',
+  'drawable-xxhdpi/ic_launcher_monochrome.png',
+  'drawable-xxxhdpi/ic_launcher_foreground.png',
+  'drawable-xxxhdpi/ic_launcher_monochrome.png',
 ]
 
 function die(message) {
@@ -62,12 +73,14 @@ function die(message) {
   process.exit(1)
 }
 
-function findSource(basenames) {
+function findSource(basenames, dirs = [assetsDir]) {
   const extensions = ['.png', '.webp', '.jpg', '.jpeg', '.svg']
-  for (const base of basenames) {
-    for (const ext of extensions) {
-      const path = join(assetsDir, `${base}${ext}`)
-      if (existsSync(path)) return path
+  for (const dir of dirs) {
+    for (const base of basenames) {
+      for (const ext of extensions) {
+        const path = join(dir, `${base}${ext}`)
+        if (existsSync(path)) return path
+      }
     }
   }
   return null
@@ -134,12 +147,16 @@ async function main() {
 
   const splashSource = findSource(['splash', 'android/splash'])
   const splashDarkSource = findSource(['splash-dark', 'android/splash-dark'])
-  const logoSource = findSource(['logo'])
+  // 闪屏深色底：用浅色标（logo-light）；无则回退 logo-dark / logo
+  const logoSource =
+    findSource(['logo-light'], [publicDir]) ??
+    findSource(['logo-dark'], [publicDir]) ??
+    findSource(['logo'], [publicDir, assetsDir])
 
   const lightSource = splashSource ?? logoSource
   const darkSource = splashDarkSource ?? splashSource ?? logoSource
   if (!lightSource || !darkSource) {
-    die('缺少源图：请提供 assets/splash(.png|.svg) 或 assets/logo.svg')
+    die('缺少源图：请提供 assets/splash(.png|.svg) 或 public/logo-light.svg')
   }
 
   const beforeIcons = fingerprint(listIconFiles())

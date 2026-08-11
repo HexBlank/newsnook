@@ -24,7 +24,9 @@ newsnook/
 ├── web/                      # 主工程（唯一运行时）
 │   ├── src/                  # React 应用
 │   ├── android/              # Capacitor 原生工程（入库）
-│   ├── assets/               # logo.svg → @capacitor/assets 生成图标/启动图
+│   ├── public/favicon.svg            # 站点 favicon（简化鹤标）
+│   ├── public/logo-{light,dark}.svg  # 品牌标（深色 UI→light / 浅色 UI→dark）
+│   ├── assets/               # 可选 splash 源图（优先于 logo 合成闪屏）
 │   ├── scripts/              # APK/AAB 签名构建、探针
 │   ├── dist/                 # Vite 产物（capacitor webDir）
 │   └── artifacts/            # 签名 APK/AAB（gitignore）
@@ -226,7 +228,7 @@ npm run android:apk | android:aab
 | `androidScheme` | `https` |
 | SDK | min 24 / compile & target 36 |
 | 版本 | 唯一源：`web/package.json` 的 `version`；Gradle 用作 `versionName`，并按 `X*10000+Y*100+Z` 推导 `versionCode`；产物文件名同此字符串 |
-| 图标 | Adaptive Icon 手工维护于 `newsnook_adaptive_icon/`，旧版 PNG 由 `scripts/generate-legacy-launcher-icons.mjs` 生成；`npm run assets` 只重生成启动图 |
+| 图标 | Adaptive Icon 维护于 `android/.../res`（层 PNG + `colors.xml`），SVG 源在 `assets/android-icon/`；旧版 PNG 由 `scripts/generate-legacy-launcher-icons.mjs` 生成；`npm run assets` 只重生成启动图 |
 
 签名：本机 `.android-signing/` + `.env.android.local`（gitignore）；CI 注入 `NEWSNOOK_KEYSTORE_*`。详见 `web/README.md`。
 

@@ -37,6 +37,11 @@ export function resolveTheme(mode: ThemeMode): ResolvedTheme {
   return mode === 'system' ? systemTheme() : mode
 }
 
+/** 深色 UI 用浅色标，浅色 UI 用深色标；favicon 见 public/favicon.svg */
+export function brandLogoSrc(resolved: ResolvedTheme): string {
+  return resolved === 'dark' ? '/logo-light.svg' : '/logo-dark.svg'
+}
+
 let transitionTimer: ReturnType<typeof setTimeout> | undefined
 
 /** 首次应用（首屏）不做过渡，避免启动时闪一层颜色动画 */

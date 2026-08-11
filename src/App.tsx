@@ -783,6 +783,7 @@ export default function App() {
       return (
         <AboutScreen
           onBack={() => setSettingsRoute(null)}
+          resolvedTheme={resolvedTheme}
           updateSupported={appUpdate.supported}
           updateCaption={appUpdate.manualCaption}
           hasUpdate={appUpdate.hasUpdate}

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1024" height="1024" viewBox="0 0 1024 1024"
+     fill="none" shape-rendering="geometricPrecision">
+  <title>NewsNook — dark mode</title>
+  <desc>Transparent background SVG for dark mode usage.</desc>
+
+  <defs>
+    <linearGradient id="gCard" x1="250" y1="350" x2="680" y2="680" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5EBDD"/>
+      <stop offset="1" stop-color="#E8D7BE"/>
+    </linearGradient>
+
+    <linearGradient id="gWingTop" x1="449" y1="88" x2="1025" y2="438" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF3E4"/>
+      <stop offset="1" stop-color="#EDDCC3"/>
+    </linearGradient>
+
+    <linearGradient id="gWingLower" x1="653" y1="851" x2="1124" y2="629" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8ECD8"/>
+      <stop offset="1" stop-color="#E8D7BF"/>
+    </linearGradient>
+
+    <linearGradient id="gShadow" x1="1015" y1="440" x2="660" y2="846" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#AA9B86"/>
+      <stop offset="0.55" stop-color="#C5B39A"/>
+      <stop offset="1" stop-color="#D9C8AE"/>
+    </linearGradient>
+
+    <linearGradient id="gRed" x1="710" y1="600" x2="660" y2="850" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A95340"/>
+      <stop offset="0.28" stop-color="#C96A53"/>
+      <stop offset="1" stop-color="#E88769"/>
+    </linearGradient>
+
+    <linearGradient id="gNeck" x1="1040" y1="458" x2="1212" y2="313" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0E0C8"/>
+      <stop offset="1" stop-color="#FAEEDF"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(512 512) scale(0.94) translate(-769 -513)">
+    <g id="layer-arcs" data-layer="arcs">
+      <path id="arc-top" data-role="arc-top" d="M 677 125 C 768 88.51 859 82.94 950 117 C 1008.67 140.8 1067.33 171.1 1126 271 L 1126 273 C 1067.33 188.41 1008.67 160.99 950 135 C 859 102.56 768 97.08 677 126 Z" fill="#B985A0"/>
+      <path id="arc-bottom" data-role="arc-bottom" d="M 732 907 C 838 931.65 944 915.56 1050 849 C 1106.33 806.3 1162.67 770.39 1219 644 L 1219 648 C 1162.67 800.19 1106.33 825.79 1050 869 C 944 933.89 838 943.17 732 908 Z" fill="#B985A0"/>
+    </g>
+
+    <g id="layer-speed-lines" data-layer="speed-lines" fill="#97B8A0">
+      <path id="speed-line-1" data-role="speed-line-1" d="M 244 734 C 355.67 716.92 467.33 735.48 579 735 C 467.33 733.94 355.67 753.5 244 737 Z"/>
+      <path id="speed-line-2" data-role="speed-line-2" d="M 305 789 C 380.33 776.13 455.67 788.58 531 789 C 455.67 789.85 380.33 805.1 305 792 Z"/>
+    </g>
+
+    <g id="layer-mail" data-layer="mail">
+      <path id="mail-paper" data-role="mail-paper" d="M 303.16 342.68 L 705 490.38 L 684 621 L 487.45 681.06 L 225.94 625.95 Z" fill="url(#gCard)"/>
+      <g id="mail-green-content" data-layer="mail-green-content" fill="#7E9883">
+        <path id="mail-green-block" data-role="mail-green-block" d="M 343.3 409.8 L 454.5 443.5 L 417.6 565.3 L 306.4 531.6 Z"/>
+        <path id="mail-text-line-1" data-role="mail-text-line-1" d="M 484.2 466.4 L 638.2 518.7 L 632.3 536.1 L 478.3 483.8 Z"/>
+        <path id="mail-text-line-2" data-role="mail-text-line-2" d="M 469 514.5 L 620.7 561.9 L 616 576.8 L 464.3 529.4 Z"/>
+        <path id="mail-text-line-3" data-role="mail-text-line-3" d="M 456 556.7 L 588.9 597 L 584.6 611.1 L 451.8 570.8 Z"/>
+        <path id="mail-text-line-4" data-role="mail-text-line-4" d="M 295.8 565.1 L 406.6 596.8 L 401.7 614.1 L 290.9 582.4 Z"/>
+        <path id="mail-text-line-5" data-role="mail-text-line-5" d="M 443.2 598.1 L 518.7 620.5 L 514.6 634.5 L 439.1 612.2 Z"/>
+      </g>
+    </g>
+
+    <g id="layer-crane" data-layer="crane">
+      <path id="crane-red-underfold" data-role="crane-red-underfold" d="M 684.64 601.81 L 774.88 642.15 L 653.53 850.91 Z" fill="url(#gRed)"/>
+      <path id="crane-lower-wing" data-role="crane-lower-wing" d="M 1025.4 438.45 L 1124.04 628.56 L 653.53 850.91 Z" fill="url(#gWingLower)"/>
+      <path id="crane-central-shadow" data-role="crane-central-shadow" d="M 1025.4 438.45 L 774.88 642.15 L 653.53 850.91 Z" fill="url(#gShadow)"/>
+      <path id="crane-upper-wing" data-role="crane-upper-wing" d="M 449 88 L 1025.4 438.45 L 774.88 642.15 Z" fill="url(#gWingTop)"/>
+      <path id="crane-neck-shadow" data-role="crane-neck-shadow" d="M 1055 448 L 1039 460 L 1122 626 L 1127 609 Z" fill="#C9B79C"/>
+      <path id="crane-neck" data-role="crane-neck" d="M 1037.54 459.53 L 1212.39 312.87 L 1124.04 628.56 Z" fill="url(#gNeck)"/>
+      <path id="crane-head" data-role="crane-head" d="M 1212.39 312.87 L 1312.32 395.77 L 1191.4 391.87 Z" fill="#FFF0DE"/>
+      <path id="crane-head-fold" data-role="crane-head-fold" d="M 1211 323 L 1196 391 L 1216 389 Z" fill="#BCA98F"/>
+    </g>
+  </g>
+</svg>

@@ -15,9 +15,12 @@ import {
 import { Browser } from '@capacitor/browser'
 
 import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { BrandLogo } from '../../components/BrandLogo'
+import type { ResolvedTheme } from '../../lib/theme'
 
 interface Props {
   onBack: () => void
+  resolvedTheme: ResolvedTheme
   updateSupported?: boolean
   updateCaption?: string
   hasUpdate?: boolean
@@ -73,6 +76,7 @@ async function openExternalUrl(url: string) {
 
 export function AboutScreen({
   onBack,
+  resolvedTheme,
   updateSupported = false,
   updateCaption,
   hasUpdate = false,
@@ -108,13 +112,10 @@ export function AboutScreen({
       {/* 顶部概览卡片 */}
       <div className="page-x pt-6 pb-4">
         <div className="relative overflow-hidden rounded-2xl border border-haze bg-gradient-to-b from-ink-raised/70 to-ink p-6 text-center shadow-xs">
-          <img
-            src="/logo.svg"
-            alt=""
-            width={72}
-            height={72}
-            className="mx-auto mb-4 h-[72px] w-[72px] rounded-2xl shadow-xs"
-            draggable={false}
+          <BrandLogo
+            resolvedTheme={resolvedTheme}
+            size={96}
+            className="mx-auto mb-4 h-24 w-24"
           />
           <h2 className="font-display text-[20px] font-medium text-paper">
             {ABOUT_CONFIG.appName}

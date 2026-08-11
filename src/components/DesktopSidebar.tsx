@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 
 import { PresetSwitcher, type PresetSwitcherItem } from './PresetSwitcher'
+import { BrandLogo } from './BrandLogo'
 import { chineseDate } from '../lib/time'
 import type { CategoryId, NewsCategory } from '../sources/categories'
 import type { ThemeMode } from '../lib/theme'
@@ -83,13 +84,10 @@ export const DesktopSidebar = memo(function DesktopSidebar({
       {/* 顶部品牌与题头 */}
       <div className="p-5 pb-3">
         <div className="flex items-center gap-3">
-          <img
-            src="/logo.svg"
-            alt=""
-            width={36}
-            height={36}
-            className="h-9 w-9 shrink-0 rounded-lg shadow-xs"
-            draggable={false}
+          <BrandLogo
+            resolvedTheme={resolvedTheme}
+            size={48}
+            className="h-12 w-12 shrink-0"
           />
 
           <div className="min-w-0 flex-1">
