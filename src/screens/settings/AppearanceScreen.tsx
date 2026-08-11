@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, Monitor, Moon, Play, Sun } from 'lucide-react'
 
 import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { ToggleSwitch } from '../../components/ToggleSwitch'
 import {
   clearStartupSplashSeen,
   hasSeenStartupSplash,
@@ -11,7 +12,9 @@ import { THEME_MODES, type ResolvedTheme, type ThemeMode } from '../../lib/theme
 interface Props {
   theme: ThemeMode
   resolved: ResolvedTheme
+  einkMode: boolean
   onChange: (theme: ThemeMode) => void
+  onEinkModeChange: (enabled: boolean) => void
   onBack: () => void
 }
 
@@ -21,7 +24,14 @@ const MODE_ICONS: Record<ThemeMode, typeof Sun> = {
   dark: Moon,
 }
 
-export function AppearanceScreen({ theme, resolved, onChange, onBack }: Props) {
+export function AppearanceScreen({
+  theme,
+  resolved,
+  einkMode,
+  onChange,
+  onEinkModeChange,
+  onBack,
+}: Props) {
   const active = THEME_MODES.find((mode) => mode.id === theme)
   const [replayArmed, setReplayArmed] = useState(() => !hasSeenStartupSplash())
 
@@ -98,6 +108,24 @@ export function AppearanceScreen({ theme, resolved, onChange, onBack }: Props) {
             )
           })}
         </ul>
+      </SettingsSection>
+
+      <SettingsSection title="墨水屏">
+        <div className="page-x">
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-haze bg-ink-raised p-4 shadow-[var(--shadow-lift)]">
+            <div className="min-w-0 flex-1">
+              <span className="font-display text-[15px] font-medium text-paper">墨水屏模式</span>
+              <p className="mt-1 text-[12px] leading-relaxed text-paper-muted">
+                关闭动画与装饰效果，文章改为左右点击翻页。颜色仍跟随上方主题。关闭后恢复原有阅读与动效。
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={einkMode}
+              label="墨水屏模式"
+              onChange={() => onEinkModeChange(!einkMode)}
+            />
+          </div>
+        </div>
       </SettingsSection>
 
       <SettingsSection title="启动">

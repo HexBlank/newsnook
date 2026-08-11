@@ -77,6 +77,7 @@ import {
   resetTypography,
   setAutoRefreshOnCategorySwitch,
   setCategoryOrder,
+  setEinkMode,
   setThemeMode,
   sourceIdsForCategoryWithPrefs,
   toggleCategorySource,
@@ -607,7 +608,9 @@ export default function App() {
         <AppearanceScreen
           theme={prefs.theme}
           resolved={resolvedTheme}
+          einkMode={Boolean(prefs.einkMode)}
           onChange={(theme) => update((prev) => setThemeMode(prev, theme))}
+          onEinkModeChange={(enabled) => update((prev) => setEinkMode(prev, enabled))}
           onBack={() => setSettingsRoute(null)}
         />
       )
