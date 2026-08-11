@@ -116,8 +116,14 @@
                 ? 'dark'
                 : 'light'
           document.documentElement.dataset.theme = resolved
+          if (saved && saved.einkMode === true) {
+            document.documentElement.dataset.eink = '1'
+          } else {
+            delete document.documentElement.dataset.eink
+          }
         } catch (error) {
           document.documentElement.dataset.theme = 'dark'
+          delete document.documentElement.dataset.eink
         }
       })()
     </script>

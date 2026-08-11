@@ -8,6 +8,7 @@ import {
 import { isLocalTranslationProviderId } from '../features/translation/types'
 import { setRuntimeProxyPrefs } from '../lib/http'
 import { loadPreferences, savePreferences } from '../lib/storage'
+import { applyEinkMode } from '../lib/eink'
 import { applyTheme, resolveTheme, watchSystemTheme, type ResolvedTheme } from '../lib/theme'
 import {
   FONT_FAMILY_OPTIONS,
@@ -80,8 +81,14 @@ export function usePreferences(): PreferencesApi {
 
 
   useEffect(() => {
+    applyEinkMode(Boolean(prefs.einkMode))
+  }, [prefs.einkMode])
+
+  useEffect(() => {
     const sync = () => {
-      const resolved = applyTheme(prefs.theme, { animate: themeApplied.current })
+      const resolved = applyTheme(prefs.theme, {
+        animate: themeApplied.current && !prefs.einkMode,
+      })
       themeApplied.current = true
       setResolvedTheme(resolved)
       void applyNativeChrome(resolved)
@@ -89,7 +96,7 @@ export function usePreferences(): PreferencesApi {
 
     sync()
     return prefs.theme === 'system' ? watchSystemTheme(sync) : undefined
-  }, [prefs.theme])
+  }, [prefs.theme, prefs.einkMode])
 
   const update = useCallback((updater: (prev: Preferences) => Preferences) => {
     setPrefs((prev) => updater(prev))
