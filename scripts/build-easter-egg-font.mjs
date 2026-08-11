@@ -28,14 +28,26 @@ main().catch((error) => {
 
 async function main() {
   mkdirSync(fontOutputDir, { recursive: true })
-  mkdirSync(cachedFontDir, { recursive: true })
 
   const html = readFileSync(sourceHtml, 'utf8')
   const subsetText = buildSubsetText(html)
   writeFileSync(subsetTextFile, subsetText, 'utf8')
 
+  if (!hasPyftsubset()) {
+    if (existsSync(subsetFontFile)) {
+      const fileSizeKb = (statSync(subsetFontFile).size / 1024).toFixed(1)
+      console.warn(
+        `[easter-font] pyftsubset not found; using committed subset (${fileSizeKb} KB). Install fonttools to rebuild.`,
+      )
+      return
+    }
+    throw new Error(
+      'pyftsubset not found and MaShanZheng-subset.woff is missing. Install fonttools, then rerun `npm run fonts:easter-egg`.',
+    )
+  }
+
+  mkdirSync(cachedFontDir, { recursive: true })
   await ensureSourceFont()
-  ensurePyftsubset()
 
   const result = spawnSync(
     'pyftsubset',
@@ -121,17 +133,11 @@ async function ensureSourceFont() {
   writeFileSync(sourceFontFile, buffer)
 }
 
-function ensurePyftsubset() {
+function hasPyftsubset() {
   const result = spawnSync('pyftsubset', ['--help'], {
     cwd: projectRoot,
     stdio: 'ignore',
   })
 
-  if (result.status === 0) {
-    return
-  }
-
-  throw new Error(
-    'pyftsubset not found. Install fonttools first, then rerun `npm run fonts:easter-egg`.',
-  )
+  return result.status === 0
 }
