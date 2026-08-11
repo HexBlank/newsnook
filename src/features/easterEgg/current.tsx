@@ -7,6 +7,10 @@ const CLOSE_MSG = 'newsnook-easter-egg-close'
 /** 本版彩蛋：纸鹤行侘寂版（换版时删除本文件与 craneGame.html） */
 export function CurrentEasterEgg({ onClose }: { onClose: () => void }) {
   useEffect(() => {
+    const nativeBridge = (window as any).NewsNookNative
+    nativeBridge?.setKeepScreenOn?.(true)
+    nativeBridge?.setFullScreen?.(true)
+
     const onMessage = (event: MessageEvent) => {
       const data = event.data
       if (
@@ -21,10 +25,10 @@ export function CurrentEasterEgg({ onClose }: { onClose: () => void }) {
     window.addEventListener('message', onMessage)
     return () => {
       window.removeEventListener('message', onMessage)
-      // 确保无论通过何种方式（如 Android 物理返回键/右滑返回）销毁组件时，都退出沉浸式全屏
-      const nativeBridge = (window as any).NewsNookNative
+      // 确保无论通过何种方式（如 Android 物理返回键/右滑返回）销毁组件时，都恢复系统行为
       if (nativeBridge && nativeBridge.setFullScreen) {
         nativeBridge.setFullScreen(false)
+        nativeBridge.setKeepScreenOn?.(false)
       } else if (document.exitFullscreen) {
         document.exitFullscreen().catch(() => {})
       }

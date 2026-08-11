@@ -58,6 +58,11 @@ public class MainActivity extends BridgeActivity {
         public void setFullScreen(boolean fullScreen) {
             runOnUiThread(() -> applyFullScreen(fullScreen));
         }
+
+        @JavascriptInterface
+        public void setKeepScreenOn(boolean keepScreenOn) {
+            runOnUiThread(() -> applyKeepScreenOn(keepScreenOn));
+        }
     }
 
     private void applySystemTheme(boolean isLight) {
@@ -81,6 +86,16 @@ public class MainActivity extends BridgeActivity {
             } else {
                 controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
             }
+        }
+    }
+
+    private void applyKeepScreenOn(boolean keepScreenOn) {
+        Window window = getWindow();
+        if (window == null) return;
+        if (keepScreenOn) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
     }
 

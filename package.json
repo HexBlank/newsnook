@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc -b && vite build",
+    "fonts:easter-egg": "node scripts/build-easter-egg-font.mjs",
+    "build": "npm run fonts:easter-egg && tsc -b && vite build",
     "lint": "oxlint",
     "test:cache": "rolldown scripts/cache-behavior.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/cache-behavior.test.mjs && node node_modules/.cache/newsnook/cache-behavior.test.mjs",
     "test:encoding": "rolldown scripts/text-encoding.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/text-encoding.test.mjs && node node_modules/.cache/newsnook/text-encoding.test.mjs",
