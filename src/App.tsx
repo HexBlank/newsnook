@@ -1012,6 +1012,7 @@ export default function App() {
             overlayCloserRef={readerOverlayCloserRef}
             translationPrefs={prefs.translation}
             customSources={prefs.customSources}
+            einkMode={Boolean(prefs.einkMode)}
           />
         </Suspense>
       )}

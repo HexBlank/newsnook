@@ -991,7 +991,8 @@ html[data-eink='1'] *::after {
   -webkit-backdrop-filter: none !important;
 }
 
-html[data-eink='1'] [data-surface='tabbar'] {
+html[data-eink='1'] [data-surface='tabbar'],
+html[data-eink='1'] [data-surface='reader-chrome'] {
   background-color: var(--color-ink);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;

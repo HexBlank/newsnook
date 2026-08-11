@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject } from 'react'
 import { Browser } from '@capacitor/browser'
 import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, MessageSquare, RefreshCw, X } from 'lucide-react'
 
@@ -8,6 +8,7 @@ import { InkVideoPlayer } from '../components/InkVideoPlayer'
 import { InlineArticleVideos } from '../components/InlineArticleVideos'
 import { loadCachedBody, saveCachedBody } from '../lib/bodyCache'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
+import { usePagedReader } from '../hooks/usePagedReader'
 import { useProgressiveImages } from '../hooks/useProgressiveImages'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { revealReader } from '../lib/motion'
@@ -35,6 +36,8 @@ interface Props {
   overlayCloserRef?: MutableRefObject<(() => boolean) | null>
   translationPrefs: TranslationPrefs
   customSources?: NewsSource[]
+  /** 墨水屏模式：分页阅读；false/缺省时保持滚动阅读 */
+  einkMode?: boolean
 }
 
 type LoadState = 'loading' | 'ready' | 'error'
@@ -49,11 +52,14 @@ export function ReaderScreen({
   overlayCloserRef,
   translationPrefs,
   customSources,
+  einkMode = false,
 }: Props) {
   const reduced = useReducedMotion()
   const shellRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const proseRef = useRef<HTMLDivElement>(null)
+  const contentMeasureRef = useRef<HTMLDivElement>(null)
+  const prevEinkRef = useRef(einkMode)
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [html, setHtml] = useState('')
   const [bodySource, setBodySource] = useState<BodySource | null>(null)
@@ -106,11 +112,13 @@ export function ReaderScreen({
   }, [commentsOpen, overlayCloserRef])
 
   const [pillVisible, setPillVisible] = useState(true)
+  const [chromeVisible, setChromeVisible] = useState(true)
   const lastScrollTopRef = useRef(0)
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollRafRef = useRef(0)
 
   const handleScroll = useCallback(() => {
+    if (einkMode) return
     if (scrollRafRef.current) return
     scrollRafRef.current = window.requestAnimationFrame(() => {
       scrollRafRef.current = 0
@@ -131,7 +139,7 @@ export function ReaderScreen({
     scrollTimeoutRef.current = setTimeout(() => {
       setPillVisible(true)
     }, 450)
-  }, [])
+  }, [einkMode])
 
   useEffect(() => {
     return () => {
@@ -318,6 +326,58 @@ export function ReaderScreen({
     showTranslation && translated && translationPrefs.displayMode === 'compare',
   )
   const displayedTitle = showTranslation && translated && !comparing ? translated.title : article.title
+
+  const paged = usePagedReader({
+    enabled: einkMode,
+    articleId: article.id,
+    viewportRef: rootRef,
+    contentRef: contentMeasureRef,
+    measureKey: `${displayedHtml.length}:${showTranslation}:${loadState}:${chromeVisible}`,
+    ready: loadState === 'ready',
+  })
+
+  useEffect(() => {
+    const wasEink = prevEinkRef.current
+    if (wasEink === einkMode) return
+    prevEinkRef.current = einkMode
+    const el = rootRef.current
+    if (!el) return
+
+    if (!wasEink && einkMode) {
+      paged.syncFromScrollTop(el.scrollTop)
+      el.scrollTop = 0
+      setChromeVisible(true)
+      return
+    }
+    if (wasEink && !einkMode) {
+      el.scrollTop = paged.currentStartOffset()
+      setPillVisible(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when einkMode flips
+  }, [einkMode])
+
+  useEffect(() => {
+    if (!einkMode) return
+    const el = rootRef.current
+    if (el) el.scrollTop = 0
+  }, [einkMode, paged.pageIndex])
+
+  const onEinkPageTap = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!einkMode) return
+      if (lightbox || commentsOpen) return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('a, button, [role="button"], input, video, [data-no-page-tap]')) return
+
+      const rect = event.currentTarget.getBoundingClientRect()
+      const zone = paged.handleTap(event.clientX - rect.left, rect.width)
+      if (zone === 'prev') paged.goPrev()
+      else if (zone === 'next') paged.goNext()
+      else setChromeVisible((v) => !v)
+    },
+    [commentsOpen, einkMode, lightbox, paged],
+  )
 
   const commentsArticle = useMemo(
     () => ({
@@ -510,13 +570,20 @@ export function ReaderScreen({
         ref={shellRef}
         className="reader-swipe-surface flex min-h-0 flex-1 flex-col bg-ink"
       >
-        <header className="shrink-0 pt-1 pb-1 border-b border-haze/30 bg-ink/90 backdrop-blur-md sticky top-0 z-20">
+        <header
+          data-surface="reader-chrome"
+          className={`shrink-0 pt-1 pb-1 border-b border-haze/30 bg-ink/90 backdrop-blur-md sticky top-0 z-20 ${
+            einkMode && !chromeVisible ? 'hidden' : ''
+          }`}
+        >
           <div className="page-x lg:px-8 max-w-4xl mx-auto w-full flex items-center justify-between gap-2">
             <button type="button" onClick={onClose} aria-label="返回列表" className="flex h-9 w-9 shrink-0 items-center justify-center hover:text-paper">
               <ArrowLeft size={18} strokeWidth={1.6} className="text-paper" />
             </button>
             <span className="min-w-0 flex-1 truncate text-center font-mono text-[10px] lg:text-[11px] tracking-[0.18em] text-paper-faint">
-              {article.sourceName}
+              {einkMode && paged.pages.length > 0
+                ? `${paged.pageIndex + 1} / ${paged.pages.length}`
+                : article.sourceName}
             </span>
             <div className="flex shrink-0 items-center gap-1">
               <button
@@ -586,10 +653,27 @@ export function ReaderScreen({
 
         <div
           ref={rootRef}
-          onScroll={handleScroll}
-          className="scroll-hidden min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+          onScroll={einkMode ? undefined : handleScroll}
+          onClick={einkMode ? onEinkPageTap : undefined}
+          className={`scroll-hidden min-h-0 flex-1 overflow-x-hidden ${
+            einkMode
+              ? paged.pageSliceHeight > paged.pageHeight
+                ? 'overflow-y-auto'
+                : 'overflow-hidden'
+              : 'overflow-y-auto'
+          }`}
         >
-          <div className="mx-auto w-full max-w-3xl lg:max-w-4xl">
+          <div
+            className="mx-auto w-full max-w-3xl lg:max-w-4xl"
+            style={
+              einkMode
+                ? {
+                    transform: `translateY(-${paged.pageOffset}px)`,
+                  }
+                : undefined
+            }
+          >
+            <div ref={contentMeasureRef}>
             {/* 标题在正文抽取期间就已就位，不随加载状态闪烁 */}
             <div className="page-x lg:px-8 pt-4">
               <span className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] text-cinnabar-soft">
@@ -815,6 +899,7 @@ export function ReaderScreen({
                 </div>
               )}
             </div>
+            </div>
           </div>
         </div>
       </div>
@@ -823,7 +908,7 @@ export function ReaderScreen({
       {canComment && !commentsOpen && (
         <div
           className={`fixed bottom-[max(var(--sab),20px)] right-4 z-40 transition-all duration-300 pointer-events-auto ${
-            pillVisible
+            (einkMode ? chromeVisible : pillVisible)
               ? 'opacity-100 translate-y-0 scale-100'
               : 'opacity-0 translate-y-6 scale-90 pointer-events-none'
           }`}
