@@ -355,9 +355,23 @@ export function ReaderScreen({
     articleId: article.id,
     viewportRef: rootRef,
     contentRef: contentMeasureRef,
-    measureKey: `${displayedHtml.length}:${showTranslation}:${loadState}:${chromeVisible}`,
+    measureKey: `${displayedHtml.length}:${showTranslation}:${loadState}`,
     ready: loadState === 'ready',
   })
+
+  const pagedGoPrevRef = useRef(paged.goPrev)
+  const pagedGoNextRef = useRef(paged.goNext)
+  const pagedHandleTapRef = useRef(paged.handleTap)
+  const pagedSyncRef = useRef(paged.syncFromScrollTop)
+  const pagedOffsetRef = useRef(paged.currentStartOffset)
+  pagedGoPrevRef.current = paged.goPrev
+  pagedGoNextRef.current = paged.goNext
+  pagedHandleTapRef.current = paged.handleTap
+  pagedSyncRef.current = paged.syncFromScrollTop
+  pagedOffsetRef.current = paged.currentStartOffset
+
+  const einkGateRef = useRef({ lightbox, commentsOpen, einkMenuOpen })
+  einkGateRef.current = { lightbox, commentsOpen, einkMenuOpen }
 
   useEffect(() => {
     const wasEink = prevEinkRef.current
@@ -367,16 +381,20 @@ export function ReaderScreen({
     if (!el) return
 
     if (!wasEink && einkMode) {
-      paged.syncFromScrollTop(el.scrollTop)
-      el.scrollTop = 0
+      const scrollTop = el.scrollTop
+      requestAnimationFrame(() => {
+        pagedSyncRef.current(scrollTop)
+        if (rootRef.current) rootRef.current.scrollTop = 0
+      })
       setChromeVisible(true)
+      setEinkMenuOpen(false)
       return
     }
     if (wasEink && !einkMode) {
-      el.scrollTop = paged.currentStartOffset()
+      el.scrollTop = pagedOffsetRef.current()
       setPillVisible(true)
+      setEinkMenuOpen(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when einkMode flips
   }, [einkMode])
 
   useEffect(() => {
@@ -392,8 +410,8 @@ export function ReaderScreen({
     if (!el) return
 
     const onCaptureClick = (event: MouseEvent) => {
-      if (lightbox || commentsOpen) return
-      if (einkMenuOpen) return
+      const gate = einkGateRef.current
+      if (gate.lightbox || gate.commentsOpen || gate.einkMenuOpen) return
       const target = event.target
       if (!(target instanceof Element)) return
 
@@ -407,53 +425,70 @@ export function ReaderScreen({
       event.stopPropagation()
 
       const rect = el.getBoundingClientRect()
-      const zone = paged.handleTap(event.clientX - rect.left, rect.width)
-      if (zone === 'prev') paged.goPrev()
-      else if (zone === 'next') paged.goNext()
+      const zone = pagedHandleTapRef.current(event.clientX - rect.left, rect.width)
+      if (zone === 'prev') pagedGoPrevRef.current()
+      else if (zone === 'next') pagedGoNextRef.current()
       else setEinkMenuOpen(true)
     }
 
     el.addEventListener('click', onCaptureClick, true)
     return () => el.removeEventListener('click', onCaptureClick, true)
-  }, [commentsOpen, einkMenuOpen, einkMode, lightbox, paged])
+  }, [einkMode])
 
-  // 墨水屏：音量键翻页（原生）+ 方向方向键（Web/桌面）
+  // 墨水屏：音量键翻页（原生）+ 键盘方向键（Web/桌面）
   useEffect(() => {
     if (!einkMode) {
       void setVolumePageTurnEnabled(false)
       return
     }
 
-    const canTurn = () => !lightbox && !commentsOpen && !einkMenuOpen
+    let cancelled = false
+    let removeNative: (() => void) | undefined
 
     void setVolumePageTurnEnabled(true)
-    let removeNative: (() => void) | undefined
     void addVolumePageTurnListener((direction) => {
-      if (!canTurn()) return
-      if (direction === 'prev') paged.goPrev()
-      else paged.goNext()
+      const gate = einkGateRef.current
+      if (gate.lightbox || gate.commentsOpen || gate.einkMenuOpen) return
+      if (direction === 'prev') pagedGoPrevRef.current()
+      else pagedGoNextRef.current()
     }).then((dispose) => {
+      if (cancelled) {
+        dispose()
+        return
+      }
       removeNative = dispose
     })
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!canTurn()) return
+      const gate = einkGateRef.current
+      if (gate.lightbox || gate.commentsOpen || gate.einkMenuOpen) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
       if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
         event.preventDefault()
-        paged.goPrev()
-      } else if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+        pagedGoPrevRef.current()
+      } else if (event.key === 'ArrowRight' || event.key === 'PageDown') {
         event.preventDefault()
-        paged.goNext()
+        pagedGoNextRef.current()
       }
     }
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
+      cancelled = true
       window.removeEventListener('keydown', onKeyDown)
       removeNative?.()
       void setVolumePageTurnEnabled(false)
     }
-  }, [commentsOpen, einkMenuOpen, einkMode, lightbox, paged])
+  }, [einkMode])
 
   const commentsArticle = useMemo(
     () => ({

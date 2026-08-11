@@ -35,18 +35,20 @@ public class VolumePageTurnPlugin extends Plugin {
     /** @return true 表示已消费该按键 */
     public boolean handleKeyEvent(KeyEvent event) {
         if (!enabled) return false;
+
+        int code = event.getKeyCode();
+        boolean isVolume =
+            code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN;
+        if (!isVolume) return false;
+
+        // 拦截 UP，避免部分机型仍弹出系统音量条
+        if (event.getAction() == KeyEvent.ACTION_UP) {
+            return true;
+        }
         if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
         if (event.getRepeatCount() > 0) return true;
 
-        String direction = null;
-        int code = event.getKeyCode();
-        if (code == KeyEvent.KEYCODE_VOLUME_UP) {
-            direction = "prev";
-        } else if (code == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            direction = "next";
-        }
-        if (direction == null) return false;
-
+        String direction = code == KeyEvent.KEYCODE_VOLUME_UP ? "prev" : "next";
         JSObject payload = new JSObject();
         payload.put("direction", direction);
         notifyListeners("volumePageTurn", payload);
