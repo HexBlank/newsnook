@@ -278,6 +278,13 @@
     display: none;
   }
 
+  /* 独立横向栏明确交给浏览器原生横滚，避免与列表纵滑/分类切换竞争。 */
+  .horizontal-scroll-rail {
+    touch-action: pan-x pinch-zoom;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
   /* 页面水平边距：手机留白够点按，又不过分挤窄正文行宽 */
   .page-x {
     padding-inline: 1rem;

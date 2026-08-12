@@ -9,6 +9,7 @@ import {
   VELOCITY_WINDOW_MS,
   type GestureSample,
 } from '../lib/edgeSwipeBack'
+import { clearGestureCompositorStyles } from '../lib/gestureStyles'
 
 const SETTLE_MS = 220
 const COMMIT_MIN_MS = 120
@@ -122,8 +123,7 @@ export function useEdgeSwipeBack({
       cancelCompletion()
       dragX = 0
       pendingX = 0
-      element.style.transition = ''
-      element.style.transform = ''
+      clearGestureCompositorStyles(element)
       setActiveVisual(false)
     }
 
@@ -250,7 +250,9 @@ export function useEdgeSwipeBack({
 
       cancelCompletion()
       element.style.transition = 'none'
-      render(Math.max(0, visualX))
+      // 零位时不要建立临时 transform；若手势随后判定为纵滑，Android
+      // WebView 可能把文章滚动层留在失效的合成状态。
+      if (visualX > 0) render(visualX)
       active = {
         id,
         source,
@@ -279,6 +281,7 @@ export function useEdgeSwipeBack({
         if (lock === 'none') return
         if (lock === 'vertical' || dx <= 0) {
           resetPointer()
+          clearVisual()
           return
         }
         active.lock = 'horizontal'
@@ -320,9 +323,21 @@ export function useEdgeSwipeBack({
     }
 
     const onTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 1) return
+      if (event.touches.length !== 1) {
+        if (active?.source === 'touch') {
+          resetPointer()
+          clearVisual()
+        }
+        return
+      }
       const touch = event.touches.item(0)
       if (!touch) return
+      // 系统手势、弹窗或切后台可能吞掉上一条 touchend/touchcancel。
+      // 新触点不属于旧序列时主动复位，避免旧 identifier 日后复用并全局拦截滚动。
+      if (active?.source === 'touch') {
+        resetPointer()
+        clearVisual()
+      }
       begin(
         'touch',
         touch.identifier,
@@ -336,7 +351,10 @@ export function useEdgeSwipeBack({
     const onTouchMove = (event: TouchEvent) => {
       if (!active || active.source !== 'touch') return
       const touch = findTouch(event.touches, active.id)
-      if (!touch) return
+      if (!touch) {
+        settle()
+        return
+      }
       move(
         'touch',
         touch.identifier,
@@ -353,11 +371,12 @@ export function useEdgeSwipeBack({
       if (!active || active.source !== 'touch') return
       const touch = findTouch(event.changedTouches, active.id)
       if (touch) end('touch', touch.identifier, touch.clientX, event.timeStamp)
+      else if (!findTouch(event.touches, active.id)) settle()
     }
 
-    const onTouchCancel = (event: TouchEvent) => {
+    const onTouchCancel = () => {
       if (!active || active.source !== 'touch') return
-      if (findTouch(event.changedTouches, active.id)) settle()
+      settle()
     }
 
     const onPointerDown = (event: PointerEvent) => {
@@ -399,6 +418,17 @@ export function useEdgeSwipeBack({
       if (active?.source === 'pointer' && event.pointerId === active.id) settle()
     }
 
+    const resetInterruptedGesture = () => {
+      // 切后台/系统弹窗时不要等待动画完成：相关定时器可能被冻结，必须立刻
+      // 释放 active/committing，否则恢复后 window.touchmove 会继续拦截纵滑。
+      committing = false
+      resetPointer()
+      clearVisual()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') resetInterruptedGesture()
+    }
+
     element.addEventListener('touchstart', onTouchStart, { passive: true })
     window.addEventListener('touchmove', onTouchMove, { passive: false })
     window.addEventListener('touchend', onTouchEnd)
@@ -407,6 +437,9 @@ export function useEdgeSwipeBack({
     element.addEventListener('pointermove', onPointerMove)
     element.addEventListener('pointerup', onPointerUp)
     element.addEventListener('pointercancel', onPointerCancel)
+    window.addEventListener('blur', resetInterruptedGesture)
+    window.addEventListener('pagehide', resetInterruptedGesture)
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
       element.removeEventListener('touchstart', onTouchStart)
@@ -417,6 +450,9 @@ export function useEdgeSwipeBack({
       element.removeEventListener('pointermove', onPointerMove)
       element.removeEventListener('pointerup', onPointerUp)
       element.removeEventListener('pointercancel', onPointerCancel)
+      window.removeEventListener('blur', resetInterruptedGesture)
+      window.removeEventListener('pagehide', resetInterruptedGesture)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       active = null
       committing = false
       clearVisual()

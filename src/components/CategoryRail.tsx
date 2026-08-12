@@ -173,7 +173,7 @@ export function CategoryRail({
     <div className="relative">
       <div
         ref={scrollerRef}
-        className="scroll-hidden mask-fade-x relative flex gap-0.5 overflow-x-auto px-4 sm:px-6 md:px-8 lg:px-10"
+        className="horizontal-scroll-rail scroll-hidden mask-fade-x relative flex gap-0.5 overflow-x-auto px-4 sm:px-6 md:px-8 lg:px-10"
         role="tablist"
         aria-label="新闻分类"
       >

@@ -5,6 +5,7 @@ import {
   PULL_THRESHOLD_PX,
   resistedPullDistance,
 } from '../lib/pullToRefresh'
+import { clearGestureCompositorStyles } from '../lib/gestureStyles'
 
 export type PullPhase = 'idle' | 'pulling' | 'ready' | 'refreshing'
 
@@ -133,9 +134,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       clearTimer()
       distance = 0
       pendingDistance = 0
-      element.style.transform = ''
-      element.style.transition = ''
-      element.style.willChange = ''
+      clearGestureCompositorStyles(element)
       indicator.style.transition = ''
       indicator.style.removeProperty('--pull-height')
       indicator.style.removeProperty('--pull-glow-opacity')
@@ -181,9 +180,13 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       if (!canStart()) return
       const visualDistance = Math.max(0, currentTranslateY(element))
       clearTimer()
-      element.style.transition = 'none'
-      indicator.style.transition = 'none'
-      render(visualDistance)
+      // 零位时不要预先写 translate3d(0,0,0)：方向尚未确定，原生滚动
+      // 可能马上接管；Android WebView 偶尔会因此留下失效的合成滚动层。
+      if (visualDistance > 0) {
+        element.style.transition = 'none'
+        indicator.style.transition = 'none'
+        render(visualDistance)
+      }
       gesture = {
         startX: x,
         startY: y,
@@ -200,6 +203,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       if (!gesture || phaseRef.current === 'refreshing') return
       if (element.scrollTop > 0) {
         clearGesture()
+        clearGestureCompositorStyles(element)
         return
       }
 
@@ -210,7 +214,11 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
         const absY = Math.abs(dy)
         if (absX < DIRECTION_LOCK_PX && absY < DIRECTION_LOCK_PX) return
         if (dy <= 0 || absX >= absY * DIRECTION_BIAS) {
-          clearGesture()
+          if (distance > 0 || gesture.startDistance > 0) settle()
+          else {
+            clearGesture()
+            clearGestureCompositorStyles(element)
+          }
           return
         }
         if (absY < absX * DIRECTION_BIAS) return
@@ -234,12 +242,18 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
     }
 
     const onTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 1) return
+      if (event.touches.length !== 1) {
+        if (gesture) settle(true)
+        return
+      }
       const touch = event.touches[0]
       begin(touch.clientX, touch.clientY)
     }
     const onTouchMove = (event: TouchEvent) => {
-      if (event.touches.length !== 1) return
+      if (event.touches.length !== 1) {
+        if (gesture) settle(true)
+        return
+      }
       const touch = event.touches[0]
       move(touch.clientX, touch.clientY, () => {
         if (event.cancelable) event.preventDefault()
@@ -270,6 +284,17 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       if (activePointer === event.pointerId) settle()
     }
 
+    const resetInterruptedGesture = () => {
+      if (phaseRef.current === 'refreshing') {
+        clearGesture()
+        return
+      }
+      settle(true)
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') resetInterruptedGesture()
+    }
+
     element.addEventListener('touchstart', onTouchStart, { passive: true })
     element.addEventListener('touchmove', onTouchMove, { passive: false })
     element.addEventListener('touchend', onTouchEnd)
@@ -278,6 +303,9 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
     window.addEventListener('pointermove', onPointerMove, { passive: false })
     window.addEventListener('pointerup', onPointerUp)
     window.addEventListener('pointercancel', onPointerCancel)
+    window.addEventListener('blur', resetInterruptedGesture)
+    window.addEventListener('pagehide', resetInterruptedGesture)
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
       disposed = true
@@ -289,6 +317,9 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('pointercancel', onPointerCancel)
+      window.removeEventListener('blur', resetInterruptedGesture)
+      window.removeEventListener('pagehide', resetInterruptedGesture)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       cancelRef.current = () => undefined
       clearGesture()
       clearVisual()
