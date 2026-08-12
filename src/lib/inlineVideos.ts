@@ -4,6 +4,9 @@ export interface InlineVideoDescriptor {
   title: string
 }
 
+const VIDEO_SOURCE_ATTRS = ['src', 'data-src', 'data-video-src', 'data-url', 'data-original', 'srcset']
+const VIDEO_POSTER_ATTRS = ['poster', 'data-poster', 'data-cover', 'data-thumbnail']
+
 function firstAttribute(element: Element, names: string[]): string {
   for (const name of names) {
     const value = element.getAttribute(name)?.trim()
@@ -31,15 +34,15 @@ export function describeInlineVideo(
   fallbackTitle: string,
   baseUrl?: string,
 ): InlineVideoDescriptor | null {
-  const directSource = firstAttribute(video, ['src', 'data-src', 'data-video-src'])
+  const directSource = firstAttribute(video, VIDEO_SOURCE_ATTRS)
   const nestedSource = Array.from(video.querySelectorAll('source'))
-    .map((source) => firstAttribute(source, ['src', 'data-src']))
+    .map((source) => firstAttribute(source, VIDEO_SOURCE_ATTRS))
     .find(Boolean)
   const src = resolveMediaUrl(directSource || nestedSource || '', baseUrl)
   if (!src) return null
 
   const poster = resolveMediaUrl(
-    firstAttribute(video, ['poster', 'data-poster']),
+    firstAttribute(video, VIDEO_POSTER_ATTRS),
     baseUrl,
   )
   const figureCaption = video.closest('figure')?.querySelector('figcaption')?.textContent?.trim()

@@ -42,6 +42,35 @@ function videoFrom(html: string): Element {
 }
 
 {
+  const result = describeInlineVideo(
+    videoFrom(
+      '<video data-poster="/covers/live.jpg"><source data-video-src="/streams/live.m3u8" type="application/vnd.apple.mpegurl"></video>',
+    ),
+    '直播现场',
+    'https://news.example/story/2',
+  )
+  assert.deepEqual(result, {
+    src: 'https://news.example/streams/live.m3u8',
+    poster: 'https://news.example/covers/live.jpg',
+    title: '直播现场',
+  })
+}
+
+{
+  const result = describeInlineVideo(
+    videoFrom(
+      '<video><source srcset="https://cdn.example/fallback.mp4" type="video/mp4"></video>',
+    ),
+    '文章标题',
+  )
+  assert.equal(
+    result?.src,
+    'https://cdn.example/fallback.mp4',
+    'source[srcset] should also be treated as a playable fallback',
+  )
+}
+
+{
   const result = describeInlineVideo(videoFrom('<video controls></video>'), '文章标题')
   assert.equal(result, null, 'source-less videos should remain available for native fallback')
 }

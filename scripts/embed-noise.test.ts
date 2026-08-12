@@ -18,6 +18,26 @@ assert.doesNotMatch(
   '应去掉 YouTube 同意与广告拦截占位文案',
 )
 
+const youtubeConsentNoise = `
+<p>Intro paragraph kept.</p>
+<section>
+  <p>To watch this video, please enable advertisement cookies and tracking for YouTube.</p>
+</section>
+<aside>
+  <p>This content is not available because one of your browser extensions is blocking YouTube.</p>
+</aside>
+<p>Closing paragraph kept.</p>
+`
+
+const cleanedConsent = stripEmbedNoise(youtubeConsentNoise)
+assert.match(cleanedConsent, /Intro paragraph kept/)
+assert.match(cleanedConsent, /Closing paragraph kept/)
+assert.doesNotMatch(
+  cleanedConsent,
+  /advertisement cookies|blocking YouTube/i,
+  '应去掉更宽泛的 YouTube 同意 / 拦截异常文案',
+)
+
 assert.equal(
   stripEmbedNoise('<p>正常正文，没有嵌入噪声。</p>'),
   '<p>正常正文，没有嵌入噪声。</p>',

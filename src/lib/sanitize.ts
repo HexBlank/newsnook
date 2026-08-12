@@ -19,7 +19,7 @@ const DOMPurify = createPurify()
  * 这些占位文字没有信息量，应剔除；原站 YouTube embed iframe 则白名单保留。
  */
 const EMBED_NOISE =
-  /(?:to display this content from youtube[\s\S]{0,120}advertisement tracking)|(?:one of your browser extensions seems to be blocking the video player)|(?:pour afficher ce contenu youtube[\s\S]{0,120}publicit)|(?:un de vos bloqueurs de publicit)|(?:page\s+not\s+found)|(?:content you requested does not exist)|(?:is not available anymore)/i
+  /(?:to display this content from youtube[\s\S]{0,160}(?:advertisement tracking|audience measurement|cookies))|(?:to watch this video[\s\S]{0,160}(?:youtube|advertisement|cookies|tracking))|(?:one of your browser extensions seems to be blocking (?:the video player|youtube))|(?:content is not available because[\s\S]{0,120}blocking youtube)|(?:pour afficher ce contenu youtube[\s\S]{0,120}publicit)|(?:un de vos bloqueurs de publicit)|(?:page\s+not\s+found)|(?:content you requested does not exist)|(?:is not available anymore)/i
 
 /** 仅允许原站 YouTube / YouTube nocookie 嵌入，不改写 src */
 const YOUTUBE_EMBED_SRC =

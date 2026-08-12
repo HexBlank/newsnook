@@ -21,6 +21,7 @@ import {
   fetchMediaBytes,
   needsMediaHotlinkBypass,
 } from '../lib/mediaFetch'
+import { getVideoStatusMessage } from '../lib/videoStatus'
 import {
   createBrightnessControl,
   createVolumeControl,
@@ -152,6 +153,8 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
   const [controlsVisible, setControlsVisible] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
   const [scrubbing, setScrubbing] = useState(false)
+  const [waiting, setWaiting] = useState(false)
+  const [seeking, setSeeking] = useState(false)
   const [rate, setRate] = useState(1)
   const [rateMenuOpen, setRateMenuOpen] = useState(false)
   const [boosting, setBoosting] = useState(false)
@@ -220,6 +223,8 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
     setDuration(0)
     setBuffered(0)
     setControlsVisible(true)
+    setWaiting(true)
+    setSeeking(false)
     setRateMenuOpen(false)
 
     const markReady = () => {
@@ -232,6 +237,7 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
         gestureRef.current.boosted ? BOOST_RATE : rateRef.current,
       )
       syncBoostIndicator(video)
+      setWaiting(false)
       setReady(true)
     }
     const onFatalMedia = () => {
@@ -268,12 +274,34 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
       setPlaying(false)
       setControlsVisible(true)
       clearHideTimer()
+      setWaiting(false)
+      setSeeking(false)
     }
     const onRateChange = () => syncBoostIndicator(video)
     // 音量手势可能解除静音，静音按钮的状态要跟着走
     const onVolumeChange = () => setMuted(video.muted)
+    const onLoadStart = () => {
+      setWaiting(true)
+      setSeeking(false)
+    }
+    const onWaiting = () => setWaiting(true)
+    const onSeeking = () => setSeeking(true)
+    const onSeeked = () => {
+      setSeeking(false)
+      setWaiting(false)
+    }
+    const onPlaying = () => {
+      setWaiting(false)
+      setSeeking(false)
+    }
 
+    video.addEventListener('loadstart', onLoadStart)
     video.addEventListener('canplay', markReady)
+    video.addEventListener('playing', onPlaying)
+    video.addEventListener('waiting', onWaiting)
+    video.addEventListener('stalled', onWaiting)
+    video.addEventListener('seeking', onSeeking)
+    video.addEventListener('seeked', onSeeked)
     video.addEventListener('volumechange', onVolumeChange)
     video.addEventListener('loadeddata', markReady)
     video.addEventListener('loadedmetadata', onMeta)
@@ -343,7 +371,13 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
     return () => {
       cancelled = true
       clearHideTimer()
+      video.removeEventListener('loadstart', onLoadStart)
       video.removeEventListener('canplay', markReady)
+      video.removeEventListener('playing', onPlaying)
+      video.removeEventListener('waiting', onWaiting)
+      video.removeEventListener('stalled', onWaiting)
+      video.removeEventListener('seeking', onSeeking)
+      video.removeEventListener('seeked', onSeeked)
       video.removeEventListener('loadeddata', markReady)
       video.removeEventListener('loadedmetadata', onMeta)
       video.removeEventListener('durationchange', onDuration)
@@ -764,6 +798,13 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
   const progress = duration > 0 ? current / duration : 0
   const bufferRatio = duration > 0 ? Math.min(1, buffered / duration) : 0
   const showChrome = (controlsVisible || !playing || scrubbing) && !boosting
+  const statusMessage = getVideoStatusMessage({
+    ready,
+    fatal,
+    scrubbing,
+    waiting,
+    seeking,
+  })
   showChromeRef.current = showChrome
 
   return (
@@ -832,9 +873,12 @@ export function InkVideoPlayer({ src, poster, title }: Props) {
           </div>
         )}
 
-        {!ready && !fatal && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35">
-            <LoaderCircle className="h-7 w-7 animate-spin text-paper/80" strokeWidth={1.6} />
+        {statusMessage && (
+          <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-black/35">
+            <div className="flex items-center gap-2 rounded-full bg-ink-raised/85 px-3 py-2 text-[12px] text-paper">
+              <LoaderCircle className="h-4 w-4 animate-spin text-paper/80" strokeWidth={1.8} />
+              <span>{statusMessage}</span>
+            </div>
           </div>
         )}
 
