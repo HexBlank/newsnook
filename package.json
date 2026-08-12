@@ -27,6 +27,7 @@
     "test:refresh-progress": "rolldown scripts/refresh-progress.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/refresh-progress.test.mjs && node node_modules/.cache/newsnook/refresh-progress.test.mjs",
     "test:reader-images": "rolldown scripts/reader-image-role.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/reader-image-role.test.mjs && node node_modules/.cache/newsnook/reader-image-role.test.mjs",
     "test:inline-video": "rolldown scripts/inline-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/inline-video.test.mjs && node node_modules/.cache/newsnook/inline-video.test.mjs",
+    "test:huxiu-video": "rolldown scripts/huxiu-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/huxiu-video.test.mjs && node node_modules/.cache/newsnook/huxiu-video.test.mjs",
     "test:video-gestures": "rolldown scripts/video-gestures.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/video-gestures.test.mjs && node node_modules/.cache/newsnook/video-gestures.test.mjs",
     "test:translation": "rolldown scripts/translation-service.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/translation-service.test.mjs && node node_modules/.cache/newsnook/translation-service.test.mjs",
     "test:feed-translation": "npx tsx scripts/feed-translation.test.ts",

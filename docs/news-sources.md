@@ -899,3 +899,18 @@ APK 已经过混淆，且当前工作区没有原始 Android 工程。继续实�
 - 是否保留全文聚合，还是改成摘要加原文跳转。
 
 有源码后，应以源码中的实际调用链为准，对本文件中的反编译类名和行号进行一次校正。
+
+## 18. 当前虎嗅视频稿适配
+
+虎嗅官方 RSS 的视频稿使用 `<type>video_article</type>`，但 `description`
+只包含导语，不提供媒体地址；原文网页又可能返回阿里云访问验证页。因此视频稿不走
+通用 Readability，而按文章 URL 中的数字 `aid` 请求：
+
+```text
+POST https://api-web-article.huxiu.com/web/article/detail
+platform=www&aid={aid}
+```
+
+解析 `data.video_info` 中的 MP4 地址和封面，生成正文内 `<video>`，再交给统一的
+`InkVideoPlayer` 播放。普通文章仍优先使用 RSS 全文，不额外请求详情接口；接口缺少
+可播放地址或暂时失败时继续走现有原文抽取与反爬软降级。

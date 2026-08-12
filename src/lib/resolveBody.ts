@@ -403,6 +403,119 @@ function buildVideoBody(article: Article): ResolvedBody {
   }
 }
 
+const HUXIU_ARTICLE_DETAIL_API =
+  'https://api-web-article.huxiu.com/web/article/detail'
+const HUXIU_VIDEO_LINK_KEYS = [
+  'fhd_medium_link',
+  'wifi_link',
+  'hd_link',
+  'fhd_low_link',
+  'flow_link',
+  'sd_link',
+  'fhd_link',
+] as const
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function httpUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  try {
+    const parsed = new URL(value.trim())
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? parsed.href
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function huxiuArticleId(article: Article): string | undefined {
+  if (article.sourceId !== 'huxiu') return undefined
+  try {
+    return new URL(article.originUrl).pathname.match(/^\/article\/(\d+)\.html$/)?.[1]
+  } catch {
+    return undefined
+  }
+}
+
+/** 把虎嗅详情接口的 video_info 转为现有正文内播放器可消费的 <video>。 */
+function buildHuxiuVideoBody(
+  article: Article,
+  payload: unknown,
+): ResolvedBody | null {
+  const root = objectRecord(payload)
+  if (!root || root.success === false) return null
+  const data = objectRecord(root.data)
+  const video = objectRecord(data?.video_info)
+  if (!data || !video) return null
+
+  const expectedAid = huxiuArticleId(article)
+  if (expectedAid && data.aid != null && String(data.aid) !== expectedAid) return null
+
+  const videoUrl = HUXIU_VIDEO_LINK_KEYS
+    .map((key) => httpUrl(video[key]))
+    .find(Boolean)
+  if (!videoUrl) return null
+
+  const poster =
+    httpUrl(video.custom_cover_path) ||
+    httpUrl(video.cover) ||
+    httpUrl(data.pic_path) ||
+    httpUrl(article.image)
+  const title =
+    typeof data.title === 'string' && data.title.trim()
+      ? data.title.trim()
+      : article.title
+  const content =
+    typeof data.content === 'string' && stripTags(data.content).length >= 10
+      ? data.content
+      : article.summary
+        ? `<p>${escapeHtml(article.summary)}</p>`
+        : ''
+  const attrs = [
+    `src="${escapeHtml(videoUrl)}"`,
+    'controls',
+    'playsinline',
+    'preload="metadata"',
+    `title="${escapeHtml(title)}"`,
+  ]
+  if (poster) attrs.push(`poster="${escapeHtml(poster)}"`)
+
+  return {
+    contentHtml: sanitizeArticleHtml(`<video ${attrs.join(' ')}></video>${content}`),
+    title,
+    image: poster,
+    bodySource: 'video',
+  }
+}
+
+/** 测试导出：将虎嗅详情响应转换为可播放正文。 */
+export function buildHuxiuVideoBodyForTest(
+  article: Article,
+  payload: unknown,
+): ResolvedBody | null {
+  return buildHuxiuVideoBody(article, payload)
+}
+
+async function resolveHuxiuVideoBody(
+  article: Article,
+  signal?: AbortSignal,
+): Promise<ResolvedBody | null> {
+  const aid = huxiuArticleId(article)
+  if (!aid) return null
+
+  const payload = await fetchAbsoluteFormPost(
+    HUXIU_ARTICLE_DETAIL_API,
+    { platform: 'www', aid },
+    { signal },
+  )
+  return buildHuxiuVideoBody(article, JSON.parse(payload) as unknown)
+}
+
 function isNeteaseHost(hostname: string): boolean {
   const host = hostname.toLowerCase()
   return (
@@ -630,13 +743,14 @@ export async function resolveArticleBody(
   signal?: AbortSignal,
   extraSources?: NewsSource[],
 ): Promise<ResolvedBody> {
-  if (article.contentType === 'video') {
+  if (article.contentType === 'video' && article.sourceId !== 'huxiu') {
     return buildVideoBody(article)
   }
 
   if (
-    isInlineFlashBody(article.contentHtml, article.sourceId) ||
-    (isSubstantialHtml(article.contentHtml) && !hasBrokenTextEncoding(article.contentHtml!))
+    article.contentType !== 'video' &&
+    (isInlineFlashBody(article.contentHtml, article.sourceId) ||
+      (isSubstantialHtml(article.contentHtml) && !hasBrokenTextEncoding(article.contentHtml!)))
   ) {
     return {
       contentHtml: await absolutizeHtml(
@@ -646,6 +760,11 @@ export async function resolveArticleBody(
       bodySource: 'feed',
     }
   }
+
+  // 新 RSS 视频稿带 contentType；旧列表缓存没有该字段，但正文同样很短。
+  // 两种情况都在通用网页抽取前查一次详情 API，普通 RSS 全文已在上方直接返回。
+  const huxiu = await resolveHuxiuVideoBody(article, signal).catch(() => null)
+  if (huxiu) return huxiu
 
   const netease = await resolveNetEaseArticleBody(article, signal).catch(() => null)
   if (netease) return netease
