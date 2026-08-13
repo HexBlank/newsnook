@@ -7,6 +7,7 @@ import type { CategoryId, NewsCategory } from '../../sources/categories'
 import {
   allRegisteredSources,
   describeSources,
+  sourceUsageByOtherCategories,
   type Preferences,
 } from '../../sources/preferences'
 
@@ -36,6 +37,10 @@ export function CategoryEditScreen({
 }: Props) {
   const allSources = allRegisteredSources(prefs)
   const isEditing = Boolean(categoryId)
+  const usageBySourceId = useMemo(
+    () => sourceUsageByOtherCategories(prefs, categoryId),
+    [prefs, categoryId],
+  )
   const existingCategory = useMemo<NewsCategory | undefined>(() => {
     if (!categoryId) return undefined
     return prefs.customCategories?.find((category) => category.id === categoryId)
@@ -221,6 +226,7 @@ export function CategoryEditScreen({
         <SourcePicker
           sources={allSources}
           selectedIds={selectedIds}
+          usageBySourceId={usageBySourceId}
           onToggleSource={toggleSource}
           onToggleGroup={toggleGroup}
         />

@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+
 import { SettingsHint, SettingsShell } from '../../components/SettingsShell'
 import { SourcePicker } from '../../components/SourcePicker'
 import type { CategoryId } from '../../sources/categories'
@@ -7,6 +9,7 @@ import {
   describeSources,
   hasSourceOverride,
   resolveCategory,
+  sourceUsageByOtherCategories,
   type Preferences,
 } from '../../sources/preferences'
 
@@ -29,6 +32,10 @@ export function CategorySourcesScreen({
   const selected = categorySourceIds(categoryId, prefs)
   const customized = hasSourceOverride(categoryId, prefs)
   const allSources = allRegisteredSources(prefs)
+  const usageBySourceId = useMemo(
+    () => sourceUsageByOtherCategories(prefs, categoryId),
+    [prefs, categoryId],
+  )
 
   const disabledIds = selected.length === 1 ? selected : undefined
 
@@ -73,6 +80,7 @@ export function CategorySourcesScreen({
           sources={allSources}
           selectedIds={selected}
           disabledIds={disabledIds}
+          usageBySourceId={usageBySourceId}
           onToggleSource={(sourceId) => onToggleSource(categoryId, sourceId)}
           onToggleGroup={handleToggleGroup}
         />

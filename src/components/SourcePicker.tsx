@@ -24,6 +24,8 @@ export interface SourcePickerProps {
   onToggleSource: (sourceId: string) => void
   onToggleGroup?: (groupSourceIds: string[]) => void
   disabledIds?: string[]
+  /** sourceId → 其他分类 label；有则在 URL 下显示「亦用于 · …」 */
+  usageBySourceId?: Record<string, string[]>
   placeholder?: string
   className?: string
 }
@@ -36,6 +38,7 @@ export function SourcePicker({
   onToggleSource,
   onToggleGroup,
   disabledIds,
+  usageBySourceId,
   placeholder = '搜索信源名称、标签或网址...',
   className = '',
 }: SourcePickerProps) {
@@ -409,6 +412,11 @@ export function SourcePicker({
                               <span className="mt-0.5 block truncate font-mono text-[10px] text-paper-faint">
                                 {source.url.replace(/^https?:\/\//, '').slice(0, 48)}
                               </span>
+                              {usageBySourceId?.[source.id]?.length ? (
+                                <span className="mt-0.5 block truncate font-mono text-[10px] text-paper-faint">
+                                  亦用于 · {usageBySourceId[source.id].join(' · ')}
+                                </span>
+                              ) : null}
                             </span>
                           </button>
                         </li>

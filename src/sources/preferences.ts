@@ -311,6 +311,29 @@ export function categorySourceIds(categoryId: CategoryId, prefs: Preferences): s
   return findCategory(categoryId).sourceIds ?? []
 }
 
+/** sourceId → 同场景其他可见分类的 label（排除 excludeCategoryId 与 mix） */
+export function sourceUsageByOtherCategories(
+  prefs: Preferences,
+  excludeCategoryId?: CategoryId,
+): Record<string, string[]> {
+  const usage: Record<string, string[]> = {}
+  const seenIds: Record<string, Set<CategoryId>> = {}
+
+  for (const category of visibleCategories(prefs)) {
+    if (category.id === FOLLOWS_ENABLED_SOURCES) continue
+    if (excludeCategoryId && category.id === excludeCategoryId) continue
+
+    for (const sourceId of categorySourceIds(category.id, prefs)) {
+      const ids = seenIds[sourceId] ?? (seenIds[sourceId] = new Set())
+      if (ids.has(category.id)) continue
+      ids.add(category.id)
+      ;(usage[sourceId] ??= []).push(category.label)
+    }
+  }
+
+  return usage
+}
+
 export function hasSourceOverride(categoryId: CategoryId, prefs: Preferences): boolean {
   return Boolean(prefs.categorySources[categoryId]?.length)
 }
