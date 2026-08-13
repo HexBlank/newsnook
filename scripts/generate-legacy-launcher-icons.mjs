@@ -1,9 +1,9 @@
 /**
- * Rasterize NewsNook adaptive icon into legacy mipmap PNGs for API < 26.
+ * Rasterize Suwen adaptive icon into legacy mipmap PNGs for API < 26.
  *
- * Source of truth:
- * - background: android/.../res/values/colors.xml → ic_launcher_background
- * - foreground: assets/android-icon/ic_launcher_foreground.svg
+ * Source of truth (assets/android-icon/):
+ * - ic_launcher_background.png
+ * - ic_launcher_foreground.png
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -13,8 +13,9 @@ import sharp from 'sharp'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
 const resRoot = path.join(projectRoot, 'android/app/src/main/res')
-const foregroundSvgPath = path.join(projectRoot, 'assets/android-icon/ic_launcher_foreground.svg')
-const colorsPath = path.join(resRoot, 'values/colors.xml')
+const iconDir = path.join(projectRoot, 'assets/android-icon')
+const backgroundPath = path.join(iconDir, 'ic_launcher_background.png')
+const foregroundPath = path.join(iconDir, 'ic_launcher_foreground.png')
 
 const DENSITIES = [
   { folder: 'mipmap-ldpi', size: 36 },
@@ -25,31 +26,16 @@ const DENSITIES = [
   { folder: 'mipmap-xxxhdpi', size: 192 },
 ]
 
-function readBackgroundColor() {
-  const xml = fs.readFileSync(colorsPath, 'utf8')
-  const match = xml.match(/<color\s+name="ic_launcher_background">\s*(#[0-9A-Fa-f]{6,8})\s*<\/color>/)
-  if (!match) {
-    throw new Error(`Missing ic_launcher_background in ${colorsPath}`)
-  }
-  return match[1]
-}
-
-async function composeIcon(foregroundSvg, background, size, round) {
-  const canvas = 108
-  const fg = await sharp(Buffer.from(foregroundSvg))
+async function composeIcon(size, round) {
+  const canvas = 1080
+  const background = await sharp(backgroundPath).resize(canvas, canvas).png().toBuffer()
+  const foreground = await sharp(foregroundPath)
     .resize(canvas, canvas, { fit: 'fill', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer()
 
-  let composed = await sharp({
-    create: {
-      width: canvas,
-      height: canvas,
-      channels: 4,
-      background,
-    },
-  })
-    .composite([{ input: fg, top: 0, left: 0 }])
+  let composed = await sharp(background)
+    .composite([{ input: foreground, top: 0, left: 0 }])
     .png()
     .toBuffer()
 
@@ -77,18 +63,17 @@ async function composeIcon(foregroundSvg, background, size, round) {
 }
 
 async function main() {
-  if (!fs.existsSync(foregroundSvgPath)) {
-    throw new Error(`Missing foreground SVG: ${foregroundSvgPath}`)
+  for (const required of [backgroundPath, foregroundPath]) {
+    if (!fs.existsSync(required)) {
+      throw new Error(`Missing icon master: ${required}`)
+    }
   }
-
-  const background = readBackgroundColor()
-  const foregroundSvg = fs.readFileSync(foregroundSvgPath, 'utf8')
 
   for (const { folder, size } of DENSITIES) {
     const dir = path.join(resRoot, folder)
     fs.mkdirSync(dir, { recursive: true })
-    const square = await composeIcon(foregroundSvg, background, size, false)
-    const round = await composeIcon(foregroundSvg, background, size, true)
+    const square = await composeIcon(size, false)
+    const round = await composeIcon(size, true)
     await fs.promises.writeFile(path.join(dir, 'ic_launcher.png'), square)
     await fs.promises.writeFile(path.join(dir, 'ic_launcher_round.png'), round)
     console.log(`wrote ${folder} ${size}x${size}`)

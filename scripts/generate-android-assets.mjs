@@ -56,16 +56,9 @@ const ICON_MARKERS = [
   'mipmap-anydpi-v26/ic_launcher_round.xml',
   'mipmap-anydpi-v33/ic_launcher.xml',
   'mipmap-anydpi-v33/ic_launcher_round.xml',
-  'drawable-mdpi/ic_launcher_foreground.png',
-  'drawable-mdpi/ic_launcher_monochrome.png',
-  'drawable-hdpi/ic_launcher_foreground.png',
-  'drawable-hdpi/ic_launcher_monochrome.png',
-  'drawable-xhdpi/ic_launcher_foreground.png',
-  'drawable-xhdpi/ic_launcher_monochrome.png',
-  'drawable-xxhdpi/ic_launcher_foreground.png',
-  'drawable-xxhdpi/ic_launcher_monochrome.png',
-  'drawable-xxxhdpi/ic_launcher_foreground.png',
-  'drawable-xxxhdpi/ic_launcher_monochrome.png',
+  'drawable-nodpi/ic_launcher_background.png',
+  'drawable-nodpi/ic_launcher_foreground.png',
+  'drawable-nodpi/ic_launcher_monochrome.png',
 ]
 
 function die(message) {

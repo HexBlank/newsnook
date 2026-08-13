@@ -108,7 +108,12 @@ npm run assets
 
 只更新 Android 各密度的 `splash.png`（含 night），**不会**改动 Adaptive Icon。
 源图优先 `assets/splash.png` / `assets/splash-dark.png`；没有则用 `public/logo-light.svg` 合成。
-启动图标维护于 `android/app/src/main/res/`（Adaptive Icon 层 + `values/colors.xml`），可编辑 SVG 源在 `assets/android-icon/`；旧版 PNG 用 `node scripts/generate-legacy-launcher-icons.mjs` 重生成。
+启动图标维护于 `android/app/src/main/res/`（Adaptive Icon：`drawable-nodpi` 层 + `mipmap-anydpi-v26/v33`）。
+
+母版在 `assets/android-icon/`：
+- 前景/单色按 **48dp** 居中落在 108dp 画布上（规范：logo ≥48dp 且 ≤66dp）。不要画满 66dp 安全区边缘——`AdaptiveIconDrawable` 实际把图层中心 **72dp** 映射到启动器可视区，画满 66dp 时真机会占满约 92% 圆面。
+- Legacy mipmap：`node scripts/generate-legacy-launcher-icons.mjs`
+- Web path SVG（`mark-path.txt`）：`node scripts/generate-web-brand-icons.mjs`（Web 标不套 adaptive 边距）
 
 ## 开发和调试
 
