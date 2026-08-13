@@ -709,9 +709,15 @@ export const FeedScreen = memo(function FeedScreen({
             <div
               className="absolute inset-0"
               style={{
-                transform: `translate3d(${dragX}px, 0, 0)`,
+                // 静止时不要让纵向滚动容器常驻合成层；Android WebView 在触摸
+                // 序列被系统打断后，偶尔会让这种嵌套滚动层停止接收后续手势。
+                transform:
+                  dragX === 0 && transitionMs === 0
+                    ? undefined
+                    : `translate3d(${dragX}px, 0, 0)`,
                 transition: swipeTransition,
-                backfaceVisibility: 'hidden',
+                backfaceVisibility:
+                  dragX === 0 && transitionMs === 0 ? undefined : 'hidden',
               }}
             >
               {listScroller}

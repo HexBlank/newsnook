@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.5.3",
+  "version": "1.5.2",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -11,6 +11,7 @@
     "test:cache": "rolldown scripts/cache-behavior.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/cache-behavior.test.mjs && node node_modules/.cache/newsnook/cache-behavior.test.mjs",
     "test:encoding": "rolldown scripts/text-encoding.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/text-encoding.test.mjs && node node_modules/.cache/newsnook/text-encoding.test.mjs",
     "test:edge-swipe": "rolldown scripts/edge-swipe-back.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/edge-swipe-back.test.mjs && node node_modules/.cache/newsnook/edge-swipe-back.test.mjs",
+    "test:gesture-styles": "rolldown scripts/gesture-styles.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/gesture-styles.test.mjs && node node_modules/.cache/newsnook/gesture-styles.test.mjs",
     "test:easter-egg": "npx tsx scripts/easter-egg-trigger.test.ts",
     "test:easter-egg-screen-chrome": "npx tsx scripts/easter-egg-screen-chrome.test.ts",
     "test:easter-egg-autopilot": "node scripts/easter-egg-autopilot.test.mjs",
@@ -28,6 +29,7 @@
     "test:refresh-progress": "rolldown scripts/refresh-progress.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/refresh-progress.test.mjs && node node_modules/.cache/newsnook/refresh-progress.test.mjs",
     "test:reader-images": "rolldown scripts/reader-image-role.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/reader-image-role.test.mjs && node node_modules/.cache/newsnook/reader-image-role.test.mjs",
     "test:inline-video": "rolldown scripts/inline-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/inline-video.test.mjs && node node_modules/.cache/newsnook/inline-video.test.mjs",
+    "test:huxiu-video": "rolldown scripts/huxiu-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/huxiu-video.test.mjs && node node_modules/.cache/newsnook/huxiu-video.test.mjs",
     "test:video-gestures": "rolldown scripts/video-gestures.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/video-gestures.test.mjs && node node_modules/.cache/newsnook/video-gestures.test.mjs",
     "test:translation": "rolldown scripts/translation-service.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/translation-service.test.mjs && node node_modules/.cache/newsnook/translation-service.test.mjs",
     "test:feed-translation": "npx tsx scripts/feed-translation.test.ts",

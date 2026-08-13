@@ -71,6 +71,19 @@ export function useSwipeCategory({
 
     let moveRafId = 0
     let pendingDragX: number | null = null
+    let activeTouchId: number | null = null
+    let settleTimer = 0
+    let commitTimer = 0
+    let finishFrame = 0
+
+    const clearTimers = () => {
+      if (settleTimer) window.clearTimeout(settleTimer)
+      if (commitTimer) window.clearTimeout(commitTimer)
+      if (finishFrame) window.cancelAnimationFrame(finishFrame)
+      settleTimer = 0
+      commitTimer = 0
+      finishFrame = 0
+    }
 
     const flushDrag = () => {
       moveRafId = 0
@@ -106,21 +119,25 @@ export function useSwipeCategory({
       startRef.current = null
       lastRef.current = null
       lockRef.current = 'none'
+      activeTouchId = null
     }
 
     const settle = () => {
+      clearTimers()
       cancelDragRaf()
       const needsTransition = dragXRef.current !== 0
       apply(0, needsTransition ? SETTLE_MS : 0)
       resetTouch()
       if (needsTransition) {
-        window.setTimeout(() => {
+        settleTimer = window.setTimeout(() => {
+          settleTimer = 0
           setTransitionMs(0)
         }, SETTLE_MS)
       }
     }
 
     const commit = (direction: SwipeDirection) => {
+      clearTimers()
       resetTouch()
 
       const width = widthRef.current || measureWidth()
@@ -144,7 +161,10 @@ export function useSwipeCategory({
       // 已经几乎滑满时不再拖很长收尾，直接对接换页
       if (remaining < width * 0.04) {
         apply(out, 0)
-        window.requestAnimationFrame(() => finish())
+        finishFrame = window.requestAnimationFrame(() => {
+          finishFrame = 0
+          finish()
+        })
         return
       }
 
@@ -152,13 +172,38 @@ export function useSwipeCategory({
         Math.min(COMMIT_MS, Math.max(90, (remaining / width) * COMMIT_MS)),
       )
       apply(out, ms)
-      window.setTimeout(finish, ms)
+      commitTimer = window.setTimeout(() => {
+        commitTimer = 0
+        finish()
+      }, ms)
+    }
+
+    const abortInteraction = () => {
+      clearTimers()
+      cancelDragRaf()
+      busyRef.current = false
+      resetTouch()
+      apply(0, 0)
+    }
+
+    const findTouch = (touches: TouchList, identifier: number) => {
+      for (let index = 0; index < touches.length; index += 1) {
+        const touch = touches.item(index)
+        if (touch?.identifier === identifier) return touch
+      }
+      return null
     }
 
     const onTouchStart = (event: TouchEvent) => {
-      if (busyRef.current || event.touches.length !== 1) return
+      if (event.touches.length !== 1) {
+        if (startRef.current) abortInteraction()
+        return
+      }
+      if (busyRef.current) return
+      if (startRef.current) abortInteraction()
       const touch = event.touches[0]
       widthRef.current = measureWidth()
+      activeTouchId = touch.identifier
       startRef.current = { x: touch.clientX, y: touch.clientY }
       lastRef.current = { x: touch.clientX, t: event.timeStamp }
       lockRef.current = 'none'
@@ -166,9 +211,13 @@ export function useSwipeCategory({
 
     const onTouchMove = (event: TouchEvent) => {
       const start = startRef.current
-      if (!start || busyRef.current) return
+      if (!start || busyRef.current || activeTouchId === null) return
 
-      const touch = event.touches[0]
+      const touch = findTouch(event.touches, activeTouchId)
+      if (!touch) {
+        abortInteraction()
+        return
+      }
       const dx = touch.clientX - start.x
       const dy = touch.clientY - start.y
 
@@ -195,6 +244,12 @@ export function useSwipeCategory({
     }
 
     const onTouchEnd = (event: TouchEvent) => {
+      if (activeTouchId === null) return
+      const endedTouch = findTouch(event.changedTouches, activeTouchId)
+      if (!endedTouch) {
+        if (!findTouch(event.touches, activeTouchId)) abortInteraction()
+        return
+      }
       cancelDragRaf()
       const start = startRef.current
       if (!start || lockRef.current !== 'horizontal') {
@@ -216,18 +271,29 @@ export function useSwipeCategory({
       else settle()
     }
 
+    const onTouchCancel = () => abortInteraction()
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') abortInteraction()
+    }
+
     element.addEventListener('touchstart', onTouchStart, { passive: true })
     element.addEventListener('touchmove', onTouchMove, { passive: false })
     element.addEventListener('touchend', onTouchEnd)
-    element.addEventListener('touchcancel', settle)
+    element.addEventListener('touchcancel', onTouchCancel)
+    window.addEventListener('blur', abortInteraction)
+    window.addEventListener('pagehide', abortInteraction)
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
-      cancelDragRaf()
+      abortInteraction()
       window.removeEventListener('resize', measureWidth)
       element.removeEventListener('touchstart', onTouchStart)
       element.removeEventListener('touchmove', onTouchMove)
       element.removeEventListener('touchend', onTouchEnd)
-      element.removeEventListener('touchcancel', settle)
+      element.removeEventListener('touchcancel', onTouchCancel)
+      window.removeEventListener('blur', abortInteraction)
+      window.removeEventListener('pagehide', abortInteraction)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [containerRef, disabled, reduced])
 

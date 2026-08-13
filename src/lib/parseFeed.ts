@@ -388,6 +388,12 @@ function parseXmlFeed(source: NewsSource, payload: string, fetchedAt: number): A
     )
     const link = isAtom ? linkOfAtomEntry(node) : text(node.link) || text(node.guid)
     const dateRaw = text(pick(node, 'pubDate', 'published', 'updated', 'date'))
+    // 虎嗅官方 RSS 用自定义 <type>video_article</type> 标识视频稿，
+    // description 只有一句导语，视频地址需要在打开正文时从详情接口补齐。
+    const contentType =
+      source.id === 'huxiu' && text(node.type).toLowerCase() === 'video_article'
+        ? 'video'
+        : undefined
 
     const article = buildArticle(
       source,
@@ -398,6 +404,7 @@ function parseXmlFeed(source: NewsSource, payload: string, fetchedAt: number): A
         summaryText: descriptionText,
         dateRaw,
         image: imageOf(node, html),
+        contentType,
       },
       fetchedAt,
     )
