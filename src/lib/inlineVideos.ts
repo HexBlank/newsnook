@@ -4,8 +4,22 @@ export interface InlineVideoDescriptor {
   title: string
 }
 
-const VIDEO_SOURCE_ATTRS = ['src', 'data-src', 'data-video-src', 'data-url', 'data-original', 'srcset']
-const VIDEO_POSTER_ATTRS = ['poster', 'data-poster', 'data-cover', 'data-thumbnail']
+const VIDEO_SOURCE_ATTRS = [
+  'src',
+  'data-src',
+  'data-video-src',
+  'data-url',
+  'data-original',
+  'srcset',
+  'data-deferred-src',
+]
+const VIDEO_POSTER_ATTRS = [
+  'poster',
+  'data-poster',
+  'data-cover',
+  'data-thumbnail',
+  'data-deferred-poster',
+]
 
 function firstAttribute(element: Element, names: string[]): string {
   for (const name of names) {
