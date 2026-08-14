@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { parseHTML } from 'linkedom'
 
+import { hydrateNativeTunnelImages, resolvePlayableImageSrc } from '../src/features/proxy/hydrateImages'
 import { deferMediaInHtml, DEFERRED_SRC_ATTR } from '../src/lib/deferReaderMedia'
 import { describeInlineVideo } from '../src/lib/inlineVideos'
 import { shouldAutoLoadMedia } from '../src/lib/mediaLoadPolicy'
@@ -113,3 +114,16 @@ console.log('wifi-only media policy tests passed')
 }
 
 console.log('wifi-only media defer tests passed')
+
+{
+  const html = '<p><img src="https://cdn.example/photo.jpg" alt="配图" /></p>'
+  const out = await hydrateNativeTunnelImages(html, { autoLoadMedia: false })
+  assert.equal(out, html)
+}
+
+{
+  const url = 'https://cdn.example/photo.jpg'
+  assert.equal(await resolvePlayableImageSrc(url), url)
+}
+
+console.log('wifi-only media hydrate tests passed')
