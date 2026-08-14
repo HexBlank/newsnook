@@ -7,6 +7,7 @@ import {
 } from '../features/translation/native'
 import { isLocalTranslationProviderId } from '../features/translation/types'
 import { setRuntimeProxyPrefs } from '../lib/http'
+import { setRuntimeWifiOnlyAutoLoadMedia } from '../lib/mediaLoadRuntime'
 import { loadPreferences, savePreferences } from '../lib/storage'
 import { applyEinkMode } from '../lib/eink'
 import { applyTheme, resolveTheme, watchSystemTheme, type ResolvedTheme } from '../lib/theme'
@@ -77,6 +78,7 @@ export function usePreferences(): PreferencesApi {
     savePreferences(prefs)
     applyTypography(prefs)
     setRuntimeProxyPrefs(prefs.proxy)
+    setRuntimeWifiOnlyAutoLoadMedia(Boolean(prefs.wifiOnlyAutoLoadMedia))
   }, [prefs])
 
 
