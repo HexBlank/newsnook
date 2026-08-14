@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core'
 import { useId, useMemo, useState } from 'react'
 import {
   Check,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 
 import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
+import { ToggleSwitch } from '../../components/ToggleSwitch'
 import { proxyModeLabel, proxyProtocolLabel } from '../../features/proxy/config'
 import { currentProxyRuntime } from '../../features/proxy/runtime'
 import { parseProxyAddress } from '../../features/proxy/service'
@@ -21,7 +23,9 @@ import type { ProxyMode, ProxyPrefs, ProxyTestResult } from '../../features/prox
 
 interface Props {
   prefs: ProxyPrefs
+  wifiOnlyAutoLoadMedia: boolean
   onChange: (prefs: ProxyPrefs) => void
+  onWifiOnlyAutoLoadMediaChange: (enabled: boolean) => void
   onBack: () => void
 }
 
@@ -51,7 +55,13 @@ const MODES: {
   },
 ]
 
-export function ProxyScreen({ prefs, onChange, onBack }: Props) {
+export function ProxyScreen({
+  prefs,
+  wifiOnlyAutoLoadMedia,
+  onChange,
+  onWifiOnlyAutoLoadMediaChange,
+  onBack,
+}: Props) {
   const [testing, setTesting] = useState(false)
   const [testResults, setTestResults] = useState<ProxyTestResult[] | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -104,6 +114,28 @@ export function ProxyScreen({ prefs, onChange, onBack }: Props) {
 
   return (
     <SettingsShell title="网络与代理" caption={caption} onBack={onBack}>
+      {Capacitor.isNativePlatform() && (
+        <SettingsSection title="流量">
+          <div className="page-x">
+            <div className="flex items-center justify-between gap-4 rounded-2xl border border-haze bg-ink-raised p-4 shadow-[var(--shadow-lift)]">
+              <div className="min-w-0 flex-1">
+                <span className="font-display text-[15px] font-medium text-paper">
+                  仅 Wi-Fi 自动加载图片和视频
+                </span>
+                <p className="mt-1 text-[12px] leading-relaxed text-paper-muted">
+                  移动网络下显示占位，点一下再加载。Wi-Fi 下仍自动加载。
+                </p>
+              </div>
+              <ToggleSwitch
+                checked={wifiOnlyAutoLoadMedia}
+                label="仅 Wi-Fi 自动加载图片和视频"
+                onChange={() => onWifiOnlyAutoLoadMediaChange(!wifiOnlyAutoLoadMedia)}
+              />
+            </div>
+          </div>
+        </SettingsSection>
+      )}
+
       <SettingsSection title="工作模式">
         <ul className="divide-y divide-haze border-y border-haze">
           {MODES.map((item) => {
