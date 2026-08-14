@@ -41,6 +41,7 @@ export function openAiTranslationSystemPrompt(
     '',
     'Output Requirement:',
     'Output the translation directly without any explanations, notes, or process descriptions.',
+    'Do not wrap the translation in XML or HTML tags. Do not copy source wrapper tags. Do not emit special tokens or leftover markup such as </target_text>, </center>, or <|...|>.',
   ].join('\n')
 }
 

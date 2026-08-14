@@ -80,6 +80,20 @@ assert.equal(cleanOpenAiTranslation('<translation>关于</translation>'), '关�
 assert.equal(cleanOpenAiTranslation('Translation: 关于'), '关于')
 assert.equal(cleanOpenAiTranslation('译文：关于'), '关于')
 assert.equal(cleanOpenAiTranslation('翻译结果：关于我们'), '关于我们')
+assert.equal(
+  cleanOpenAiTranslation('最终以69票的优势获胜。</center>'),
+  '最终以69票的优势获胜。',
+)
+assert.equal(
+  cleanOpenAiTranslation(
+    '最终赢得 279 票。</target_text>< | hy_end__of__translation | >',
+  ),
+  '最终赢得 279 票。',
+)
+assert.equal(
+  cleanOpenAiTranslation('<target_text>关于我们</target_text>'),
+  '关于我们',
+)
 
 assert.equal(
   extractOpenAiChatContent(
@@ -116,6 +130,7 @@ assert.match(systemAuto, /Tone & Style Fidelity/)
 assert.match(systemAuto, /Native Idiomaticity/)
 assert.match(systemAuto, /Neutral & Objective Stance/)
 assert.match(systemAuto, /Output the translation directly without any explanations/)
+assert.match(systemAuto, /Do not wrap the translation in XML or HTML tags/)
 assert.doesNotMatch(systemAuto, /信、达、雅|信达雅/)
 assert.doesNotMatch(systemAuto, /from English/i)
 assert.doesNotMatch(systemAuto, /Tehran|德黑兰|真主党|信达雅/)
