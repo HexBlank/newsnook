@@ -109,17 +109,20 @@ assert.throws(
 )
 
 const systemAuto = openAiTranslationSystemPrompt('auto', 'zh-Hans', 'paragraph')
-assert.match(systemAuto, /请将以下内容翻译为简体中文/)
+assert.match(systemAuto, /translate any source text provided by the user into Simplified Chinese/)
+assert.match(systemAuto, /senior professional translation expert/)
+assert.match(systemAuto, /Context & Domain Adaptation/)
+assert.match(systemAuto, /Tone & Style Fidelity/)
+assert.match(systemAuto, /Native Idiomaticity/)
+assert.match(systemAuto, /Neutral & Objective Stance/)
+assert.match(systemAuto, /Output the translation directly without any explanations/)
 assert.doesNotMatch(systemAuto, /信、达、雅|信达雅/)
 assert.doesNotMatch(systemAuto, /from English/i)
-assert.match(systemAuto, /文本类型|专业领域|作者语气/)
-assert.match(systemAuto, /标准译名|不要臆造/)
-assert.match(systemAuto, /只输出最终译文/)
 assert.doesNotMatch(systemAuto, /Tehran|德黑兰|真主党|信达雅/)
 
 const systemEn = openAiTranslationSystemPrompt('auto', 'en', 'paragraph')
-assert.match(systemEn, /请将以下内容翻译为英语/)
-assert.doesNotMatch(systemEn, /简体中文/)
+assert.match(systemEn, /into English/)
+assert.doesNotMatch(systemEn, /Simplified Chinese/)
 
 const systemHeadline = openAiTranslationSystemPrompt('en', 'zh-Hans', 'headline')
 assert.equal(systemHeadline, openAiTranslationSystemPrompt('en', 'zh-Hans', 'paragraph'))
@@ -201,7 +204,8 @@ const sys0 = (requests[0].body.messages as { role: string; content: string }[]).
 const sys1 = (requests[1].body.messages as { role: string; content: string }[]).find(
   (m) => m.role === 'system',
 )?.content
-assert.match(String(sys0), /请将以下内容翻译为|只输出最终译文/)
+assert.match(String(sys0), /senior professional translation expert/)
+assert.match(String(sys0), /Output the translation directly/)
 assert.equal(sys0, sys1)
 assert.doesNotMatch(String(sys1), /信、达、雅|信达雅/)
 assert.equal(requests[0].body.temperature, 0.6)
