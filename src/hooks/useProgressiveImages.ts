@@ -1,5 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 
+import { resolvePlayableImageSrc } from '../features/proxy/hydrateImages'
+import { DEFERRED_SRC_ATTR } from '../lib/deferReaderMedia'
 import { classifyLoadedImage } from '../lib/normalizeImages'
 
 /**
@@ -11,7 +13,14 @@ export function useProgressiveImages(
   rootRef: RefObject<HTMLElement | null>,
   html: string,
   enabled = true,
+  options?: {
+    autoLoad: boolean
+    onUnlocked?: (url: string) => void
+  },
 ): void {
+  const autoLoad = options?.autoLoad !== false
+  const onUnlocked = options?.onUnlocked
+
   useEffect(() => {
     const root = rootRef.current
     if (!root || !enabled || !html) return
@@ -46,13 +55,81 @@ export function useProgressiveImages(
         applyRole()
       }
 
+      const unwrapHost = () => {
+        const host = img.closest<HTMLElement>('.reader-deferred-host')
+        if (host) host.replaceWith(img)
+      }
+
       const premarkedBadge = img.getAttribute('data-reader-role') === 'badge'
       if (premarkedBadge) {
         img.classList.add('reader-img-badge')
       }
 
+      const deferredUrl = img.getAttribute(DEFERRED_SRC_ATTR)
+      const host = img.closest<HTMLElement>('.reader-deferred-host')
+      const isDeferred = Boolean(deferredUrl && !img.getAttribute('src'))
+
+      const reveal = async () => {
+        if (!deferredUrl) return
+        if (host) {
+          host.classList.add('is-loading')
+          host.classList.remove('is-failed')
+        }
+        if (!premarkedBadge) img.classList.add('async-img', 'ink-shimmer')
+        try {
+          const playable = await resolvePlayableImageSrc(deferredUrl)
+          img.setAttribute('src', playable)
+          onUnlocked?.(deferredUrl)
+        } catch {
+          img.classList.remove('ink-shimmer')
+          if (host) {
+            host.classList.remove('is-loading')
+            host.classList.add('is-failed')
+            const label = host.querySelector('.reader-deferred-label')
+            if (label) label.textContent = '加载失败，点击重试'
+          }
+        }
+      }
+
+      if (isDeferred) {
+        const onLoad = () => {
+          unwrapHost()
+          settle(true)
+        }
+        const onError = () => {
+          img.classList.remove('ink-shimmer')
+          if (host) {
+            host.classList.remove('is-loading')
+            host.classList.add('is-failed')
+            const label = host.querySelector('.reader-deferred-label')
+            if (label) label.textContent = '加载失败，点击重试'
+          }
+        }
+        img.addEventListener('load', onLoad)
+        img.addEventListener('error', onError)
+
+        const onActivate = (event: Event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          void reveal()
+        }
+        const onKeyDown = (event: KeyboardEvent) => {
+          if (event.key === 'Enter' || event.key === ' ') onActivate(event)
+        }
+        host?.addEventListener('click', onActivate)
+        host?.addEventListener('keydown', onKeyDown)
+
+        if (autoLoad) void reveal()
+
+        return () => {
+          img.removeEventListener('load', onLoad)
+          img.removeEventListener('error', onError)
+          host?.removeEventListener('click', onActivate)
+          host?.removeEventListener('keydown', onKeyDown)
+        }
+      }
+
       if (img.complete) {
-        // 缓存命中：直接定版，不做占位闪烁
         if (!premarkedBadge) img.classList.add('async-img')
         settle(img.naturalWidth > 0)
         return undefined
@@ -72,5 +149,5 @@ export function useProgressiveImages(
     return () => {
       cleanups.forEach((dispose) => dispose?.())
     }
-  }, [rootRef, html, enabled])
+  }, [rootRef, html, enabled, autoLoad, onUnlocked])
 }

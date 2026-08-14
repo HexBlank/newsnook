@@ -78,6 +78,7 @@ import {
   setAutoRefreshOnCategorySwitch,
   setCategoryOrder,
   setEinkMode,
+  setWifiOnlyAutoLoadMedia,
   setThemeMode,
   sourceIdsForCategoryWithPrefs,
   toggleCategorySource,
@@ -655,7 +656,11 @@ export default function App() {
       return (
         <ProxyScreen
           prefs={prefs.proxy}
+          wifiOnlyAutoLoadMedia={Boolean(prefs.wifiOnlyAutoLoadMedia)}
           onChange={(proxy) => update((prev) => ({ ...prev, proxy }))}
+          onWifiOnlyAutoLoadMediaChange={(enabled) =>
+            update((prev) => setWifiOnlyAutoLoadMedia(prev, enabled))
+          }
           onBack={() => setSettingsRoute(null)}
         />
       )
@@ -1030,6 +1035,7 @@ export default function App() {
             translationPrefs={prefs.translation}
             customSources={prefs.customSources}
             einkMode={Boolean(prefs.einkMode)}
+            wifiOnlyAutoLoadMedia={Boolean(prefs.wifiOnlyAutoLoadMedia)}
             fontScale={prefs.typography.fontScale}
             onTypographyChange={(patch) => update((prev) => updateTypography(prev, patch))}
             onOpenSettings={() => {

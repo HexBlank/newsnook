@@ -852,6 +852,38 @@
   border-radius: 10px;
 }
 
+.reader-deferred-host {
+  position: relative;
+  display: flex;
+  min-height: 140px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-paper) 8%, transparent);
+  cursor: pointer;
+}
+
+.reader-deferred-host > img,
+.reader-deferred-host > video {
+  position: absolute;
+  inset: 0;
+  max-height: 0;
+  max-width: 0;
+  opacity: 0;
+}
+
+.reader-deferred-label {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-paper-muted);
+}
+
+.reader-deferred-host.is-failed .reader-deferred-label {
+  color: var(--color-cinnabar-soft, var(--color-paper-muted));
+}
+
 .reader-prose img.async-img-done {
   min-height: 0;
   background: none;

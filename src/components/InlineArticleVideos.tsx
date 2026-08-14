@@ -9,6 +9,8 @@ interface Props {
   html: string
   enabled: boolean
   fallbackTitle: string
+  deferLoad?: boolean
+  onUnlocked?: (src: string) => void
 }
 
 interface MountedInlineVideo extends InlineVideoDescriptor {
@@ -27,6 +29,8 @@ export function InlineArticleVideos({
   html,
   enabled,
   fallbackTitle,
+  deferLoad,
+  onUnlocked,
 }: Props) {
   const [mounted, setMounted] = useState<MountedInlineVideo[]>([])
 
@@ -73,6 +77,8 @@ export function InlineArticleVideos({
         src={video.src}
         poster={video.poster}
         title={video.title}
+        deferLoad={deferLoad}
+        onUnlocked={() => onUnlocked?.(video.src)}
       />,
       host,
       `${index}:${video.src}`,

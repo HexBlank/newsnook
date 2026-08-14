@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Browser } from '@capacitor/browser'
+import { Capacitor } from '@capacitor/core'
 import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, MessageSquare, RefreshCw, X } from 'lucide-react'
 
 import { ImageLightbox } from '../components/ImageLightbox'
@@ -10,9 +11,12 @@ import { InlineArticleVideos } from '../components/InlineArticleVideos'
 import { loadCachedBody, saveCachedBody } from '../lib/bodyCache'
 import { addVolumePageTurnListener, setVolumePageTurnEnabled } from '../lib/volumePageTurn'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
+import { useNetworkStatus } from '../hooks/useNetworkStatus'
 import { usePagedReader } from '../hooks/usePagedReader'
 import { useProgressiveImages } from '../hooks/useProgressiveImages'
 import { useReducedMotion } from '../hooks/useReducedMotion'
+import { deferMediaInHtml, DEFERRED_SRC_ATTR } from '../lib/deferReaderMedia'
+import { shouldAutoLoadMedia } from '../lib/mediaLoadPolicy'
 import { revealReader } from '../lib/motion'
 import { resolveArticleBody, type BodySource } from '../lib/resolveBody'
 import { articleRelativeTime } from '../lib/time'
@@ -46,6 +50,8 @@ interface Props {
   onTypographyChange?: (patch: Partial<TypographyPrefs>) => void
   /** 墨水屏菜单「设置」：打开应用设置并保留返回阅读 */
   onOpenSettings?: () => void
+  /** Android：仅 Wi-Fi 自动加载阅读页媒体 */
+  wifiOnlyAutoLoadMedia?: boolean
 }
 
 type LoadState = 'loading' | 'ready' | 'error'
@@ -64,8 +70,10 @@ export function ReaderScreen({
   fontScale = 1,
   onTypographyChange,
   onOpenSettings,
+  wifiOnlyAutoLoadMedia = false,
 }: Props) {
   const reduced = useReducedMotion()
+  const { connectionType } = useNetworkStatus()
   const shellRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const proseRef = useRef<HTMLDivElement>(null)
@@ -78,6 +86,7 @@ export function ReaderScreen({
   const [error, setError] = useState<string | null>(null)
   const [fromCache, setFromCache] = useState(false)
   const [retryToken, setRetryToken] = useState(0)
+  const [unlockedMediaUrls, setUnlockedMediaUrls] = useState<string[]>([])
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState<number | undefined>()
@@ -243,6 +252,8 @@ export function ReaderScreen({
       const target = event.target
       if (!(target instanceof HTMLImageElement)) return
       if (target.classList.contains('async-img-failed')) return
+      if (target.getAttribute(DEFERRED_SRC_ATTR) && !target.getAttribute('src')) return
+      if (target.closest('[data-reader-deferred]')) return
       if (
         target.classList.contains('reader-img-badge') ||
         target.getAttribute('data-reader-role') === 'badge'
@@ -258,6 +269,10 @@ export function ReaderScreen({
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
   }, [einkMode, html, loadState, showTranslation, translated])
+
+  useEffect(() => {
+    setUnlockedMediaUrls([])
+  }, [article.id])
 
   useEffect(() => {
     translationAbortRef.current?.abort()
@@ -345,6 +360,19 @@ export function ReaderScreen({
   }, [article.id, loadState, reduced])
 
   const displayedHtml = showTranslation && translated ? translated.html : html
+  const autoLoadMedia = shouldAutoLoadMedia({
+    wifiOnlyAutoLoadMedia: Boolean(wifiOnlyAutoLoadMedia),
+    isNative: Capacitor.isNativePlatform(),
+    connectionType,
+  })
+  const unlockedSet = useMemo(() => new Set(unlockedMediaUrls), [unlockedMediaUrls])
+  const proseHtml = useMemo(
+    () => (autoLoadMedia ? displayedHtml : deferMediaInHtml(displayedHtml, unlockedSet)),
+    [autoLoadMedia, displayedHtml, unlockedSet],
+  )
+  const onUnlockedMedia = useCallback((url: string) => {
+    setUnlockedMediaUrls((prev) => (prev.includes(url) ? prev : [...prev, url]))
+  }, [])
   const comparing = Boolean(
     showTranslation && translated && translationPrefs.displayMode === 'compare',
   )
@@ -355,7 +383,7 @@ export function ReaderScreen({
     articleId: article.id,
     viewportRef: rootRef,
     contentRef: contentMeasureRef,
-    measureKey: `${displayedHtml.length}:${showTranslation}:${loadState}`,
+    measureKey: `${proseHtml.length}:${showTranslation}:${loadState}`,
     ready: loadState === 'ready',
   })
 
@@ -530,12 +558,16 @@ export function ReaderScreen({
       table.before(scroller)
       scroller.append(table)
     })
-  }, [displayedHtml, loadState, translationState])
+  }, [proseHtml, loadState, translationState])
 
   useProgressiveImages(
     proseRef,
-    displayedHtml,
+    proseHtml,
     loadState === 'ready' && translationState !== 'loading',
+    {
+      autoLoad: autoLoadMedia,
+      onUnlocked: onUnlockedMedia,
+    },
   )
   const sourceHint = useMemo(() => {
     const origin =
@@ -889,6 +921,7 @@ export function ReaderScreen({
               <div className="mt-5 page-x lg:px-8">
                 <InkImage
                   src={article.image}
+                  deferLoad={!autoLoadMedia}
                   eager
                   collapseOnError
                   className="h-[220px] w-full sm:h-[300px] md:h-[380px] lg:h-[420px] rounded-xl overflow-hidden"
@@ -905,6 +938,14 @@ export function ReaderScreen({
                   src={article.videoUrl}
                   poster={article.image}
                   title={article.title}
+                  deferLoad={!autoLoadMedia}
+                  onUnlocked={() => {
+                    if (article.videoUrl) {
+                      setUnlockedMediaUrls((prev) =>
+                        prev.includes(article.videoUrl!) ? prev : [...prev, article.videoUrl!],
+                      )
+                    }
+                  }}
                 />
               </div>
             )}
@@ -954,13 +995,15 @@ export function ReaderScreen({
                           ? 'translation-failed'
                           : ''
                     }`}
-                    dangerouslySetInnerHTML={{ __html: displayedHtml }}
+                    dangerouslySetInnerHTML={{ __html: proseHtml }}
                   />
                   <InlineArticleVideos
                     rootRef={proseRef}
-                    html={displayedHtml}
+                    html={proseHtml}
                     enabled={loadState === 'ready' && translationState !== 'loading'}
                     fallbackTitle={displayedTitle}
+                    deferLoad={!autoLoadMedia}
+                    onUnlocked={onUnlockedMedia}
                   />
                 </>
               )}

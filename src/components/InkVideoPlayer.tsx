@@ -42,6 +42,8 @@ interface Props {
   src: string
   poster?: string
   title?: string
+  deferLoad?: boolean
+  onUnlocked?: () => void
 }
 
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const
@@ -120,7 +122,42 @@ function formatTime(seconds: number): string {
  * - 全屏：下半屏（拇指区）横滑调进度、左下竖滑调亮度、右下竖滑调音量，
  *   双击专职播放 / 暂停；上半屏与内嵌一致。
  */
-export function InkVideoPlayer({ src, poster, title }: Props) {
+export function InkVideoPlayer({ src, poster, title, deferLoad, onUnlocked }: Props) {
+  const [allowed, setAllowed] = useState(!deferLoad)
+
+  useEffect(() => {
+    if (!deferLoad) setAllowed(true)
+  }, [deferLoad])
+
+  if (!allowed) {
+    return (
+      <div
+        data-no-page-tap=""
+        data-reader-block
+        role="button"
+        tabIndex={0}
+        className="reader-deferred-host aspect-video"
+        onClick={() => {
+          setAllowed(true)
+          onUnlocked?.()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setAllowed(true)
+            onUnlocked?.()
+          }
+        }}
+      >
+        <span className="reader-deferred-label">点击加载视频</span>
+      </div>
+    )
+  }
+
+  return <InkVideoPlayerReady src={src} poster={poster} title={title} />
+}
+
+function InkVideoPlayerReady({ src, poster, title }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
