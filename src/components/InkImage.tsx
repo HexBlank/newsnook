@@ -1,6 +1,11 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 
-import { resolvePlayableImageSrc } from '../features/proxy/hydrateImages'
+import { resolvePlayableImageSrc, revokeBlobUrl } from '../features/proxy/hydrateImages'
+import {
+  DEFERRED_LOAD_TIMEOUT_MS,
+  deferredHostLabel,
+  type DeferredHostPhase,
+} from '../lib/deferReaderMedia'
 
 type LoadState = 'loading' | 'loaded' | 'error'
 
@@ -37,71 +42,110 @@ const InkImageFrame = memo(function InkImageFrame({
   onOpen,
   deferLoad,
 }: Props & { src: string }) {
-  const [released, setReleased] = useState(!deferLoad)
+  const [phase, setPhase] = useState<DeferredHostPhase | 'loaded'>(deferLoad ? 'idle' : 'loading')
   const [playable, setPlayable] = useState(src)
   const [state, setState] = useState<LoadState>('loading')
-  const [failed, setFailed] = useState(false)
+  const ownedBlobRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!deferLoad) setReleased(true)
-  }, [deferLoad])
+    return () => {
+      revokeBlobUrl(ownedBlobRef.current)
+      ownedBlobRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!deferLoad && phase === 'idle') setPhase('loading')
+  }, [deferLoad, phase])
+
+  useEffect(() => {
+    if (!deferLoad || phase !== 'loading') return
+    let cancelled = false
+    let handedOff = false
+    let resolved: string | undefined
+    const probe = new Image()
+    const timer = window.setTimeout(() => {
+      cancelled = true
+      probe.src = ''
+      setPhase('timeout')
+    }, DEFERRED_LOAD_TIMEOUT_MS)
+
+    void resolvePlayableImageSrc(src)
+      .then((url) => {
+        resolved = url
+        if (cancelled) {
+          if (url !== ownedBlobRef.current) revokeBlobUrl(url)
+          return
+        }
+        probe.onload = () => {
+          if (cancelled) return
+          handedOff = true
+          if (ownedBlobRef.current && ownedBlobRef.current !== url) revokeBlobUrl(ownedBlobRef.current)
+          ownedBlobRef.current = url.startsWith('blob:') ? url : null
+          setPlayable(url)
+          setState('loaded')
+          setPhase('loaded')
+        }
+        probe.onerror = () => {
+          if (url !== ownedBlobRef.current) revokeBlobUrl(url)
+          if (!cancelled) {
+            setState('error')
+            setPhase('failed')
+          }
+        }
+        probe.src = url
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState('error')
+          setPhase('failed')
+        }
+      })
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      probe.onload = null
+      probe.onerror = null
+      probe.src = ''
+      if (!handedOff && resolved && resolved !== ownedBlobRef.current) revokeBlobUrl(resolved)
+    }
+  }, [deferLoad, phase, src])
 
   const attach = useCallback((node: HTMLImageElement | null) => {
     if (!node || !node.complete) return
-    setState(node.naturalWidth > 0 ? 'loaded' : 'error')
+    if (node.naturalWidth > 0) {
+      setState('loaded')
+      setPhase('loaded')
+    } else {
+      setState('error')
+      setPhase('failed')
+    }
   }, [])
 
   const startLoad = () => {
-    setFailed(false)
-    setReleased(true)
+    if (phase === 'loading') return
+    setPhase('loading')
     setState('loading')
-    void resolvePlayableImageSrc(src).then(setPlayable)
   }
 
-  if (!released) {
+  if (deferLoad && phase !== 'loaded') {
     return (
-      <span
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         data-no-page-tap=""
-        aria-label="点击加载图片"
+        aria-label={deferredHostLabel(phase)}
         onClick={startLoad}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            startLoad()
-          }
-        }}
-        className={`reader-deferred-host ${className}`}
+        className={`reader-deferred-host ${phase === 'loading' ? 'is-loading ink-shimmer' : ''} ${
+          phase === 'failed' || phase === 'timeout' ? 'is-failed' : ''
+        } ${className}`}
       >
-        <span className="reader-deferred-label">{failed ? '加载失败，点击重试' : '点击加载图片'}</span>
-      </span>
+        <span className="reader-deferred-label">{deferredHostLabel(phase)}</span>
+      </button>
     )
   }
 
-  if (state === 'error') {
-    if (deferLoad) {
-      return (
-        <span
-          role="button"
-          tabIndex={0}
-          data-no-page-tap=""
-          aria-label="加载失败，点击重试"
-          onClick={startLoad}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              startLoad()
-            }
-          }}
-          className={`reader-deferred-host is-failed ${className}`}
-        >
-          <span className="reader-deferred-label">加载失败，点击重试</span>
-        </span>
-      )
-    }
-    if (collapseOnError) return null
-  }
+  if (state === 'error' && collapseOnError && !deferLoad) return null
 
   const open = onOpen && state === 'loaded' ? () => onOpen(playable) : undefined
 
@@ -135,10 +179,7 @@ const InkImageFrame = memo(function InkImageFrame({
           decoding="async"
           referrerPolicy="no-referrer"
           onLoad={() => setState('loaded')}
-          onError={() => {
-            setState('error')
-            setFailed(true)
-          }}
+          onError={() => setState('error')}
           className="absolute inset-0 h-full w-full object-cover"
           style={{
             animation: state === 'loaded' ? 'ink-image-in 520ms var(--ease-ink) both' : undefined,

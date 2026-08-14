@@ -63,6 +63,8 @@ interface Props {
   onBack?: () => void
   /** 仅主今日流品牌名「有所闻」时传入；单源标题不启用 */
   onBrandTap?: () => void
+  /** 递增时触发与下拉相同的刷新动画与加载（底栏双击速闻） */
+  pullRefreshSeq?: number
 }
 
 /** 邻页预览：排版与正式列表对齐，并恢复该分类上次滚动位置，避免滑入时先顶后跳 */
@@ -184,6 +186,7 @@ export const FeedScreen = memo(function FeedScreen({
   onOpen,
   onBack,
   onBrandTap,
+  pullRefreshSeq = 0,
 }: Props) {
   const isDesktop = useIsDesktop()
   const reduced = useReducedMotion()
@@ -213,10 +216,19 @@ export const FeedScreen = memo(function FeedScreen({
     { enabled: activeTranslationPrefs.translateFeed !== false },
   )
 
-  const { containerRef, indicatorRef, phase, cancel: cancelPull } = usePullToRefresh({
-    onRefresh,
-    reduced,
-  })
+  const { containerRef, indicatorRef, phase, cancel: cancelPull, trigger: triggerPullRefresh } =
+    usePullToRefresh({
+      onRefresh,
+      reduced,
+    })
+  const lastPullRefreshSeq = useRef(pullRefreshSeq)
+
+  useEffect(() => {
+    if (pullRefreshSeq === lastPullRefreshSeq.current) return
+    lastPullRefreshSeq.current = pullRefreshSeq
+    if (refreshing) return
+    triggerPullRefresh()
+  }, [pullRefreshSeq, triggerPullRefresh, refreshing])
 
   const swipeCategories = categories ?? []
   const activeIndex = categoryId

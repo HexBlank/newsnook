@@ -21,8 +21,12 @@ export function useNetworkStatus(): { connectionType: string | null } {
 
     let remove: (() => void) | undefined
     void Network.addListener('networkStatusChange', (status) => {
-      setConnectionType(status.connectionType ?? null)
+      if (!cancelled) setConnectionType(status.connectionType ?? null)
     }).then((handle) => {
+      if (cancelled) {
+        void handle.remove()
+        return
+      }
       remove = () => {
         void handle.remove()
       }

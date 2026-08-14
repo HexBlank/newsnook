@@ -1,10 +1,12 @@
-import { memo } from 'react'
+import { memo, useRef } from 'react'
 import { Bookmark, Newspaper } from 'lucide-react'
+
+const TODAY_DOUBLE_TAP_MS = 360
 
 export type TabKey = 'today' | 'me'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Newspaper }[] = [
-  { key: 'today', label: '今日', Icon: Newspaper },
+  { key: 'today', label: '速闻', Icon: Newspaper },
   { key: 'me', label: '我的', Icon: Bookmark },
 ]
 
@@ -13,12 +15,21 @@ interface Props {
   laterCount: number
   hasUpdate?: boolean
   onChange: (key: TabKey) => void
+  onTodayDoubleTap?: () => void
 }
 
 /**
  * 底栏导航：经典竖向图文布局，朱砂色彩点睛，配色温润纯净，无多余胶囊或杂质。
  */
-export const TabBar = memo(function TabBar({ active, laterCount, hasUpdate, onChange }: Props) {
+export const TabBar = memo(function TabBar({
+  active,
+  laterCount,
+  hasUpdate,
+  onChange,
+  onTodayDoubleTap,
+}: Props) {
+  const lastTodayTapAt = useRef(0)
+
   return (
     <nav
       data-surface="tabbar"
@@ -31,8 +42,22 @@ export const TabBar = memo(function TabBar({ active, laterCount, hasUpdate, onCh
             <li key={key} className="flex-1">
               <button
                 type="button"
-                onClick={() => onChange(key)}
+                onClick={() => {
+                  if (key === 'today' && isActive && onTodayDoubleTap) {
+                    const now = performance.now()
+                    if (now - lastTodayTapAt.current < TODAY_DOUBLE_TAP_MS) {
+                      lastTodayTapAt.current = 0
+                      onTodayDoubleTap()
+                      return
+                    }
+                    lastTodayTapAt.current = now
+                  }
+                  onChange(key)
+                }}
                 aria-current={isActive ? 'page' : undefined}
+                aria-label={
+                  key === 'today' && isActive ? '速闻，双击刷新' : undefined
+                }
                 className="group relative flex h-full w-full flex-col items-center justify-center gap-0.5 transition-colors duration-200"
               >
                 <span className="relative flex items-center justify-center">

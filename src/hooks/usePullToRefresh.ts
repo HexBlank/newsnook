@@ -49,6 +49,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
   const indicatorRef = useRef<HTMLDivElement | null>(null)
   const onRefreshRef = useRef(onRefresh)
   const cancelRef = useRef<() => void>(() => undefined)
+  const triggerRef = useRef<() => void>(() => undefined)
   const [phase, setPhase] = useState<PullPhase>('idle')
   const phaseRef = useRef<PullPhase>('idle')
 
@@ -61,6 +62,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
   }, [])
 
   const cancel = useCallback(() => cancelRef.current(), [])
+  const trigger = useCallback(() => triggerRef.current(), [])
 
   useEffect(() => {
     const element = containerRef.current
@@ -157,13 +159,9 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       }, SETTLE_MS + 30)
     }
 
-    const finish = async () => {
+    const runRefreshing = async () => {
+      if (phaseRef.current === 'refreshing') return
       clearGesture()
-      if (phaseRef.current !== 'ready') {
-        settle()
-        return
-      }
-
       setPhaseSafe('refreshing')
       transitionTo(REFRESH_HOLD_PX, reduced ? 0 : HOLD_MS)
       try {
@@ -171,6 +169,15 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       } finally {
         if (!disposed) settle()
       }
+    }
+
+    const finish = async () => {
+      clearGesture()
+      if (phaseRef.current !== 'ready') {
+        settle()
+        return
+      }
+      await runRefreshing()
     }
 
     const canStart = () =>
@@ -239,6 +246,12 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
 
     cancelRef.current = () => {
       if (phaseRef.current !== 'refreshing') settle()
+    }
+
+    triggerRef.current = () => {
+      if (phaseRef.current === 'refreshing' || disposed) return
+      element.scrollTop = 0
+      void runRefreshing()
     }
 
     const onTouchStart = (event: TouchEvent) => {
@@ -321,10 +334,11 @@ export function usePullToRefresh({ onRefresh, disabled = false, reduced = false 
       window.removeEventListener('pagehide', resetInterruptedGesture)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       cancelRef.current = () => undefined
+      triggerRef.current = () => undefined
       clearGesture()
       clearVisual()
     }
   }, [disabled, reduced, setPhaseSafe])
 
-  return { containerRef, indicatorRef, phase, cancel }
+  return { containerRef, indicatorRef, phase, cancel, trigger }
 }

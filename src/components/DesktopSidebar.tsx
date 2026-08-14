@@ -153,7 +153,7 @@ export const DesktopSidebar = memo(function DesktopSidebar({
                     strokeWidth={isHomeActive ? 2 : 1.6}
                     className={isHomeActive ? 'text-cinnabar' : 'text-paper-faint group-hover:text-paper-muted'}
                   />
-                  <span className="text-[13.5px] tracking-wide">今日要闻</span>
+                  <span className="text-[13.5px] tracking-wide">速闻</span>
                 </div>
                 {isHomeActive && (
                   <span className="h-1.5 w-1.5 rounded-full bg-cinnabar" aria-hidden />

@@ -1,7 +1,11 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 
-import { resolvePlayableImageSrc } from '../features/proxy/hydrateImages'
-import { DEFERRED_SRC_ATTR } from '../lib/deferReaderMedia'
+import { resolvePlayableImageSrc, revokeBlobUrl } from '../features/proxy/hydrateImages'
+import {
+  DEFERRED_LOAD_TIMEOUT_MS,
+  DEFERRED_SRC_ATTR,
+  type DeferredHostPhase,
+} from '../lib/deferReaderMedia'
 import { classifyLoadedImage } from '../lib/normalizeImages'
 
 /**
@@ -15,129 +19,150 @@ export function useProgressiveImages(
   enabled = true,
   options?: {
     autoLoad: boolean
-    onUnlocked?: (url: string) => void
+    onDeferredPhase?: (url: string, phase: DeferredHostPhase | 'loaded', playableSrc?: string) => void
   },
 ): void {
   const autoLoad = options?.autoLoad !== false
-  const onUnlocked = options?.onUnlocked
+  const onDeferredPhase = options?.onDeferredPhase
+  const inflightRef = useRef(new Map<string, () => void>())
+
+  useEffect(() => {
+    if (enabled) return
+    inflightRef.current.forEach((cancel) => cancel())
+    inflightRef.current.clear()
+  }, [enabled])
 
   useEffect(() => {
     const root = rootRef.current
     if (!root || !enabled || !html) return
 
-    const images = Array.from(root.querySelectorAll('img'))
-    const cleanups = images.map((img) => {
-      const applyRole = () => {
-        const stamped = img.getAttribute('data-reader-role')
-        if (stamped === 'badge') {
-          img.classList.add('reader-img-badge')
-          return
-        }
-        const role = classifyLoadedImage(img.naturalWidth, img.naturalHeight)
-        if (role === 'decorative') {
-          img.classList.add('async-img-failed')
-          img.classList.remove('reader-img-badge')
-          return
-        }
-        if (role === 'badge') {
-          img.setAttribute('data-reader-role', 'badge')
-          img.classList.add('reader-img-badge')
-        }
+    const applyRole = (img: HTMLImageElement) => {
+      const stamped = img.getAttribute('data-reader-role')
+      if (stamped === 'badge') {
+        img.classList.add('reader-img-badge')
+        return
       }
-
-      const settle = (ok: boolean) => {
-        img.classList.remove('ink-shimmer')
-        if (!ok) {
-          img.classList.add('async-img-failed')
-          return
-        }
-        img.classList.add('async-img-done')
-        applyRole()
+      const role = classifyLoadedImage(img.naturalWidth, img.naturalHeight)
+      if (role === 'decorative') {
+        img.classList.add('async-img-failed')
+        img.classList.remove('reader-img-badge')
+        return
       }
-
-      const unwrapHost = () => {
-        const host = img.closest<HTMLElement>('.reader-deferred-host')
-        if (host) host.replaceWith(img)
-      }
-
-      const premarkedBadge = img.getAttribute('data-reader-role') === 'badge'
-      if (premarkedBadge) {
+      if (role === 'badge') {
+        img.setAttribute('data-reader-role', 'badge')
         img.classList.add('reader-img-badge')
       }
+    }
 
-      const deferredUrl = img.getAttribute(DEFERRED_SRC_ATTR)
-      const host = img.closest<HTMLElement>('.reader-deferred-host')
-      const isDeferred = Boolean(deferredUrl && !img.getAttribute('src'))
+    const settle = (img: HTMLImageElement, ok: boolean) => {
+      img.classList.remove('ink-shimmer')
+      if (!ok) {
+        img.classList.add('async-img-failed')
+        return
+      }
+      img.classList.add('async-img-done')
+      applyRole(img)
+    }
 
-      const reveal = async () => {
-        if (!deferredUrl) return
-        if (host) {
-          host.classList.add('is-loading')
-          host.classList.remove('is-failed')
-        }
-        if (!premarkedBadge) img.classList.add('async-img', 'ink-shimmer')
-        try {
-          const playable = await resolvePlayableImageSrc(deferredUrl)
-          img.setAttribute('src', playable)
-          onUnlocked?.(deferredUrl)
-        } catch {
-          img.classList.remove('ink-shimmer')
-          if (host) {
-            host.classList.remove('is-loading')
-            host.classList.add('is-failed')
-            const label = host.querySelector('.reader-deferred-label')
-            if (label) label.textContent = '加载失败，点击重试'
-          }
-        }
+    const startDeferredLoad = (url: string) => {
+      if (inflightRef.current.has(url)) return
+
+      let cancelled = false
+      let handedOff = false
+      let playableHeld: string | undefined
+      const probe = new Image()
+
+      const abandonHeld = () => {
+        if (handedOff) return
+        revokeBlobUrl(playableHeld)
+        playableHeld = undefined
       }
 
-      if (isDeferred) {
-        const onLoad = () => {
-          unwrapHost()
-          settle(true)
+      const timer = window.setTimeout(() => {
+        cancelled = true
+        probe.src = ''
+        abandonHeld()
+        inflightRef.current.delete(url)
+        onDeferredPhase?.(url, 'timeout')
+      }, DEFERRED_LOAD_TIMEOUT_MS)
+
+      const cancel = () => {
+        cancelled = true
+        window.clearTimeout(timer)
+        probe.src = ''
+        abandonHeld()
+        inflightRef.current.delete(url)
+      }
+      inflightRef.current.set(url, cancel)
+
+      const finish = (phase: 'loaded' | 'failed') => {
+        if (cancelled) return
+        window.clearTimeout(timer)
+        inflightRef.current.delete(url)
+        if (phase === 'loaded' && playableHeld) {
+          handedOff = true
+          onDeferredPhase?.(url, 'loaded', playableHeld)
+          return
         }
-        const onError = () => {
-          img.classList.remove('ink-shimmer')
-          if (host) {
-            host.classList.remove('is-loading')
-            host.classList.add('is-failed')
-            const label = host.querySelector('.reader-deferred-label')
-            if (label) label.textContent = '加载失败，点击重试'
+        abandonHeld()
+        onDeferredPhase?.(url, 'failed')
+      }
+
+      void resolvePlayableImageSrc(url)
+        .then((playable) => {
+          playableHeld = playable
+          if (cancelled) {
+            abandonHeld()
+            return
           }
-        }
-        img.addEventListener('load', onLoad)
-        img.addEventListener('error', onError)
+          probe.onload = () => finish('loaded')
+          probe.onerror = () => finish('failed')
+          probe.src = playable
+        })
+        .catch(() => finish('failed'))
+    }
 
-        const onActivate = (event: Event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          void reveal()
-        }
-        const onKeyDown = (event: KeyboardEvent) => {
-          if (event.key === 'Enter' || event.key === ' ') onActivate(event)
-        }
-        host?.addEventListener('click', onActivate)
-        host?.addEventListener('keydown', onKeyDown)
+    const onDeferredActivate = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const host = target.closest<HTMLElement>('[data-reader-deferred]')
+      if (!host || !root.contains(host)) return
+      const img = host.querySelector('img')
+      if (!(img instanceof HTMLImageElement)) return
+      const url = img.getAttribute(DEFERRED_SRC_ATTR)
+      if (!url) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (host.classList.contains('is-loading')) return
+      onDeferredPhase?.(url, 'loading')
+    }
 
-        if (autoLoad) void reveal()
+    root.addEventListener('click', onDeferredActivate, true)
 
-        return () => {
-          img.removeEventListener('load', onLoad)
-          img.removeEventListener('error', onError)
-          host?.removeEventListener('click', onActivate)
-          host?.removeEventListener('keydown', onKeyDown)
+    const cleanups = Array.from(root.querySelectorAll('img')).map((img) => {
+      const premarkedBadge = img.getAttribute('data-reader-role') === 'badge'
+      if (premarkedBadge) img.classList.add('reader-img-badge')
+
+      const deferredUrl = img.getAttribute(DEFERRED_SRC_ATTR)
+      const host = img.closest('.reader-deferred-host')
+      const isDeferred = Boolean(deferredUrl && !img.getAttribute('src'))
+
+      if (isDeferred && deferredUrl) {
+        if (autoLoad || host?.classList.contains('is-loading')) {
+          startDeferredLoad(deferredUrl)
         }
+        return undefined
       }
 
       if (img.complete) {
         if (!premarkedBadge) img.classList.add('async-img')
-        settle(img.naturalWidth > 0)
+        settle(img, img.naturalWidth > 0)
         return undefined
       }
 
       if (!premarkedBadge) img.classList.add('async-img', 'ink-shimmer')
-      const onLoad = () => settle(true)
-      const onError = () => settle(false)
+      const onLoad = () => settle(img, true)
+      const onError = () => settle(img, false)
       img.addEventListener('load', onLoad)
       img.addEventListener('error', onError)
       return () => {
@@ -147,7 +172,15 @@ export function useProgressiveImages(
     })
 
     return () => {
+      root.removeEventListener('click', onDeferredActivate, true)
       cleanups.forEach((dispose) => dispose?.())
     }
-  }, [rootRef, html, enabled, autoLoad, onUnlocked])
+  }, [rootRef, html, enabled, autoLoad, onDeferredPhase])
+
+  useEffect(() => {
+    return () => {
+      inflightRef.current.forEach((cancel) => cancel())
+      inflightRef.current.clear()
+    }
+  }, [])
 }

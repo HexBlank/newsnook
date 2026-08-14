@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import { Browser } from '@capacitor/browser'
 import { Capacitor } from '@capacitor/core'
 import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle, MessageSquare, RefreshCw, X } from 'lucide-react'
@@ -15,7 +15,8 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus'
 import { usePagedReader } from '../hooks/usePagedReader'
 import { useProgressiveImages } from '../hooks/useProgressiveImages'
 import { useReducedMotion } from '../hooks/useReducedMotion'
-import { deferMediaInHtml, DEFERRED_SRC_ATTR } from '../lib/deferReaderMedia'
+import { revokeBlobUrl } from '../features/proxy/hydrateImages'
+import { deferMediaInHtml, DEFERRED_SRC_ATTR, type DeferredHostPhase } from '../lib/deferReaderMedia'
 import { shouldAutoLoadMedia } from '../lib/mediaLoadPolicy'
 import { revealReader } from '../lib/motion'
 import { resolveArticleBody, type BodySource } from '../lib/resolveBody'
@@ -87,6 +88,10 @@ export function ReaderScreen({
   const [fromCache, setFromCache] = useState(false)
   const [retryToken, setRetryToken] = useState(0)
   const [unlockedMediaUrls, setUnlockedMediaUrls] = useState<string[]>([])
+  const [mediaPlayables, setMediaPlayables] = useState<Record<string, string>>({})
+  const mediaPlayablesRef = useRef(mediaPlayables)
+  mediaPlayablesRef.current = mediaPlayables
+  const [deferredPhases, setDeferredPhases] = useState<Record<string, DeferredHostPhase>>({})
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentCount, setCommentCount] = useState<number | undefined>()
@@ -272,7 +277,18 @@ export function ReaderScreen({
 
   useEffect(() => {
     setUnlockedMediaUrls([])
+    setMediaPlayables((prev) => {
+      for (const value of Object.values(prev)) revokeBlobUrl(value)
+      return {}
+    })
+    setDeferredPhases({})
   }, [article.id])
+
+  useEffect(() => {
+    return () => {
+      for (const value of Object.values(mediaPlayablesRef.current)) revokeBlobUrl(value)
+    }
+  }, [])
 
   useEffect(() => {
     translationAbortRef.current?.abort()
@@ -366,9 +382,34 @@ export function ReaderScreen({
     connectionType,
   })
   const unlockedSet = useMemo(() => new Set(unlockedMediaUrls), [unlockedMediaUrls])
+  const deferredPhaseMap = useMemo(
+    () => new Map(Object.entries(deferredPhases) as Array<[string, DeferredHostPhase]>),
+    [deferredPhases],
+  )
+  const playableSrcMap = useMemo(() => new Map(Object.entries(mediaPlayables)), [mediaPlayables])
   const proseHtml = useMemo(
-    () => (autoLoadMedia ? displayedHtml : deferMediaInHtml(displayedHtml, unlockedSet)),
-    [autoLoadMedia, displayedHtml, unlockedSet],
+    () =>
+      autoLoadMedia
+        ? displayedHtml
+        : deferMediaInHtml(displayedHtml, unlockedSet, deferredPhaseMap, playableSrcMap),
+    [autoLoadMedia, displayedHtml, unlockedSet, deferredPhaseMap, playableSrcMap],
+  )
+  const onDeferredPhase = useCallback(
+    (url: string, phase: DeferredHostPhase | 'loaded', playableSrc?: string) => {
+      if (phase === 'loaded') {
+        setUnlockedMediaUrls((prev) => (prev.includes(url) ? prev : [...prev, url]))
+        setMediaPlayables((prev) => ({ ...prev, [url]: playableSrc || url }))
+        setDeferredPhases((prev) => {
+          if (!(url in prev)) return prev
+          const next = { ...prev }
+          delete next[url]
+          return next
+        })
+        return
+      }
+      setDeferredPhases((prev) => (prev[url] === phase ? prev : { ...prev, [url]: phase }))
+    },
+    [],
   )
   const onUnlockedMedia = useCallback((url: string) => {
     setUnlockedMediaUrls((prev) => (prev.includes(url) ? prev : [...prev, url]))
@@ -566,7 +607,7 @@ export function ReaderScreen({
     loadState === 'ready' && translationState !== 'loading',
     {
       autoLoad: autoLoadMedia,
-      onUnlocked: onUnlockedMedia,
+      onDeferredPhase,
     },
   )
   const sourceHint = useMemo(() => {
@@ -984,10 +1025,10 @@ export function ReaderScreen({
 
               {loadState === 'ready' && (
                 <>
-                  <div
-                    ref={proseRef}
-                    data-reader-block
-                    data-article-lang={isCjkArticle ? 'zh' : 'en'}
+                  <ArticleProseHtml
+                    innerRef={proseRef}
+                    html={proseHtml}
+                    lang={isCjkArticle ? 'zh' : 'en'}
                     className={`reader-prose ${
                       showTranslation && translationState === 'loading'
                         ? 'translation-pending'
@@ -995,7 +1036,6 @@ export function ReaderScreen({
                           ? 'translation-failed'
                           : ''
                     }`}
-                    dangerouslySetInnerHTML={{ __html: proseHtml }}
                   />
                   <InlineArticleVideos
                     rootRef={proseRef}
@@ -1140,6 +1180,28 @@ export function ReaderScreen({
 }
 
 const SKELETON_LINES = [92, 100, 88, 96, 74, 100, 90, 66]
+
+const ArticleProseHtml = memo(function ArticleProseHtml({
+  html,
+  lang,
+  className,
+  innerRef,
+}: {
+  html: string
+  lang: 'zh' | 'en'
+  className: string
+  innerRef: RefObject<HTMLDivElement | null>
+}) {
+  return (
+    <div
+      ref={innerRef}
+      data-reader-block
+      data-article-lang={lang}
+      className={className}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+})
 
 function ReaderSkeleton() {
   return (

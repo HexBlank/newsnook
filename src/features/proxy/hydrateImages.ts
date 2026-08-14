@@ -48,6 +48,10 @@ export async function resolvePlayableImageSrc(url: string): Promise<string> {
   }
 }
 
+export function revokeBlobUrl(url: string | null | undefined): void {
+  if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
 /**
  * App 在 native-tunnel 下把需代理的 <img> 换成 blob:，
  * 因 WebView 不会走 OkHttp 用户代理。

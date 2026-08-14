@@ -195,6 +195,7 @@ function prefetchBody(task: BodyPrefetchTask): void {
 export default function App() {
   const { prefs, resolvedTheme, update } = usePreferences()
   const [tab, setTab] = useState<TabKey>('today')
+  const [todayPullRefreshSeq, setTodayPullRefreshSeq] = useState(0)
   const [categoryId, setCategoryId] = useState<CategoryId>(
     () => visibleCategories(prefs)[0]?.id ?? 'mix',
   )
@@ -942,6 +943,7 @@ export default function App() {
         onLoadMore={() => void loadMore(listScopeIds)}
         onOpen={openArticle}
         onBrandTap={onBrandTap}
+        pullRefreshSeq={todayPullRefreshSeq}
       />
     )
   }
@@ -1004,6 +1006,7 @@ export default function App() {
                 if (key !== 'me') setReaderReturnArticle(null)
                 setTab(key)
               }}
+              onTodayDoubleTap={() => setTodayPullRefreshSeq((seq) => seq + 1)}
             />
           )}
 

@@ -599,6 +599,16 @@
   cursor: zoom-in;
 }
 
+/* 推迟加载：空 src 的 img 不能铺满占位，否则 WebView 点到空图不冒泡 */
+.reader-prose .reader-deferred-host > img {
+  display: none;
+  pointer-events: none;
+  width: 0;
+  max-width: 0;
+  height: 0;
+  margin: 0;
+}
+
 /*
  * 作者头像 / 蓝 V / 表情等徽章：保持行内小尺寸。
  * 消毒会剥掉源站 style，依赖 data-reader-role 或加载后的 naturalWidth 分类。
@@ -853,6 +863,7 @@
 }
 
 .reader-deferred-host {
+  appearance: none;
   position: relative;
   display: flex;
   min-height: 140px;
@@ -863,21 +874,28 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--color-paper) 8%, transparent);
   cursor: pointer;
+  text-align: center;
 }
 
 .reader-deferred-host > img,
 .reader-deferred-host > video {
-  position: absolute;
-  inset: 0;
-  max-height: 0;
-  max-width: 0;
-  opacity: 0;
+  display: none;
+  pointer-events: none;
 }
 
 .reader-deferred-label {
   font-size: 13px;
   line-height: 1.5;
   color: var(--color-paper-muted);
+}
+
+.reader-deferred-host.is-loading {
+  cursor: wait;
+}
+
+.reader-deferred-host.is-loading .reader-deferred-label {
+  position: relative;
+  z-index: 1;
 }
 
 .reader-deferred-host.is-failed .reader-deferred-label {
