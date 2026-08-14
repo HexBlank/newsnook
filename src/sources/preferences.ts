@@ -59,6 +59,8 @@ export interface Preferences {
    * 关闭后须完整恢复正常模式行为。
    */
   einkMode: boolean
+  /** Android：仅 Wi-Fi 下自动加载阅读页图片和视频；默认 false */
+  wifiOnlyAutoLoadMedia: boolean
 }
 
 export const DEFAULT_TYPOGRAPHY: TypographyPrefs = {
@@ -114,6 +116,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   proxy: DEFAULT_PROXY_PREFS,
   autoRefreshOnCategorySwitch: true,
   einkMode: false,
+  wifiOnlyAutoLoadMedia: false,
 }
 
 /** 综合分类跟随「频道」页启用状态，不参与逐分类信源编辑 */
@@ -274,6 +277,8 @@ export function normalizePreferences(raw: unknown): Preferences {
         ? input.autoRefreshOnCategorySwitch
         : true,
     einkMode: typeof input.einkMode === 'boolean' ? input.einkMode : false,
+    wifiOnlyAutoLoadMedia:
+      typeof input.wifiOnlyAutoLoadMedia === 'boolean' ? input.wifiOnlyAutoLoadMedia : false,
     typography: {
       fontScale: clamp(typography.fontScale, DEFAULT_TYPOGRAPHY.fontScale, 0.8, 1.4),
       lineHeight: clamp(typography.lineHeight, DEFAULT_TYPOGRAPHY.lineHeight, 1.4, 2.4),
@@ -853,6 +858,12 @@ export function setThemeMode(prefs: Preferences, theme: ThemeMode): Preferences 
 
 export function setEinkMode(prefs: Preferences, enabled: boolean): Preferences {
   return prefs.einkMode === enabled ? prefs : { ...prefs, einkMode: enabled }
+}
+
+export function setWifiOnlyAutoLoadMedia(prefs: Preferences, enabled: boolean): Preferences {
+  return prefs.wifiOnlyAutoLoadMedia === enabled
+    ? prefs
+    : { ...prefs, wifiOnlyAutoLoadMedia: enabled }
 }
 
 export function updateTypography(
