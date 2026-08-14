@@ -5,8 +5,10 @@ import {
   cleanOpenAiTranslation,
   extractOpenAiChatContent,
   normalizeOpenAiBaseUrl,
+  OPENAI_TRANSLATION_STOP,
 } from '../src/features/translation/openai'
 import {
+  isHunyuanTranslationModel,
   openAiTranslationSystemPrompt,
   openAiTranslationUserPrompt,
 } from '../src/features/translation/prompts'
@@ -91,6 +93,18 @@ assert.equal(
   '最终赢得 279 票。',
 )
 assert.equal(
+  cleanOpenAiTranslation(
+    '在美国，癌症手术的等待时间正日益延长。</target_text><｜hy_end▁of▁sentence｜>',
+  ),
+  '在美国，癌症手术的等待时间正日益延长。',
+)
+assert.equal(
+  cleanOpenAiTranslation(
+    '美国癌症手术的等待时间正越来越长。</target_text>< | hy_end__of__sentence | >',
+  ),
+  '美国癌症手术的等待时间正越来越长。',
+)
+assert.equal(
   cleanOpenAiTranslation('<target_text>关于我们</target_text>'),
   '关于我们',
 )
@@ -143,13 +157,22 @@ const systemHeadline = openAiTranslationSystemPrompt('en', 'zh-Hans', 'headline'
 assert.equal(systemHeadline, openAiTranslationSystemPrompt('en', 'zh-Hans', 'paragraph'))
 
 const userHeadline = openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'headline')
-assert.match(userHeadline, /<source_text>\nHello world\n<\/source_text>/)
+assert.match(userHeadline, /^原文：\nHello world$/)
+assert.doesNotMatch(userHeadline, /source_text/)
 assert.equal(userHeadline, openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'paragraph'))
-assert.match(userHeadline, /^原文：/)
 
 const userBody = openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'paragraph')
 assert.match(userBody, /原文：/)
-assert.doesNotMatch(userBody, /信达雅|literal/i)
+assert.doesNotMatch(userBody, /信达雅|literal|source_text/i)
+
+assert.equal(isHunyuanTranslationModel('hy-mt1.5-7b'), true)
+assert.equal(isHunyuanTranslationModel('Hunyuan-MT-7B'), true)
+assert.equal(isHunyuanTranslationModel('gpt-4o-mini'), false)
+assert.equal(openAiTranslationSystemPrompt('en', 'zh-Hans', 'paragraph', 'hy-mt1.5'), '')
+assert.match(
+  openAiTranslationUserPrompt('Hello world', 'zh-Hans', 'paragraph', 'hunyuan-mt-7b'),
+  /^将以下文本翻译为中文，注意只需要输出翻译后的结果，不要额外解释：\n\nHello world$/,
+)
 
 const originalFetch = globalThis.fetch
 const requests: { url: string; body: Record<string, unknown>; authorization: string | null }[] = []
@@ -164,9 +187,11 @@ globalThis.fetch = async (input, init) => {
   })
   const messages = body.messages as { role: string; content: string }[]
   const user = messages.find((m) => m.role === 'user')?.content ?? ''
-  // 提取 <source_text> 中的文本
-  const match = user.match(/<source_text>\n([\s\S]*?)\n<\/source_text>/)
-  const text = match ? match[1] : user
+  const xml = user.match(/<source_text>\n([\s\S]*?)\n<\/source_text>/)
+  const hunyuan = user.match(/不要额外解释：\n\n([\s\S]+)$/)
+  const plain = user.match(/^原文：\n([\s\S]+)$/)
+  const english = user.match(/without additional explanation\.\n\n([\s\S]+)$/)
+  const text = xml?.[1] ?? hunyuan?.[1] ?? english?.[1] ?? plain?.[1] ?? user
   return Response.json({
     choices: [{ message: { content: `AI:${text}` } }],
   })
@@ -224,6 +249,27 @@ assert.match(String(sys0), /Output the translation directly/)
 assert.equal(sys0, sys1)
 assert.doesNotMatch(String(sys1), /信、达、雅|信达雅/)
 assert.equal(requests[0].body.temperature, 0.6)
+assert.deepEqual(requests[0].body.stop, OPENAI_TRANSLATION_STOP)
+
+requests.length = 0
+const hunyuanProvider = new OpenAiProvider({
+  apiKey: 'sk-test',
+  endpoint: 'https://api.openai.com/v1',
+  model: 'hy-mt1.5-7b',
+})
+const hunyuanResult = await hunyuanProvider.translate({
+  texts: ['Hello'],
+  sourceLanguage: 'en',
+  targetLanguage: 'zh-Hans',
+})
+assert.deepEqual(hunyuanResult, ['AI:Hello'])
+const hunyuanMessages = requests[0].body.messages as { role: string; content: string }[]
+assert.equal(
+  hunyuanMessages.some((m) => m.role === 'system'),
+  false,
+)
+assert.match(hunyuanMessages[0]?.content ?? '', /将以下文本翻译为中文/)
+assert.deepEqual(requests[0].body.stop, OPENAI_TRANSLATION_STOP)
 
 await assert.rejects(
   () =>

@@ -229,6 +229,72 @@ export async function enrichJazzyearDates(
   return next
 }
 
+const PG_MONTHS: Record<string, number> = {
+  january: 0,
+  february: 1,
+  march: 2,
+  april: 3,
+  may: 4,
+  june: 5,
+  july: 6,
+  august: 7,
+  september: 8,
+  october: 9,
+  november: 10,
+  december: 11,
+}
+
+/** 正文页标题图后的 `June 2026`；只看页头，避免正文里提到的其它月份串台 */
+export function extractPaulGrahamPublishTime(html: string): string | undefined {
+  const head = html.slice(0, 12_000)
+  const match = head.match(
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i,
+  )
+  if (!match) return undefined
+  const month = PG_MONTHS[match[1].toLowerCase()]
+  const year = Number(match[2])
+  if (month == null || year < 1990 || year > 2100) return undefined
+  return `${year}-${String(month + 1).padStart(2, '0')}-01`
+}
+
+/** 列表页无日期；只补最近若干篇，避免每次刷新打满整站随笔 */
+const PG_DATE_ENRICH_LIMIT = 40
+
+export async function enrichPaulGrahamDates(
+  articles: Article[],
+  fetchHtml: (url: string, signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
+  options?: { concurrency?: number },
+): Promise<Article[]> {
+  const concurrency = Math.max(1, options?.concurrency ?? 5)
+  const next = articles.slice()
+  let cursor = 0
+
+  async function worker(): Promise<void> {
+    while (cursor < next.length) {
+      if (signal?.aborted) return
+      const index = cursor
+      cursor += 1
+      const article = next[index]
+      if (index >= PG_DATE_ENRICH_LIMIT) continue
+      if (!article || article.hasRealDate || !article.originUrl) continue
+      try {
+        const html = await fetchHtml(article.originUrl, signal)
+        if (signal?.aborted) return
+        const published = parseDate(extractPaulGrahamPublishTime(html) ?? '')
+        if (published == null) continue
+        next[index] = { ...article, publishedAt: published, hasRealDate: true }
+      } catch {
+        // 单条详情失败不影响整页列表
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, next.length) }, () => worker())
+  await Promise.all(workers)
+  return next
+}
+
 function hashId(input: string): string {
   let hash = 5381
   for (let i = 0; i < input.length; i += 1) {
@@ -1242,8 +1308,8 @@ const PG_SKIP_HREFS = new Set([
 
 /**
  * Paul Graham Essays (paulgraham.com/articles.html 无官方 RSS)。
- * 列表页为简洁静态 HTML 表格，从中提取所有 <a href="*.html"> 标题与链接。
- * PG 列表按倒序排列（最新在最前），分配递减时间戳保证倒序置顶。
+ * 列表页只有标题链接、没有日期；递减 publishedAt 仅用于源内顺序，不得标成真实发稿时间。
+ * 真实月份在随笔页标题下（如 June 2026），由 enrichPaulGrahamDates 补全。
  */
 function parsePaulGraham(source: NewsSource, payload: string, fetchedAt: number): Article[] {
   const seenHrefs = new Set<string>()
@@ -1269,7 +1335,6 @@ function parsePaulGraham(source: NewsSource, payload: string, fetchedAt: number)
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const link = `https://www.paulgraham.com/${item.href}`
-    const fakeTimestamp = new Date(fetchedAt - i * 3600_000).toISOString()
     const article = buildArticle(
       source,
       {
@@ -1277,11 +1342,17 @@ function parsePaulGraham(source: NewsSource, payload: string, fetchedAt: number)
         link,
         html: '',
         summaryText: item.title,
-        dateRaw: fakeTimestamp,
+        dateRaw: '',
       },
       fetchedAt,
     )
-    if (article) articles.push(article)
+    if (article) {
+      articles.push({
+        ...article,
+        publishedAt: fetchedAt - i * 3600_000,
+        hasRealDate: false,
+      })
+    }
   }
 
   return articles

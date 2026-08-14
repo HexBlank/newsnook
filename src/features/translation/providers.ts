@@ -7,7 +7,12 @@ import {
   isLocalTranslationAvailable,
   MlKitTranslation,
 } from './native'
-import { assertOpenAiConfig, cleanOpenAiTranslation, extractOpenAiChatContent } from './openai'
+import {
+  assertOpenAiConfig,
+  cleanOpenAiTranslation,
+  extractOpenAiChatContent,
+  OPENAI_TRANSLATION_STOP,
+} from './openai'
 import { openAiTranslationSystemPrompt, openAiTranslationUserPrompt } from './prompts'
 import type {
   CloudTranslationConfig,
@@ -615,8 +620,12 @@ export class OpenAiProvider extends CloudProvider {
           request.sourceLanguage,
           request.targetLanguage,
           kind,
+          model,
         )
-        const userPrompt = openAiTranslationUserPrompt(text, request.targetLanguage, kind)
+        const userPrompt = openAiTranslationUserPrompt(text, request.targetLanguage, kind, model)
+        const messages: { role: 'system' | 'user'; content: string }[] = []
+        if (system) messages.push({ role: 'system', content: system })
+        messages.push({ role: 'user', content: userPrompt })
         const response = await postJson(
           url,
           {
@@ -624,10 +633,8 @@ export class OpenAiProvider extends CloudProvider {
             // Mid-low: fluent news prose without inventing proper-noun transliterations.
             temperature: 0.6,
             stream: false,
-            messages: [
-              { role: 'system', content: system },
-              { role: 'user', content: userPrompt },
-            ],
+            stop: OPENAI_TRANSLATION_STOP,
+            messages,
           },
           { Authorization: `Bearer ${this.config.apiKey.trim()}` },
           request.signal,

@@ -47,6 +47,19 @@ assert.equal(cached?.snippet, '新款笔记本搭载 M4 芯片，性能迎来重
 // Test different target language returns null if not translated
 assert.equal(loadCachedFeedTranslation('art-1', 'en'), null)
 
+clearFeedTranslations()
+memoryStore.set(
+  'newsnook:feed-trans:zh-Hans:art-dirty',
+  JSON.stringify({
+    articleId: 'art-dirty',
+    title: '等待时间正越来越长。</target_text><｜hy_end▁of▁sentence｜>',
+    targetLanguage: 'zh-Hans',
+    translatedAt: Date.now(),
+  }),
+)
+const stripped = loadCachedFeedTranslation('art-dirty', 'zh-Hans')
+assert.equal(stripped?.title, '等待时间正越来越长。')
+
 // 4. Test language detection for feed item titles
 const enTitle = detectLanguage('Apple unveils new M4 MacBook Pro with unprecedented AI performance')
 assert.equal(enTitle.language, 'en')

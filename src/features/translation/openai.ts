@@ -44,11 +44,19 @@ export function assertOpenAiConfig(config: CloudTranslationConfig): string {
   return base
 }
 
-const WRAP_TAG = 'source_text|translation|translated_text|target_text|result'
+const WRAP_TAG = 'source_text|translation|translated_text|target_text|target|result'
 const TRAILING_HTML_TAG = /(?:\s*<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s[^>]*)?>)+\s*$/
-const TRAILING_SPECIAL_TOKEN = /(?:\s*<\s*\|\s*[^|>]+?\s*\|\s*>)+\s*$/
+/** Hunyuan EOS uses fullwidth ｜ and ▁; gateways may also emit ASCII | and underscores. */
+const TRAILING_SPECIAL_TOKEN = /(?:\s*<\s*[|｜]\s*[^>]*?[|｜]\s*>)+\s*$/u
 const LEADING_WRAP = new RegExp(`^<(?:${WRAP_TAG})>\\s*`, 'i')
 const TRAILING_WRAP = new RegExp(`\\s*</(?:${WRAP_TAG})>\\s*$`, 'i')
+
+export const OPENAI_TRANSLATION_STOP = [
+  '</target_text>',
+  '</target>',
+  '<｜hy_end',
+  '<|hy_end',
+]
 
 export function cleanOpenAiTranslation(content: string): string {
   let text = content.trim()

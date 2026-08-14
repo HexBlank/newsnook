@@ -335,31 +335,19 @@ export const LeadStory = memo(function LeadStory({
           data-reveal={revealed ? undefined : true}
           type="button"
           onClick={() => onOpen(article)}
-          className={`group block w-full text-left transition-colors duration-300 ${
-            variant === 'auto' ? 'lg:hidden' : ''
-          } ${
-            read
-              ? 'bg-transparent'
-              : 'bg-gradient-to-b from-transparent via-cinnabar/[0.015] to-ink-raised/40'
-          }`}
+          className={`lead-hero group text-left ${variant === 'auto' ? 'lg:hidden' : ''}`}
         >
-          <span className="ink-grain relative block overflow-hidden">
-            <InkImage
-              src={article.image}
-              eager
-              className={`mask-fade-b h-42 w-full transition-all duration-700 ease-ink group-active:scale-[1.015] md:h-55 ${
-                read ? 'opacity-[0.78] grayscale-[0.15] saturate-[0.88]' : 'opacity-100'
-              }`}
-            />
-          </span>
-
-          <span className="page-x -mt-6 block pb-5 md:pb-6">
-            <span
-              className={`flex items-center gap-2 font-mono text-[10.5px] tracking-[0.16em] ${
-                read ? 'text-paper-faint' : 'text-cinnabar-soft'
-              }`}
-            >
-              <span className={`h-px w-5 ${read ? 'bg-haze' : 'bg-cinnabar'}`} aria-hidden />
+          <InkImage
+            src={article.image}
+            eager
+            className={`h-[13.75rem] w-full sm:h-[15rem] ${
+              read ? 'opacity-[0.78] grayscale-[0.12] saturate-[0.9]' : 'opacity-100'
+            }`}
+          />
+          <span className="lead-cover-veil" aria-hidden />
+          <span className={`lead-hero-copy page-x pb-3.5 pt-8 sm:pb-4 ${read ? 'is-read' : ''}`}>
+            <span className="lead-hero-kicker flex items-center gap-2 font-mono text-[10.5px] tracking-[0.16em]">
+              <span className="h-px w-5 bg-cinnabar" aria-hidden />
               <span
                 role={onSourceClick ? 'button' : undefined}
                 tabIndex={onSourceClick ? 0 : undefined}
@@ -371,37 +359,29 @@ export const LeadStory = memo(function LeadStory({
                       }
                     : undefined
                 }
-                className={onSourceClick ? 'hover:text-paper transition-colors cursor-pointer' : ''}
+                className={onSourceClick ? 'hover:text-[#f4efe6] transition-colors cursor-pointer' : ''}
               >
                 头条 · {article.sourceLabel}
               </span>
               {saved && <BookmarkCheck size={11} strokeWidth={1.8} className="text-cinnabar" />}
               {renderTranslateBadge()}
             </span>
-            <span
-              className={`lead-title mt-2.5 block font-display text-[22px] leading-[1.34] md:text-[26px] ${
-                read ? 'font-normal text-paper-muted/80 opacity-80' : 'font-medium text-paper'
-              }`}
-            >
+            <span className="lead-title mt-1.5 block font-display text-[20px] font-medium leading-[1.32] sm:text-[22px]">
               {activeTitle}
             </span>
             {isTranslated && displayMode === 'compare' && (
-              <span className="mt-1 block font-sans text-[12px] leading-snug text-paper-faint/85 line-clamp-1 italic">
+              <span className="lead-hero-summary mt-1 block font-sans text-[12px] leading-snug line-clamp-1 italic">
                 {article.title}
               </span>
             )}
             {displaySummary && (
-              <span
-                className={`mt-2 line-clamp-2 text-[13.5px] leading-[1.62] ${
-                  read ? 'text-paper-faint/80' : 'text-paper-muted'
-                }`}
-              >
+              <span className="lead-hero-summary mt-1.5 line-clamp-1 text-[13px] leading-[1.5]">
                 {displaySummary}
               </span>
             )}
-            <span className="mt-3 flex items-center gap-2 font-mono text-[10.5px] tracking-[0.08em] text-paper-faint">
+            <span className="lead-hero-meta mt-2 flex items-center gap-2 font-mono text-[10.5px] tracking-[0.08em]">
               <span>{articleRelativeTime(article)}</span>
-              <span className="h-px w-3 bg-haze" aria-hidden />
+              <span className="h-px w-3 bg-white/25" aria-hidden />
               <span>{read ? '重温正文' : '阅读全文'}</span>
             </span>
           </span>

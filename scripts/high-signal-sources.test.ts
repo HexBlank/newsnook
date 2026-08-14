@@ -94,7 +94,8 @@ assert.equal(pgArticles[1].title, 'How to Do Great Work')
 assert.equal(pgArticles[1].originUrl, 'https://www.paulgraham.com/howtodo.html')
 assert.equal(pgArticles[2].title, 'Need to Read')
 assert.equal(pgArticles[2].originUrl, 'https://www.paulgraham.com/read.html')
-// 确保时间倒序
+// 列表无真实日期：源内仍倒序，但不得把抓取时刻标成发稿时间
+assert.equal(pgArticles[0].hasRealDate, false)
 assert.ok(pgArticles[0].publishedAt > pgArticles[1].publishedAt)
 assert.ok(pgArticles[1].publishedAt > pgArticles[2].publishedAt)
 

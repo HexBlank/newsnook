@@ -15,9 +15,10 @@ export function FeedSkeleton({ showLead = false, rows = 6 }: Props) {
       {showLead && (
         !isDesktop ? (
           /* 移动端头条骨架 (Mobile: < lg) */
-          <div>
-            <div className="ink-shimmer mask-fade-b h-42 w-full md:h-55" />
-            <div className="page-x -mt-6 pb-5 md:pb-6">
+          <div className="lead-hero">
+            <div className="ink-shimmer h-[13.75rem] w-full sm:h-[15rem]" />
+            <div className="lead-cover-veil" />
+            <div className="lead-hero-copy page-x pb-3.5 pt-8 sm:pb-4">
               <div className="ink-shimmer h-2 w-24 rounded-full" />
               <div className="ink-shimmer mt-3 h-4 w-[88%] rounded-full" />
               <div className="ink-shimmer mt-2 h-4 w-[62%] rounded-full" />

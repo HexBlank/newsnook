@@ -125,7 +125,7 @@
   --tone-body-text: rgb(var(--tone-paper-rgb) / 0.86);
   --tone-quote-text: rgb(var(--tone-paper-rgb) / 0.72);
   /* 头条图上的压底渐变；浅底需要更厚才压得住图片细节 */
-  --lead-veil: rgb(var(--tone-ink-rgb) / 0.7);
+  --lead-veil: rgb(var(--tone-ink-rgb) / 0.55);
   --shadow-lift: 0 12px 40px -16px rgb(0 0 0 / 0.85);
   /* 已隐藏项的弱化：深底压暗，浅底靠降对比 */
   --dim-hidden: brightness(0.72);
@@ -364,6 +364,58 @@
   .mask-fade-b {
     -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
     mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+  }
+
+  /* 头条：全宽沉浸 + 固定透明暗色遮罩（不跟主题底色走，避免昼读变成宣纸罩） */
+  .lead-hero {
+    position: relative;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    background-color: #0e0f12;
+  }
+
+  .lead-cover-veil {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background-image: linear-gradient(
+      to bottom,
+      rgb(0 0 0 / 0) 8%,
+      rgb(0 0 0 / 0.4) 42%,
+      rgb(0 0 0 / 0.78) 72%,
+      rgb(8 9 11 / 0.96) 100%
+    );
+  }
+
+  .lead-hero-copy {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 2;
+    color: #eae4d8;
+  }
+
+  .lead-hero-copy .lead-title {
+    color: #f4efe6;
+  }
+
+  .lead-hero-copy .lead-hero-kicker {
+    color: #e08a78;
+  }
+
+  .lead-hero-copy .lead-hero-summary {
+    color: rgb(234 228 216 / 0.72);
+  }
+
+  .lead-hero-copy .lead-hero-meta {
+    color: rgb(234 228 216 / 0.48);
+  }
+
+  .lead-hero-copy.is-read .lead-title {
+    color: rgb(234 228 216 / 0.7);
   }
 
   /* 横向滚动条两端渐隐，同样走蒙版，避免叠加渐变块与毛玻璃打架 */
@@ -1053,4 +1105,13 @@ html[data-eink='1'] [data-surface='reader-chrome'] {
   background-color: var(--color-ink);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+html[data-eink='1'] .lead-cover-veil {
+  background-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0) 28%,
+    rgb(0 0 0 / 0.72) 68%,
+    rgb(0 0 0 / 0.94) 100%
+  );
 }

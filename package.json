@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.5.3",
+  "version": "1.5.4",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -52,6 +52,7 @@
     "test:app-update": "npx tsx scripts/app-update.test.ts",
     "test:markdown": "npx tsx scripts/markdown-safe.test.ts",
     "test:jazzyear-dates": "npx tsx scripts/jazzyear-dates.test.ts",
+    "test:paulgraham-dates": "npx tsx scripts/paulgraham-dates.test.ts",
     "test:finance-sources": "npx tsx scripts/finance-sources.test.ts",
     "test:high-signal": "npx tsx scripts/high-signal-sources.test.ts",
     "test:eink": "npx tsx scripts/eink-mode.test.ts",

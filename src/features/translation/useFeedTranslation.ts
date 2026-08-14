@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { cleanOpenAiTranslation } from './openai'
 import { normalizeChineseVariant } from './chineseVariant'
 import {
   loadCachedFeedTranslations,
@@ -112,7 +113,7 @@ export function useFeedTranslation(
 
     const applyProgressiveUpdate = (art: Article, rawText: string) => {
       if (!art || !rawText) return
-      const trimmed = rawText.trim()
+      const trimmed = cleanOpenAiTranslation(rawText)
 
       // 质量与完整性校验：拦截严重残缺、中英混乱或翻译直通失败
       if (!isValidTranslationQuality(art.title, trimmed, targetLanguage)) {

@@ -1,4 +1,5 @@
 import { normalizeChineseVariant } from './chineseVariant'
+import { cleanOpenAiTranslation } from './openai'
 import { detectLanguage, sampleTextForDetection } from './detectLanguage'
 import { createTranslationProvider } from './providers'
 import type {
@@ -36,7 +37,7 @@ function isBlocked(element: Element): boolean {
 }
 
 function finalizeTranslatedText(text: string, targetLanguage: TranslationLanguage): string {
-  return normalizeChineseVariant(text, targetLanguage)
+  return normalizeChineseVariant(cleanOpenAiTranslation(text), targetLanguage)
 }
 
 export function resolveSourceLanguage(

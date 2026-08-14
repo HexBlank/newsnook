@@ -17,6 +17,7 @@ import { fetchAbsoluteText, fetchSourceText } from '../lib/http'
 import {
   enrichJazzyearDates,
   enrichLatepostDates,
+  enrichPaulGrahamDates,
   neteasePageEntryCount,
   parseSourcePayload,
   zhihuEditionDate,
@@ -86,6 +87,13 @@ async function parseSourceArticles(
       signal,
     )
   }
+  if (source.kind === 'paulgraham') {
+    return enrichPaulGrahamDates(
+      articles,
+      (url, fetchSignal) => fetchAbsoluteText(url, { signal: fetchSignal }),
+      signal,
+    )
+  }
   return articles
 }
 
@@ -109,7 +117,9 @@ function scheduleDetailDateEnrichment(
       ? enrichLatepostDates
       : source.kind === 'jazzyear'
         ? enrichJazzyearDates
-        : null
+        : source.kind === 'paulgraham'
+          ? enrichPaulGrahamDates
+          : null
   if (!enrich) return
   void enrich(
     articles,

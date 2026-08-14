@@ -1,3 +1,4 @@
+import { cleanOpenAiTranslation } from './openai'
 import type { TranslatedFeedItem, TranslationLanguage } from './types'
 
 const FEED_TRANS_PREFIX = 'newsnook:feed-trans:'
@@ -7,20 +8,34 @@ function cacheKey(targetLanguage: TranslationLanguage, articleId: string): strin
   return `${FEED_TRANS_PREFIX}${targetLanguage}:${articleId}`
 }
 
+function sanitizeStoredItem(key: string, item: TranslatedFeedItem): TranslatedFeedItem | null {
+  const title = typeof item.title === 'string' ? cleanOpenAiTranslation(item.title) : ''
+  if (!title) return null
+  if (title === item.title) {
+    memoryCache.set(key, item)
+    return item
+  }
+  const cleaned: TranslatedFeedItem = { ...item, title }
+  memoryCache.set(key, cleaned)
+  try {
+    localStorage.setItem(key, JSON.stringify(cleaned))
+  } catch {
+    // 忽略存储满异常
+  }
+  return cleaned
+}
+
 export function loadCachedFeedTranslation(
   articleId: string,
   targetLanguage: TranslationLanguage,
 ): TranslatedFeedItem | null {
   const key = cacheKey(targetLanguage, articleId)
-  if (memoryCache.has(key)) {
-    return memoryCache.get(key) ?? null
-  }
+  const cached = memoryCache.get(key)
+  if (cached) return sanitizeStoredItem(key, cached)
   try {
     const raw = localStorage.getItem(key)
     if (!raw) return null
-    const item = JSON.parse(raw) as TranslatedFeedItem
-    memoryCache.set(key, item)
-    return item
+    return sanitizeStoredItem(key, JSON.parse(raw) as TranslatedFeedItem)
   } catch {
     return null
   }
@@ -43,11 +58,14 @@ export function loadCachedFeedTranslations(
 
 export function saveCachedFeedTranslation(item: TranslatedFeedItem): void {
   const key = cacheKey(item.targetLanguage, item.articleId)
-  memoryCache.set(key, item)
-  try {
-    localStorage.setItem(key, JSON.stringify(item))
-  } catch {
-    // 忽略存储满异常
+  const cleaned = sanitizeStoredItem(key, item)
+  if (!cleaned) {
+    memoryCache.delete(key)
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // 忽略
+    }
   }
 }
 
