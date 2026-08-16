@@ -702,6 +702,172 @@
   background: #000;
 }
 
+/*
+ * YouTube 在 WebView 内部绘制完成前常会留下一块纯黑画布。Reader 先移走 src，
+ * 由 React 播放器显示缩略图与进度，再在 iframe load 后淡入官方控件。
+ */
+.reader-prose iframe[data-youtube-src] {
+  display: none;
+}
+
+.reader-inline-youtube {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.8em 0 1.2em;
+  font-style: normal;
+}
+
+.reader-youtube-player {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 200px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-paper) 14%, transparent);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 40%, rgb(var(--tone-paper-rgb) / 10%), transparent 48%),
+    #08090b;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+  text-indent: 0;
+}
+
+.reader-prose .reader-youtube-player-frame {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  opacity: 0;
+  background: #000;
+  transition: opacity 320ms var(--ease-ink);
+}
+
+.reader-prose .reader-youtube-player-frame.is-ready {
+  opacity: 1;
+}
+
+.reader-youtube-loading {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #f5f0e6;
+}
+
+.reader-prose .reader-youtube-thumbnail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
+  object-fit: cover;
+  cursor: default;
+  filter: saturate(0.72) contrast(1.04) brightness(0.68);
+  transform: scale(1.015);
+}
+
+.reader-youtube-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgb(5 7 9 / 20%), rgb(5 7 9 / 8%) 45%, rgb(5 7 9 / 72%)),
+    radial-gradient(circle at center, transparent 0 22%, rgb(5 7 9 / 24%) 70%);
+}
+
+.reader-youtube-action {
+  appearance: none;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: center;
+}
+
+button.reader-youtube-action {
+  cursor: pointer;
+}
+
+.reader-youtube-play {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 42%);
+  border-radius: 999px;
+  background: rgb(14 15 18 / 78%);
+  color: #f7f1e6;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 32%);
+  backdrop-filter: blur(8px);
+}
+
+.reader-youtube-play.is-loading {
+  border-color: color-mix(in srgb, var(--color-cinnabar-soft) 68%, white 20%);
+  color: var(--color-cinnabar-soft);
+}
+
+.reader-youtube-play.is-loading svg {
+  animation: translation-spin 780ms linear infinite;
+}
+
+.reader-youtube-status {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgb(8 9 11 / 68%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  color: rgb(247 241 230 / 92%);
+  backdrop-filter: blur(8px);
+}
+
+.reader-youtube-brand {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgb(255 255 255 / 76%);
+}
+
+.reader-youtube-brand-mark {
+  display: grid;
+  width: 18px;
+  height: 12px;
+  place-items: center;
+  border-radius: 3px;
+  background: #e62117;
+  font-size: 7px;
+  line-height: 1;
+  color: white;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-prose .reader-youtube-player-frame {
+    transition: none;
+  }
+}
+
 .reader-inline-video {
   display: block;
   width: 100%;

@@ -5,6 +5,12 @@
 import { readFileSync } from 'node:fs'
 
 import { sanitizeArticleHtml } from '../src/lib/sanitize'
+import {
+  describeYoutubeEmbed,
+  stageYoutubeEmbedsInHtml,
+  YOUTUBE_STAGED_SRC_ATTR,
+} from '../src/lib/youtubeEmbeds'
+import { parseHTML } from 'linkedom'
 
 const withIframe =
   '<p>Hello world content about fullstack arena that is long enough for a paragraph.</p>' +
@@ -34,6 +40,24 @@ if (/referrerpolicy="no-referrer"/i.test(cleaned)) {
   throw new Error('publisher no-referrer policy was kept on youtube embed')
 }
 console.log('sanitize youtube whitelist: ok')
+
+const staged = stageYoutubeEmbedsInHtml(cleaned)
+const { document } = parseHTML(`<article>${staged}</article>`)
+const stagedIframes = Array.from(document.querySelectorAll('iframe'))
+if (stagedIframes.length !== 2) {
+  throw new Error(`expected two staged youtube embeds, got ${stagedIframes.length}`)
+}
+for (const iframe of stagedIframes) {
+  if (iframe.getAttribute('src')) throw new Error('staged youtube iframe loaded too early')
+  if (!iframe.getAttribute(YOUTUBE_STAGED_SRC_ATTR)) {
+    throw new Error('staged youtube iframe lost its source')
+  }
+  const descriptor = describeYoutubeEmbed(iframe, 'Fallback title', 'https://localhost/')
+  if (!descriptor?.thumbnail.includes(`/vi/${descriptor.videoId}/hqdefault.jpg`)) {
+    throw new Error('youtube loading thumbnail was not derived')
+  }
+}
+console.log('youtube loading stage: ok')
 
 const fixture = process.argv[2]
 if (!fixture) {

@@ -8,6 +8,7 @@ import { EinkReaderMenu } from '../components/EinkReaderMenu'
 import { InkImage } from '../components/InkImage'
 import { InkVideoPlayer } from '../components/InkVideoPlayer'
 import { InlineArticleVideos } from '../components/InlineArticleVideos'
+import { InlineYoutubeEmbeds } from '../components/InlineYoutubeEmbeds'
 import { loadCachedBody, saveCachedBody } from '../lib/bodyCache'
 import { addVolumePageTurnListener, setVolumePageTurnEnabled } from '../lib/volumePageTurn'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
@@ -17,6 +18,7 @@ import { useProgressiveImages } from '../hooks/useProgressiveImages'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 import { revokeBlobUrl } from '../features/proxy/hydrateImages'
 import { deferMediaInHtml, DEFERRED_SRC_ATTR, type DeferredHostPhase } from '../lib/deferReaderMedia'
+import { stageYoutubeEmbedsInHtml } from '../lib/youtubeEmbeds'
 import { shouldAutoLoadMedia } from '../lib/mediaLoadPolicy'
 import { revealReader } from '../lib/motion'
 import { resolveArticleBody, type BodySource } from '../lib/resolveBody'
@@ -388,10 +390,12 @@ export function ReaderScreen({
   )
   const playableSrcMap = useMemo(() => new Map(Object.entries(mediaPlayables)), [mediaPlayables])
   const proseHtml = useMemo(
-    () =>
-      autoLoadMedia
+    () => {
+      const mediaHtml = autoLoadMedia
         ? displayedHtml
-        : deferMediaInHtml(displayedHtml, unlockedSet, deferredPhaseMap, playableSrcMap),
+        : deferMediaInHtml(displayedHtml, unlockedSet, deferredPhaseMap, playableSrcMap)
+      return stageYoutubeEmbedsInHtml(mediaHtml)
+    },
     [autoLoadMedia, displayedHtml, unlockedSet, deferredPhaseMap, playableSrcMap],
   )
   const onDeferredPhase = useCallback(
@@ -1043,6 +1047,15 @@ export function ReaderScreen({
                     enabled={loadState === 'ready' && translationState !== 'loading'}
                     fallbackTitle={displayedTitle}
                     deferLoad={!autoLoadMedia}
+                    onUnlocked={onUnlockedMedia}
+                  />
+                  <InlineYoutubeEmbeds
+                    rootRef={proseRef}
+                    html={proseHtml}
+                    enabled={loadState === 'ready' && translationState !== 'loading'}
+                    fallbackTitle={displayedTitle}
+                    deferLoad={!autoLoadMedia}
+                    unlockedUrls={unlockedSet}
                     onUnlocked={onUnlockedMedia}
                   />
                 </>
