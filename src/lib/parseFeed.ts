@@ -504,6 +504,16 @@ function stableNeteaseDocId(raw: string): string | undefined {
   return undefined
 }
 
+/** 整条是网易号短视频卡片（非「文章正文里带了视频」）。 */
+function isNeteaseHaoShortVideoCard(entry: Unknown, videoinfo: Unknown | undefined): boolean {
+  const boardid = text(entry.boardid)
+  const docid = text(entry.docid)
+  const videosource = text(entry.videosource) || text(videoinfo?.videosource)
+  if (boardid === 'video_bbs') return true
+  if (/updateDoc$/i.test(docid)) return true
+  return videosource === '新媒体' || videosource === '其他'
+}
+
 function parseNetease(source: NewsSource, payload: string, fetchedAt: number): Article[] {
   const data = JSON.parse(payload) as Record<string, unknown>
   // 汽车等频道顶层为 list；普通频道为动态 TID 数组键
@@ -524,6 +534,8 @@ function parseNetease(source: NewsSource, payload: string, fetchedAt: number): A
 
     const videoinfo = asRecord(entry.videoinfo)
     const isVideo = skipType === 'video' || Boolean(videoinfo) || Boolean(text(entry.videoID))
+    // 丢掉灌进频道的网易号短视频卡片；正文内嵌视频的文章条目不走这条分支
+    if (isVideo && isNeteaseHaoShortVideoCard(entry, videoinfo)) return []
 
     if (isVideo) {
       const vid = text(entry.videoID) || text(entry.skipID) || text(videoinfo?.vid)
