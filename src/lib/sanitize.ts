@@ -56,11 +56,30 @@ export function stripEmptyArticleBlocks(html: string): string {
     .replace(/<(ul|ol)\b[^>]*>\s*<\/\1>/gi, '')
 }
 
-/** 丢掉非 YouTube 的 iframe，原站 embed 原样保留 */
+const YOUTUBE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+
+/**
+ * YouTube 需要 Referer 来识别嵌入客户端；应用全局 no-referrer，因此白名单播放器
+ * 必须单独覆盖。源站可能显式写了 no-referrer，也统一收紧到只发送 origin。
+ */
+function ensureYoutubeReferrerPolicy(block: string): string {
+  if (/\breferrerpolicy\s*=/i.test(block)) {
+    return block.replace(
+      /\breferrerpolicy\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i,
+      `referrerpolicy="${YOUTUBE_REFERRER_POLICY}"`,
+    )
+  }
+  return block.replace(
+    /<iframe\b/i,
+    `<iframe referrerpolicy="${YOUTUBE_REFERRER_POLICY}"`,
+  )
+}
+
+/** 丢掉非 YouTube 的 iframe，并为白名单播放器补齐最小来源标识 */
 function keepAllowedEmbeds(html: string): string {
   return html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, (block) => {
     const src = block.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1]
-    return isAllowedYoutubeEmbedSrc(src) ? block : ''
+    return isAllowedYoutubeEmbedSrc(src) ? ensureYoutubeReferrerPolicy(block) : ''
   })
 }
 

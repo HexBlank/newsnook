@@ -9,6 +9,7 @@ import { sanitizeArticleHtml } from '../src/lib/sanitize'
 const withIframe =
   '<p>Hello world content about fullstack arena that is long enough for a paragraph.</p>' +
   '<iframe src="https://www.youtube.com/embed/Eu-gcfuxGn8" title="t" width="560" height="315"></iframe>' +
+  '<iframe referrerpolicy="no-referrer" src="https://www.youtube-nocookie.com/embed/fEudbAjschs?start=0&amp;wmode=transparent"></iframe>' +
   '<iframe src="https://evil.example/embed/x" title="x"></iframe>'
 
 const cleaned = sanitizeArticleHtml(withIframe)
@@ -17,6 +18,20 @@ if (!cleaned.includes('youtube.com/embed/Eu-gcfuxGn8')) {
 }
 if (cleaned.includes('evil.example')) {
   throw new Error('non-youtube iframe was kept')
+}
+const youtubeIframes = cleaned.match(/<iframe\b[^>]*youtube[^>]*>/gi) || []
+if (youtubeIframes.length !== 2) {
+  throw new Error(`expected two youtube embeds, got ${youtubeIframes.length}`)
+}
+if (
+  youtubeIframes.some(
+    (iframe) => !/referrerpolicy="strict-origin-when-cross-origin"/i.test(iframe),
+  )
+) {
+  throw new Error('youtube embed referrer policy was not normalized')
+}
+if (/referrerpolicy="no-referrer"/i.test(cleaned)) {
+  throw new Error('publisher no-referrer policy was kept on youtube embed')
 }
 console.log('sanitize youtube whitelist: ok')
 
