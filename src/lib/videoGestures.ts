@@ -95,18 +95,27 @@ export function normalizeVideoRotation(value: number): VideoRotation {
   return normalized as VideoRotation
 }
 
-/** 让旋转后的实际视频内容仍完整落在视口内，scale=1 始终代表“适应画面”。 */
-export function videoRotationFit(
+/** 90° / 270° 时交换布局轴，让进度条和控件跟随视频长边。 */
+export function videoSurfaceForRotation(
   surface: GestureSurface,
-  media: GestureSurface,
   rotation: VideoRotation,
-): number {
-  if (surface.width <= 0 || surface.height <= 0 || media.width <= 0 || media.height <= 0) return 1
-  if (rotation === 0 || rotation === 180) return 1
-  const base = Math.min(surface.width / media.width, surface.height / media.height)
-  const renderedWidth = media.width * base
-  const renderedHeight = media.height * base
-  return Math.min(surface.width / renderedHeight, surface.height / renderedWidth)
+): GestureSurface {
+  return rotation === 90 || rotation === 270
+    ? { width: surface.height, height: surface.width }
+    : surface
+}
+
+/** 把物理屏幕坐标反算为旋转后播放器的布局坐标。 */
+export function videoPointForRotation(
+  x: number,
+  y: number,
+  surface: GestureSurface,
+  rotation: VideoRotation,
+): { x: number; y: number } {
+  if (rotation === 90) return { x: y, y: surface.width - x }
+  if (rotation === 180) return { x: surface.width - x, y: surface.height - y }
+  if (rotation === 270) return { x: surface.height - y, y: x }
+  return { x, y }
 }
 
 /** 缩放后限制平移范围，避免把视频整块拖出播放区域。 */
@@ -116,16 +125,13 @@ export function clampVideoPan(
   surface: GestureSurface,
   media: GestureSurface,
   scale: number,
-  rotation: VideoRotation,
 ): Pick<VideoViewportTransform, 'x' | 'y'> {
   if (surface.width <= 0 || surface.height <= 0 || media.width <= 0 || media.height <= 0) {
     return { x: 0, y: 0 }
   }
   const base = Math.min(surface.width / media.width, surface.height / media.height)
-  const fit = videoRotationFit(surface, media, rotation)
-  const quarterTurn = rotation === 90 || rotation === 270
-  const contentWidth = (quarterTurn ? media.height : media.width) * base * fit * scale
-  const contentHeight = (quarterTurn ? media.width : media.height) * base * fit * scale
+  const contentWidth = media.width * base * scale
+  const contentHeight = media.height * base * scale
   const maxX = Math.max(0, (contentWidth - surface.width) / 2)
   const maxY = Math.max(0, (contentHeight - surface.height) / 2)
   return {
