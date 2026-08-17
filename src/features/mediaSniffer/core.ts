@@ -9,6 +9,7 @@ import {
   mimeFromUrl,
   normalizedMime,
 } from './classifier'
+import { buildMediaGraph, descriptorFromAsset, selectPlayableAsset } from './graph'
 import type {
   MediaCandidate,
   MediaDescriptor,
@@ -16,7 +17,6 @@ import type {
   MediaObservation,
   MediaObservationSource,
   MediaTrack,
-  PlayableMediaFormat,
 } from './types'
 
 export {
@@ -238,48 +238,15 @@ export function parseDashManifest(text: string, manifestUrl: string): Pick<Media
   return { videoTracks, audioTracks, subtitles, drm }
 }
 
-function isPlayableFormat(format: MediaFormat): format is PlayableMediaFormat {
-  return format === 'progressive' || format === 'hls' || format === 'dash'
-}
-
-function drmKeySystems(observations: MediaObservation[]): string[] {
-  return Array.from(new Set(observations.map((item) => item.drmKeySystem).filter((item): item is string => Boolean(item))))
-}
-
 export function buildMediaDescriptor(
   observations: MediaObservation[],
   manifests: ReadonlyMap<string, string> = new Map(),
 ): MediaDescriptor | null {
-  const candidate = collectMediaCandidates(observations).find(
-    (item) => isPlayableFormat(item.format) && item.mediaKind !== 'audio',
-  )
-  if (!candidate || !isPlayableFormat(candidate.format)) return null
-
-  const descriptor: MediaDescriptor = {
-    type: candidate.format,
-    url: candidate.originalUrl,
-    pageUrl: candidate.pageUrl,
-    score: candidate.score,
-    mimeType: candidate.mimeType,
-    hasAudio: candidate.hasAudio,
-    videoTracks: [],
-    audioTracks: [],
-    subtitles: [],
-    drm: false,
-    drmKeySystems: drmKeySystems(observations),
-    requestHeaders: candidate.requestHeaders,
-  }
-  descriptor.drm = descriptor.drmKeySystems.length > 0
-
-  const manifest = manifests.get(candidate.originalUrl)
-  if (manifest && candidate.format === 'hls') {
-    const parsed = parseHlsManifest(manifest, candidate.originalUrl)
-    Object.assign(descriptor, parsed, { drm: descriptor.drm || parsed.drm })
-  } else if (manifest && candidate.format === 'dash') {
-    const parsed = parseDashManifest(manifest, candidate.originalUrl)
-    Object.assign(descriptor, parsed, { drm: descriptor.drm || parsed.drm })
-  }
-  return descriptor
+  const assets = buildMediaGraph(observations, manifests)
+  const playable = selectPlayableAsset(assets)
+  const chosen = playable ?? assets.find((item) => item.drm) ?? null
+  if (!chosen) return null
+  return descriptorFromAsset(chosen)
 }
 
 function resolvedUrl(value: string, pageUrl: string): string | undefined {

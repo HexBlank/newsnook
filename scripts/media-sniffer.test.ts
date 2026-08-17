@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 
+import { parseMediaApiBody } from '../src/features/mediaSniffer/apiParser'
 import {
   bestMediaUrlInPayload,
   buildMediaDescriptor,
@@ -12,6 +13,13 @@ import {
   mediaFormatFor,
 } from '../src/features/mediaSniffer/core'
 import { logicalMediaUrl } from '../src/features/mediaSniffer/classifier'
+import {
+  admitObservation,
+  buildMediaGraph,
+  descriptorFromAsset,
+  selectPlayableAsset,
+  synthesizeDashMpd,
+} from '../src/features/mediaSniffer/graph'
 import { originOf, playbackHeadersForTarget } from '../src/features/mediaSniffer/originHeaders'
 import type { MediaObservation } from '../src/features/mediaSniffer/types'
 import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playback'
@@ -270,6 +278,118 @@ video/1080.m3u8`
     { url: 'https://cdn.example/podcast.mp3', pageUrl, source: 'dom', mimeType: 'audio/mpeg', mediaKind: 'audio' },
   ])
   assert.equal(descriptor, null, '音频候选不能被误交给视频播放器')
+}
+
+{
+  const assets = buildMediaGraph([
+    {
+      url: 'https://cdn.example/play?id=42',
+      pageUrl,
+      source: 'network',
+      mimeType: 'video/mp4',
+    },
+  ])
+  assert.equal(assets.length, 1)
+  const descriptor = buildMediaDescriptor([
+    { url: 'https://cdn.example/play?id=42', pageUrl, source: 'network', mimeType: 'video/mp4' },
+  ])
+  assert.equal(descriptor?.type, 'progressive')
+  assert.equal(descriptor?.url, 'https://cdn.example/play?id=42')
+}
+
+{
+  const body = JSON.stringify({ playurl: 'https://cdn.example/live/master.m3u8?token=1' })
+  const parsed = parseMediaApiBody(body, pageUrl, 'fetch')
+  const descriptor = buildMediaDescriptor(parsed)
+  assert.equal(descriptor?.type, 'hls')
+  assert.equal(descriptor?.url, 'https://cdn.example/live/master.m3u8?token=1')
+}
+
+{
+  const body = JSON.stringify({
+    dash: {
+      video: [{
+        baseUrl: 'https://upos.example/video.m4s',
+        mimeType: 'video/mp4',
+        width: 1920,
+        height: 1080,
+        bandwidth: 4500000,
+        codecs: 'avc1.640028',
+      }],
+      audio: [{
+        baseUrl: 'https://upos.example/audio.m4s',
+        mimeType: 'audio/mp4',
+        bandwidth: 128000,
+        codecs: 'mp4a.40.2',
+      }],
+    },
+  })
+  const parsed = parseMediaApiBody(body, pageUrl, 'xhr')
+  const assets = buildMediaGraph(parsed)
+  assert.equal(assets.length, 1, 'B站式 dash.video+audio 必须同一 asset')
+  assert.equal(assets[0].videos.length, 1)
+  assert.equal(assets[0].audios.length, 1)
+  const xml = synthesizeDashMpd(assets[0].videos[0], assets[0].audios[0])
+  assert.match(xml, /video\.m4s/)
+  assert.match(xml, /audio\.m4s/)
+  const descriptor = descriptorFromAsset(assets[0], () => 'blob:nn-mpd')
+  assert.equal(descriptor?.type, 'dash')
+  assert.equal(descriptor?.url, 'blob:nn-mpd')
+}
+
+{
+  const assets = buildMediaGraph([
+    { url: 'https://cdn.example/ad.mp4', pageUrl, source: 'network', mimeType: 'video/mp4', width: 640, height: 360 },
+    { url: 'https://cdn.example/master.m3u8', pageUrl, source: 'network' },
+  ])
+  assert.equal(assets.length, 2)
+  assert.equal(selectPlayableAsset(assets)?.manifest?.url, 'https://cdn.example/master.m3u8')
+}
+
+{
+  const assets = buildMediaGraph([
+    { url: 'https://cdn.example/a.mp4', pageUrl, source: 'dom', mimeType: 'video/mp4' },
+    { url: 'https://cdn.example/b.mp4', pageUrl, source: 'dom', mimeType: 'video/mp4' },
+  ])
+  assert.equal(assets.length, 2)
+}
+
+{
+  const network = new Set(['https://cdn.example/real.mp4'])
+  assert.equal(
+    admitObservation(
+      { url: 'https://evil.example/ad.mp4', pageUrl, source: 'dom', sessionNonce: 'abc' },
+      'abc',
+      network,
+    ),
+    false,
+  )
+  assert.equal(
+    admitObservation(
+      { url: 'https://cdn.example/real.mp4', pageUrl, source: 'dom', sessionNonce: 'nope' },
+      'abc',
+      network,
+    ),
+    false,
+  )
+  assert.equal(
+    admitObservation(
+      { url: 'https://cdn.example/real.mp4', pageUrl, source: 'network' },
+      'abc',
+      network,
+    ),
+    true,
+  )
+}
+
+{
+  const base = 'https://cdn.example/videoplayback?id=42&mime=video%2Fmp4'
+  const descriptor = buildMediaDescriptor([
+    { url: `${base}&range=0-1000`, pageUrl, source: 'network', mimeType: 'video/mp4' },
+    { url: `${base}&range=1001-2000`, pageUrl, source: 'network', mimeType: 'video/mp4' },
+  ])
+  assert.equal(descriptor?.url, base)
+  assert.equal(descriptor?.type, 'progressive')
 }
 
 console.log('media-sniffer tests passed')

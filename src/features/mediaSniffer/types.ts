@@ -39,6 +39,7 @@ export interface MediaObservation {
   bodyText?: string
   fromServiceWorker?: boolean
   sessionNonce?: string
+  assetGroup?: string
 }
 
 export interface RequestContext {
