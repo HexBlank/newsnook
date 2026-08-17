@@ -21,9 +21,13 @@ final class MediaProbe {
     static Result classify(OkHttpClient client, String url) {
         try {
             Request head = new Request.Builder().url(url).head().build();
-            try (Response response = client.newCall(head).execute()) {
-                String mime = contentType(response);
-                if (isMediaMime(mime) || isManifestMime(mime)) return new Result(mime);
+            try {
+                try (Response response = client.newCall(head).execute()) {
+                    String mime = contentType(response);
+                    if (isMediaMime(mime) || isManifestMime(mime)) return new Result(mime);
+                }
+            } catch (IOException ignored) {
+                // HEAD 失败或非媒体 MIME 时仍尝试 Range GET。
             }
             Request get = new Request.Builder()
                 .url(url)

@@ -93,6 +93,7 @@ public class MediaSnifferPlugin extends Plugin {
             if (mime.includes('mpegurl') || mime.includes('dash+xml') || mime.includes('vnd.apple.mpegurl')) return true;
             if (event.source === 'mse' && event.mseMimeType) return true;
             if (event.source === 'dom' && event.url) return true;
+            if ((event.source === 'fetch' || event.source === 'xhr') && event.bodyText) return true;
             return false;
           };
           const push = (event) => {
@@ -111,7 +112,7 @@ public class MediaSnifferPlugin extends Plugin {
             try {
               if (!message.data || message.data.nonce !== nonce) return;
               const observation = message.data.__newsnookMediaObservation;
-              if (observation && typeof observation === 'object') push(observation);
+              if (observation && typeof observation === 'object') push({ ...observation, fromIframe: true });
             } catch (_) {}
           });
           const positiveNumber = (value) => {
@@ -126,7 +127,7 @@ public class MediaSnifferPlugin extends Plugin {
               return;
             }
             try {
-              const url = [value.url, value.contentUrl, value.playbackUrl, value.src]
+              const url = [value.url, value.contentUrl, value.playbackUrl, value.src, value.baseUrl, value.base_url, value.playurl, value.play_url, value.backupUrl, value.backup_url, value.manifestUrl]
                 .find((item) => typeof item === 'string' && item);
               const mimeType = [value.mimeType, value.contentType, value.mime]
                 .find((item) => typeof item === 'string');
@@ -140,6 +141,7 @@ public class MediaSnifferPlugin extends Plugin {
                   source: 'static',
                   url,
                   mimeType,
+                  codecs: typeof value.codecs === 'string' ? value.codecs : undefined,
                   mediaKind: /^audio\\//i.test(mimeType || '') ? 'audio' : hasVideo ? 'video' : undefined,
                   hasAudio: hasAudio ? true : hasVideo && value.qualityLabel ? false : undefined,
                   hasVideo: hasVideo || undefined,
@@ -299,12 +301,18 @@ public class MediaSnifferPlugin extends Plugin {
     @PluginMethod
     public void preparePlayback(PluginCall call) {
         String url = call.getString("url");
-        if (!isAllowedPageUrl(url)) {
+        String sourcePage = call.getString("sourcePage");
+        if (sourcePage != null && !isAllowedPageUrl(sourcePage)) sourcePage = null;
+        boolean opaque = isOpaquePlaybackUrl(url);
+        if (opaque) {
+            if (sourcePage == null) {
+                call.reject("媒体地址无效");
+                return;
+            }
+        } else if (!isAllowedPageUrl(url)) {
             call.reject("媒体地址无效");
             return;
         }
-        String sourcePage = call.getString("sourcePage");
-        if (sourcePage != null && !isAllowedPageUrl(sourcePage)) sourcePage = null;
         String format = call.getString("format", "progressive");
         boolean intercept = call.getBoolean("intercept", true);
         JSObject headersObject = call.getObject("headers");
@@ -320,17 +328,24 @@ public class MediaSnifferPlugin extends Plugin {
             }
         }
         OkHttpClient client = intercept ? createPlaybackClient(call.getObject("proxy")) : null;
-        registerPlaybackContext(url, format, intercept, false, jsHeaders, sourcePage, client);
+        if (!opaque) {
+            registerPlaybackContext(url, format, intercept, false, jsHeaders, sourcePage, client);
+        }
         if (intercept) {
+            Set<String> seeds = new HashSet<>();
             JSArray origins = call.getArray("origins");
             if (origins != null) {
                 for (int index = 0; index < origins.length(); index += 1) {
                     String origin = origins.optString(index, "");
-                    if (origin == null || origin.isEmpty()) continue;
-                    String seed = origin.endsWith("/") ? origin : origin + "/";
-                    if (!isAllowedPageUrl(seed)) continue;
-                    registerPlaybackContext(seed, format, true, true, jsHeaders, sourcePage, client);
+                    if (origin != null && !origin.isEmpty()) seeds.add(origin);
                 }
+            }
+            seeds.addAll(OriginHeaderStore.notedOrigins());
+            for (String origin : seeds) {
+                if (origin == null || origin.isEmpty()) continue;
+                String seed = origin.endsWith("/") ? origin : origin + "/";
+                if (!isAllowedPageUrl(seed)) continue;
+                registerPlaybackContext(seed, format, true, true, jsHeaders, sourcePage, client);
             }
         }
         call.resolve();
@@ -533,6 +548,12 @@ public class MediaSnifferPlugin extends Plugin {
         return uri.getHost() != null && ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme));
     }
 
+    private static boolean isOpaquePlaybackUrl(String value) {
+        if (value == null) return false;
+        String trimmed = value.trim().toLowerCase(Locale.ROOT);
+        return trimmed.startsWith("blob:") || trimmed.startsWith("data:");
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private void startSniff(PluginCall call, String initialUrl, int timeoutMs, String referrer) {
         FrameLayout root = getActivity().findViewById(android.R.id.content);
@@ -561,6 +582,7 @@ public class MediaSnifferPlugin extends Plugin {
         AtomicBoolean finished = new AtomicBoolean(false);
         String sessionNonce = UUID.randomUUID().toString();
         String probeScript = buildProbeScript(sessionNonce);
+        OriginHeaderStore.clear();
         ScriptHandler scriptHandler = installDocumentStartProbe(webView, probeScript);
         ServiceWorkerSniffer.install(networkEvents, pageUrl);
 
@@ -736,7 +758,7 @@ public class MediaSnifferPlugin extends Plugin {
             value -> {
                 JSONArray networkCopy = copyEvents(networkEvents);
                 String userAgent = webView.getSettings().getUserAgentString();
-                cleanup(webView, root, scriptHandler);
+                cleanup(webView, root, scriptHandler, networkEvents);
                 new Thread(() -> {
                     try {
                         probeUnknownNetworkEvents(networkCopy, userAgent);
@@ -759,12 +781,27 @@ public class MediaSnifferPlugin extends Plugin {
     }
 
     private static JSONArray keepTrustedObservations(JSONArray events, String sessionNonce) {
+        Set<String> networkUrls = new HashSet<>();
+        for (int index = 0; index < events.length(); index += 1) {
+            JSONObject event = events.optJSONObject(index);
+            if (event == null) continue;
+            String url = event.optString("url", "");
+            if (url.isEmpty()) continue;
+            String source = event.optString("source", "");
+            if ("network".equals(source) || event.optBoolean("fromServiceWorker", false)) {
+                networkUrls.add(url);
+            }
+        }
         JSONArray trusted = new JSONArray();
         for (int index = 0; index < events.length(); index += 1) {
             JSONObject event = events.optJSONObject(index);
             if (event == null) continue;
             String eventNonce = event.optString("sessionNonce", "");
             if (!eventNonce.isEmpty() && !eventNonce.equals(sessionNonce)) continue;
+            if (event.optBoolean("fromIframe", false)) {
+                String url = event.optString("url", "");
+                if (url.isEmpty() || !networkUrls.contains(url)) continue;
+            }
             event.remove("sessionNonce");
             trusted.put(event);
         }
@@ -808,10 +845,9 @@ public class MediaSnifferPlugin extends Plugin {
     }
 
     private static void probeUnknownNetworkEvents(JSONArray events, String userAgent) {
-        OkHttpClient client = createProbeClient(userAgent);
-        int probed = 0;
+        List<JSONObject> targets = new ArrayList<>();
         Set<String> seen = new HashSet<>();
-        for (int index = 0; index < events.length() && probed < MediaProbe.MAX_PER_SESSION; index += 1) {
+        for (int index = 0; index < events.length() && targets.size() < MediaProbe.MAX_PER_SESSION; index += 1) {
             JSONObject event = events.optJSONObject(index);
             if (event == null) continue;
             String url = event.optString("url", "");
@@ -819,22 +855,44 @@ public class MediaSnifferPlugin extends Plugin {
             String mime = event.optString("mimeType", "").trim();
             if (!mime.isEmpty()) continue;
             if (!seen.add(url)) continue;
-            probed += 1;
-            MediaProbe.Result result = MediaProbe.classify(client, url);
-            if (result == null || result.mimeType == null || result.mimeType.isEmpty()) continue;
-            try {
-                event.put("mimeType", result.mimeType);
-            } catch (JSONException ignored) {
-                // 单条 Probe 失败不影响其余观察。
-            }
+            targets.add(event);
+        }
+        if (targets.isEmpty()) return;
+
+        OkHttpClient client = createProbeClient(userAgent);
+        int poolSize = Math.min(4, targets.size());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(poolSize);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(targets.size());
+        for (JSONObject event : targets) {
+            String url = event.optString("url", "");
+            pool.execute(() -> {
+                try {
+                    MediaProbe.Result result = MediaProbe.classify(client, url);
+                    if (result == null || result.mimeType == null || result.mimeType.isEmpty()) return;
+                    synchronized (event) {
+                        event.put("mimeType", result.mimeType);
+                    }
+                } catch (JSONException | RuntimeException ignored) {
+                    // 单条 Probe 失败不影响其余观察。
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        try {
+            latch.await(15, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } finally {
+            pool.shutdownNow();
         }
     }
 
     private static OkHttpClient createProbeClient(String userAgent) {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.SECONDS)
+            .callTimeout(3, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true);
         String ua = userAgent == null ? "" : userAgent.trim();
@@ -860,8 +918,8 @@ public class MediaSnifferPlugin extends Plugin {
         );
     }
 
-    private static void cleanup(WebView webView, ViewGroup root, ScriptHandler scriptHandler) {
-        ServiceWorkerSniffer.uninstall();
+    private static void cleanup(WebView webView, ViewGroup root, ScriptHandler scriptHandler, JSONArray networkEvents) {
+        ServiceWorkerSniffer.uninstall(networkEvents);
         if (scriptHandler != null) scriptHandler.remove();
         webView.stopLoading();
         root.removeView(webView);

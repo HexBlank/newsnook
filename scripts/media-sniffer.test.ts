@@ -21,7 +21,7 @@ import {
   synthesizeDashMpd,
 } from '../src/features/mediaSniffer/graph'
 import { originOf, playbackHeadersForTarget } from '../src/features/mediaSniffer/originHeaders'
-import { observationsWithoutSessionNonce } from '../src/features/mediaSniffer/native'
+import { observationsWithoutSessionNonce, nativePreparePlaybackUrl, collectPlaybackOrigins } from '../src/features/mediaSniffer/native'
 import type { MediaObservation } from '../src/features/mediaSniffer/types'
 import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playback'
 import {
@@ -368,9 +368,23 @@ video/1080.m3u8`
   const xml = synthesizeDashMpd(assets[0].videos[0], assets[0].audios[0])
   assert.match(xml, /video\.m4s/)
   assert.match(xml, /audio\.m4s/)
+  assert.equal(assets[0].videos[0].codecs, 'avc1.640028')
+  assert.equal(assets[0].audios[0].codecs, 'mp4a.40.2')
+  assert.match(xml, /codecs="avc1.640028"/)
+  assert.match(xml, /codecs="mp4a.40.2"/)
   const descriptor = descriptorFromAsset(assets[0], () => 'blob:nn-mpd')
   assert.equal(descriptor?.type, 'dash')
   assert.equal(descriptor?.url, 'blob:nn-mpd')
+}
+
+{
+  const parsed = parseMediaApiBody(
+    JSON.stringify({ playurl: 'https://cdn.example/play?id=42' }),
+    pageUrl,
+    'fetch',
+  )
+  assert.equal(parsed.length, 1, '未知格式的 http(s) playurl 必须保留给 Graph/Probe 分类')
+  assert.equal(parsed[0].url, 'https://cdn.example/play?id=42')
 }
 
 {
@@ -432,6 +446,33 @@ video/1080.m3u8`
       network,
     ),
     true,
+  )
+  assert.equal(
+    admitObservation(
+      { url: 'https://evil.example/iframe-only.mp4', pageUrl, source: 'static', fromIframe: true },
+      undefined,
+      network,
+    ),
+    false,
+    'iframe 转发且未出现在网络集合中的 URL 必须丢弃',
+  )
+  assert.equal(
+    admitObservation(
+      { url: 'https://cdn.example/real.mp4', pageUrl, source: 'dom', fromIframe: true },
+      undefined,
+      network,
+    ),
+    true,
+    'iframe 转发但已在网络集合中的 URL 可以保留',
+  )
+  const graph = buildMediaGraph([
+    { url: 'https://cdn.example/real.mp4', pageUrl, source: 'network', mimeType: 'video/mp4' },
+    { url: 'https://evil.example/iframe-only.mp4', pageUrl, source: 'static', fromIframe: true, mimeType: 'video/mp4' },
+  ])
+  assert.equal(
+    graph.some((asset) => asset.videos.some((track) => track.url.includes('evil.example'))),
+    false,
+    'Graph 不得把未出现在网络集合中的 iframe 转发 URL 收成资产',
   )
 }
 
@@ -500,6 +541,25 @@ video/1080.m3u8`
   assert.ok(calls.some((item) => item.includes('/ad')))
   assert.ok(calls.some((item) => item.includes('/real')))
   assert.ok(calls.some((item) => item === pageUrl || item.includes('articles/42')))
+}
+
+{
+  assert.equal(
+    nativePreparePlaybackUrl({
+      url: 'blob:https://localhost/synthetic-mpd',
+      sourcePage: pageUrl,
+    }),
+    pageUrl,
+    'blob: 合成 MPD 不得作为 preparePlayback 的播放地址',
+  )
+  assert.deepEqual(
+    collectPlaybackOrigins({
+      url: 'blob:https://localhost/synthetic-mpd',
+      sourcePage: pageUrl,
+      extraUrls: ['https://upos.example/video.m4s'],
+    }),
+    ['https://news.example', 'https://upos.example'],
+  )
 }
 
 console.log('media-sniffer tests passed')

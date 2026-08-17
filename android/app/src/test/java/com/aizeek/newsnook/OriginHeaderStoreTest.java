@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -139,6 +140,16 @@ public class OriginHeaderStoreTest {
         );
         assertNull(cross.get("cookie"));
         assertNull(cross.get("authorization"));
+    }
+
+    @Test
+    public void notedOriginsClearedAtStartDoNotLeak() {
+        OriginHeaderStore.note(PAGE, headers("User-Agent", "NewsNook"));
+        OriginHeaderStore.note(CDN, headers("Referer", PAGE, "User-Agent", "NewsNook"));
+        assertTrue(OriginHeaderStore.notedOrigins().contains("https://news.example"));
+        assertTrue(OriginHeaderStore.notedOrigins().contains("https://v1.cdn.example"));
+        OriginHeaderStore.clear();
+        assertTrue(OriginHeaderStore.notedOrigins().isEmpty());
     }
 
     private static Map<String, String> headers(String... pairs) {

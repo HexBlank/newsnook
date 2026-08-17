@@ -68,7 +68,7 @@ function isDashContainer(value: Record<string, unknown>): boolean {
 
 function trackHints(value: Record<string, unknown>, mediaKind?: MediaObservation['mediaKind']): Pick<
   MediaObservation,
-  'mimeType' | 'mediaKind' | 'width' | 'height' | 'bitrate' | 'hasAudio' | 'hasVideo'
+  'mimeType' | 'mediaKind' | 'width' | 'height' | 'bitrate' | 'hasAudio' | 'hasVideo' | 'codecs'
 > {
   const mimeType = stringField(value, 'mimeType', 'contentType', 'mime')
   const mime = normalizedMime(mimeType)
@@ -83,6 +83,7 @@ function trackHints(value: Record<string, unknown>, mediaKind?: MediaObservation
     width,
     height,
     bitrate,
+    codecs: stringField(value, 'codecs'),
     hasAudio: kind === 'audio' ? true : undefined,
     hasVideo: kind === 'video' ? true : undefined,
   }
@@ -99,7 +100,7 @@ function pushObservation(
   const url = resolvedUrl(rawUrl, pageUrl)
   if (!url) return
   const format = mediaFormatFor(url, hints.mimeType, hints.mediaKind ? { mediaKind: hints.mediaKind } : undefined)
-  if (format === 'unknown' || format === 'blob') return
+  if (format === 'blob') return
   observations.push({ url, pageUrl, source, ...hints })
 }
 

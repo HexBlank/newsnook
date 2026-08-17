@@ -167,6 +167,11 @@ final class OriginHeaderStore {
         STORE.clear();
     }
 
+    static Set<String> notedOrigins() {
+        purge();
+        return new HashSet<>(STORE.keySet());
+    }
+
     private static Map<String, String> capturedFor(String origin) {
         OriginHeaders record = STORE.get(origin);
         if (record == null || record.expiresAt < System.currentTimeMillis()) return Collections.emptyMap();

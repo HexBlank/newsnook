@@ -272,7 +272,7 @@ function addStaticObservation(
   pageUrl: string,
   mimeType?: string,
   mediaKind?: MediaObservation['mediaKind'],
-  hints?: Pick<MediaObservation, 'hasAudio' | 'hasVideo' | 'width' | 'height' | 'bitrate'>,
+  hints?: Pick<MediaObservation, 'hasAudio' | 'hasVideo' | 'width' | 'height' | 'bitrate' | 'codecs'>,
 ): void {
   const url = resolvedUrl(value, pageUrl)
   if (!url) return
@@ -291,7 +291,19 @@ function addStructuredPayloadObservation(
   pageUrl: string,
   observations: MediaObservation[],
 ): void {
-  const mediaUrl = [value.url, value.contentUrl, value.playbackUrl, value.src]
+  const mediaUrl = [
+    value.url,
+    value.contentUrl,
+    value.playbackUrl,
+    value.src,
+    value.baseUrl,
+    value.base_url,
+    value.playurl,
+    value.play_url,
+    value.backupUrl,
+    value.backup_url,
+    value.manifestUrl,
+  ]
     .find((item): item is string => typeof item === 'string' && item.trim().length > 0)
   if (!mediaUrl) return
 
@@ -320,6 +332,7 @@ function addStructuredPayloadObservation(
     width,
     height,
     bitrate,
+    codecs: typeof value.codecs === 'string' && value.codecs.trim() ? value.codecs : undefined,
   })
 }
 

@@ -3,6 +3,8 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import { getRuntimeProxyPrefs } from '../../lib/http'
 import { currentProxyRuntime } from '../proxy/runtime'
 import { resolveProxyTransport } from '../proxy/transport'
+import { isHttpUrl } from './classifier'
+import { originOf } from './originHeaders'
 import { shouldBridgeNativePlayback } from './playback'
 import type { MediaObservation } from './types'
 
@@ -28,17 +30,56 @@ interface NativeMediaSnifferPlugin {
   }): Promise<void>
 }
 
+export function isOpaquePlaybackUrl(url: string): boolean {
+  return url.startsWith('blob:') || url.startsWith('data:')
+}
+
+export function collectPlaybackOrigins(options: {
+  url: string
+  sourcePage?: string
+  origins?: string[]
+  extraUrls?: string[]
+}): string[] {
+  const seen = new Set<string>()
+  const seeds: string[] = []
+  const add = (value?: string) => {
+    if (!value || !isHttpUrl(value)) return
+    const origin = originOf(value)
+    if (!origin || seen.has(origin)) return
+    seen.add(origin)
+    seeds.push(origin)
+  }
+  add(options.url)
+  add(options.sourcePage)
+  for (const item of options.origins ?? []) add(item)
+  for (const item of options.extraUrls ?? []) add(item)
+  return seeds
+}
+
+export function nativePreparePlaybackUrl(options: {
+  url: string
+  sourcePage?: string
+  origins?: string[]
+  extraUrls?: string[]
+}): string | undefined {
+  if (!isOpaquePlaybackUrl(options.url) && isHttpUrl(options.url)) return options.url
+  if (options.sourcePage && isHttpUrl(options.sourcePage)) return options.sourcePage
+  return collectPlaybackOrigins(options)[0]
+}
+
 export async function prepareNativeMediaPlayback(options: {
   url: string
   sourcePage?: string
   format?: string
   headers?: Record<string, string>
   origins?: string[]
+  extraUrls?: string[]
   forceBridge?: boolean
 }): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false
+  const transportTarget = nativePreparePlaybackUrl(options) || options.sourcePage || options.url
   const transport = resolveProxyTransport(
-    options.url,
+    transportTarget,
     undefined,
     getRuntimeProxyPrefs(),
     currentProxyRuntime(),
@@ -49,13 +90,16 @@ export async function prepareNativeMediaPlayback(options: {
     forceBridge: options.forceBridge,
     usesNativeTunnel: transport.kind === 'native-tunnel',
   })
+  const playbackUrl = nativePreparePlaybackUrl(options)
+  const origins = collectPlaybackOrigins(options)
+  if (!playbackUrl) return intercept
   await NativeMediaSniffer.preparePlayback({
-    url: options.url,
+    url: playbackUrl,
     intercept,
     sourcePage: options.sourcePage,
     format: options.format,
     headers: options.headers,
-    ...(options.origins?.length ? { origins: options.origins } : {}),
+    ...(origins.length ? { origins } : {}),
     ...(transport.kind === 'native-tunnel' ? { proxy: transport.tunnel } : {}),
   })
   return intercept

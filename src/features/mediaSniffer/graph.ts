@@ -90,6 +90,9 @@ export function admitObservation(
   networkUrls: Set<string>,
 ): boolean {
   if (observation.source === 'network' || observation.fromServiceWorker) return true
+  if (observation.fromIframe) {
+    return Boolean(observation.url) && networkUrls.has(observation.url)
+  }
   if (observation.sessionNonce) {
     return observation.sessionNonce === sessionNonce
       && Boolean(observation.url)
@@ -159,6 +162,7 @@ function mergeObservation(target: MediaObservation, incoming: MediaObservation):
     requestHeaders: incoming.requestHeaders || target.requestHeaders,
     drmKeySystem: incoming.drmKeySystem || target.drmKeySystem,
     assetGroup: incoming.assetGroup || target.assetGroup,
+    codecs: incoming.codecs || target.codecs,
   }
 }
 
@@ -219,6 +223,7 @@ function trackFrom(
     url,
     role,
     mimeType: observation.mimeType,
+    codecs: observation.codecs,
     width: observation.width,
     height: observation.height,
     bitrate: observation.bitrate,

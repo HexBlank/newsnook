@@ -37,6 +37,8 @@ export interface MediaObservation {
   height?: number
   bitrate?: number
   bodyText?: string
+  codecs?: string
+  fromIframe?: boolean
   fromServiceWorker?: boolean
   sessionNonce?: string
   assetGroup?: string
