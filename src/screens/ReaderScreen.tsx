@@ -1093,6 +1093,7 @@ export function ReaderScreen({
                     html={proseHtml}
                     enabled={loadState === 'ready' && translationState !== 'loading'}
                     fallbackTitle={displayedTitle}
+                    sourcePage={resolvedOriginUrl || article.originUrl}
                     deferLoad={!autoLoadMedia}
                     unlockedUrls={unlockedSet}
                     onUnlocked={onUnlockedMedia}

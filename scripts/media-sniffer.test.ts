@@ -6,13 +6,46 @@ import {
   collectMediaCandidates,
   mediaFingerprint,
   observeMediaInHtml,
+  observeMediaInPayload,
   parseDashManifest,
   parseHlsManifest,
+  mediaFormatFor,
 } from '../src/features/mediaSniffer/core'
 import type { MediaObservation } from '../src/features/mediaSniffer/types'
 import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playback'
+import {
+  embeddedPageUrlsInHtml,
+  runtimeProbePageUrl,
+} from '../src/features/mediaSniffer/service'
 
 const pageUrl = 'https://news.example/articles/42'
+
+{
+  assert.deepEqual(
+    embeddedPageUrlsInHtml(
+      '<iframe src="/player/42"></iframe><iframe data-src="https://video.example/embed/7?x=1&amp;y=2"></iframe>',
+      pageUrl,
+    ),
+    [
+      'https://news.example/player/42',
+      'https://video.example/embed/7?x=1&y=2',
+    ],
+    '正文播放器 iframe 应作为独立运行时探测目标，而不是只加载文章外层页面',
+  )
+}
+
+{
+  const original = 'https://www.youtube.com/embed/M7lc1UVf-VE?start=3'
+  const probe = new URL(runtimeProbePageUrl(original))
+  assert.equal(probe.searchParams.get('start'), '3')
+  assert.equal(probe.searchParams.get('autoplay'), '1')
+  assert.equal(probe.searchParams.get('mute'), '1')
+  assert.equal(
+    runtimeProbePageUrl('https://video.example/player/42?token=signed'),
+    'https://video.example/player/42?token=signed',
+    '未知站点不得擅自改写签名播放器 URL',
+  )
+}
 
 {
   assert.equal(
@@ -35,6 +68,57 @@ const pageUrl = 'https://news.example/articles/42'
     true,
     '显式请求头必须由原生桥接补齐',
   )
+}
+
+{
+  const muxed = 'https://cdn.example/videoplayback?id=42&mime=video%2Fmp4'
+  const ranged = `${muxed}&range=0-524287`
+  assert.equal(mediaFormatFor(muxed), 'progressive', '查询参数 MIME 应识别无扩展名媒体')
+  assert.equal(mediaFormatFor(ranged), 'segment', '带 URL byte range 的响应只是分片，不能冒充完整视频')
+  assert.equal(
+    buildMediaDescriptor([{ url: ranged, pageUrl, source: 'network' }]),
+    null,
+    '只有媒体分片时必须继续嗅探或降级，不能交给播放器后播放一秒即中断',
+  )
+  assert.equal(
+    buildMediaDescriptor([{
+      url: 'https://cdn.example/videoplayback?id=private-transport',
+      pageUrl,
+      source: 'fetch',
+      mimeType: 'application/vnd.example-private-stream',
+    }]),
+    null,
+    '私有传输协议不能伪装成 MP4；必须保留原播放器降级路径',
+  )
+}
+
+{
+  const muxedUrl = 'https://cdn.example/play?id=muxed&mime=video%2Fmp4'
+  const adaptiveUrl = 'https://cdn.example/play?id=video-only&mime=video%2Fmp4'
+  const observations = observeMediaInPayload({
+    streamingData: {
+      formats: [{
+        url: muxedUrl,
+        mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"',
+        qualityLabel: '360p',
+        audioQuality: 'AUDIO_QUALITY_LOW',
+        width: 640,
+        height: 360,
+        bitrate: 720000,
+      }],
+      adaptiveFormats: [{
+        url: adaptiveUrl,
+        mimeType: 'video/mp4; codecs="avc1.640028"',
+        qualityLabel: '1080p',
+        width: 1920,
+        height: 1080,
+        bitrate: 4500000,
+      }],
+    },
+  }, pageUrl)
+  const descriptor = buildMediaDescriptor(observations)
+  assert.equal(descriptor?.url, muxedUrl, '完整音视频资源应优先于更高清的无声自适应轨道')
+  assert.equal(descriptor?.hasAudio, true)
 }
 
 {

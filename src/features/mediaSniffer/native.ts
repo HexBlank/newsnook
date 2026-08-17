@@ -7,7 +7,7 @@ import { shouldBridgeNativePlayback } from './playback'
 import type { MediaObservation } from './types'
 
 interface NativeMediaSnifferPlugin {
-  sniff(options: { url: string; timeoutMs: number }): Promise<{
+  sniff(options: { url: string; timeoutMs: number; referrer?: string }): Promise<{
     observations: MediaObservation[]
     pageUrl?: string
   }>
@@ -63,8 +63,9 @@ const NativeMediaSniffer = registerPlugin<NativeMediaSnifferPlugin>('MediaSniffe
 export async function observeMediaInNativePage(
   url: string,
   timeoutMs = 6000,
+  referrer?: string,
 ): Promise<MediaObservation[]> {
   if (!Capacitor.isNativePlatform()) return []
-  const result = await NativeMediaSniffer.sniff({ url, timeoutMs })
+  const result = await NativeMediaSniffer.sniff({ url, timeoutMs, referrer })
   return Array.isArray(result.observations) ? result.observations : []
 }

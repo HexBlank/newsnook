@@ -75,6 +75,7 @@ public class MediaSnifferPlugin extends Plugin {
           window.__newsnookMediaProbeInstalled = true;
           const events = window.__newsnookMediaEvents = [];
           const seen = new Set();
+          const inspectedPayloads = new WeakSet();
           const push = (event) => {
             try {
               const key = [event.source, event.url || '', event.mimeType || '', event.drmKeySystem || ''].join('|');
@@ -89,6 +90,56 @@ public class MediaSnifferPlugin extends Plugin {
             const observation = message.data?.__newsnookMediaObservation;
             if (observation && typeof observation === 'object') push(observation);
           });
+          const positiveNumber = (value) => {
+            const number = Number(value);
+            return Number.isFinite(number) && number > 0 ? number : undefined;
+          };
+          const inspectPayload = (value, depth = 0) => {
+            if (!value || typeof value !== 'object' || depth > 12 || inspectedPayloads.has(value)) return;
+            inspectedPayloads.add(value);
+            if (Array.isArray(value)) {
+              value.forEach((item) => inspectPayload(item, depth + 1));
+              return;
+            }
+            try {
+              const url = [value.url, value.contentUrl, value.playbackUrl, value.src]
+                .find((item) => typeof item === 'string' && item);
+              const mimeType = [value.mimeType, value.contentType, value.mime]
+                .find((item) => typeof item === 'string');
+              if (url) {
+                const codecText = `${mimeType || ''} ${typeof value.codecs === 'string' ? value.codecs : ''}`;
+                const width = positiveNumber(value.width);
+                const height = positiveNumber(value.height);
+                const hasVideo = Boolean(width || height || value.qualityLabel || /^video\\//i.test(mimeType || '') || /(?:avc1|av01|hvc1|hev1|vp0?9|vp8)/i.test(codecText));
+                const hasAudio = Boolean(value.audioQuality || value.audioSampleRate || value.audioChannels || /^audio\\//i.test(mimeType || '') || /(?:mp4a|aac|opus|vorbis|ac-3|ec-3)/i.test(codecText));
+                push({
+                  source: 'static',
+                  url,
+                  mimeType,
+                  mediaKind: /^audio\\//i.test(mimeType || '') ? 'audio' : hasVideo ? 'video' : undefined,
+                  hasAudio: hasAudio ? true : hasVideo && value.qualityLabel ? false : undefined,
+                  hasVideo: hasVideo || undefined,
+                  width,
+                  height,
+                  bitrate: positiveNumber(value.bitrate),
+                });
+              }
+            } catch (_) {}
+            try { Object.values(value).forEach((item) => inspectPayload(item, depth + 1)); } catch (_) {}
+          };
+          const inspectPlayerState = () => {
+            try { inspectPayload(window.ytInitialPlayerResponse); } catch (_) {}
+            try {
+              const playerResponse = window.ytplayer?.config?.args?.player_response;
+              if (typeof playerResponse === 'string') inspectPayload(JSON.parse(playerResponse));
+              else inspectPayload(playerResponse);
+            } catch (_) {}
+            try {
+              document.querySelectorAll('script[type="application/ld+json"],script[type="application/json"]').forEach((script) => {
+                try { inspectPayload(JSON.parse(script.textContent || '')); } catch (_) {}
+              });
+            } catch (_) {}
+          };
           const inspect = (node) => {
             if (!(node instanceof Element)) return;
             const nodes = node.matches('video,audio,source') ? [node] : node.querySelectorAll('video,audio,source');
@@ -96,10 +147,18 @@ public class MediaSnifferPlugin extends Plugin {
               const url = media.currentSrc || media.src || media.getAttribute('data-src') || media.getAttribute('data-video-src');
               if (url) push({ source: 'dom', url, mimeType: media.getAttribute('type') || undefined, mediaKind: media.tagName === 'AUDIO' ? 'audio' : media.tagName === 'VIDEO' ? 'video' : undefined });
               if (media.srcObject) push({ source: 'mse', url: media.currentSrc || 'blob:', mseMimeType: 'srcObject' });
+              if (media instanceof HTMLMediaElement) {
+                try {
+                  media.muted = true;
+                  const playback = media.play();
+                  if (playback?.catch) playback.catch(() => {});
+                } catch (_) {}
+              }
             }
           };
           const scan = () => {
             inspect(document.documentElement);
+            inspectPlayerState();
             try {
               for (const entry of performance.getEntriesByType('resource')) {
                 push({ source: 'performance', url: entry.name });
@@ -172,7 +231,10 @@ public class MediaSnifferPlugin extends Plugin {
         }
         int requestedTimeout = call.getInt("timeoutMs", 6000);
         int timeoutMs = Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, requestedTimeout));
-        getActivity().runOnUiThread(() -> startSniff(call, url, timeoutMs));
+        String referrer = call.getString("referrer");
+        if (!isAllowedPageUrl(referrer)) referrer = null;
+        String finalReferrer = referrer;
+        getActivity().runOnUiThread(() -> startSniff(call, url, timeoutMs, finalReferrer));
     }
 
     @PluginMethod
@@ -329,7 +391,7 @@ public class MediaSnifferPlugin extends Plugin {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private void startSniff(PluginCall call, String initialUrl, int timeoutMs) {
+    private void startSniff(PluginCall call, String initialUrl, int timeoutMs, String referrer) {
         FrameLayout root = getActivity().findViewById(android.R.id.content);
         if (root == null) {
             call.reject("无法创建页面观察器");
@@ -342,7 +404,7 @@ public class MediaSnifferPlugin extends Plugin {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setMediaPlaybackRequiresUserGesture(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
@@ -380,7 +442,13 @@ public class MediaSnifferPlugin extends Plugin {
         root.addView(webView, params);
         Runnable complete = () -> finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished);
         webView.postDelayed(complete, timeoutMs);
-        webView.loadUrl(initialUrl);
+        if (referrer == null) {
+            webView.loadUrl(initialUrl);
+        } else {
+            Map<String, String> navigationHeaders = new HashMap<>();
+            navigationHeaders.put("Referer", referrer);
+            webView.loadUrl(initialUrl, navigationHeaders);
+        }
     }
 
     private ScriptHandler installDocumentStartProbe(WebView webView) {
@@ -400,6 +468,12 @@ public class MediaSnifferPlugin extends Plugin {
                 event.put("source", "network");
                 event.put("method", request.getMethod());
                 event.put("timestamp", System.currentTimeMillis());
+                String mimeType = inferredMimeType(url);
+                if (mimeType != null) {
+                    event.put("mimeType", mimeType);
+                    if (mimeType.startsWith("audio/")) event.put("mediaKind", "audio");
+                    else if (mimeType.startsWith("video/")) event.put("mediaKind", "video");
+                }
                 JSONObject headers = new JSONObject();
                 for (Map.Entry<String, String> entry : request.getRequestHeaders().entrySet()) {
                     if (SAFE_REQUEST_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT))) {
@@ -416,7 +490,33 @@ public class MediaSnifferPlugin extends Plugin {
 
     private static boolean looksLikeMediaUrl(String url) {
         String lower = url.toLowerCase(Locale.ROOT);
-        return lower.matches(".*\\.(m3u8|mpd|mp4|m4v|m4s|cmfv|cmfa|ts|webm|mov|flv|mkv|m4a|aac|mp3|ogg|opus)([?#].*)?$");
+        return inferredMimeType(url) != null ||
+            lower.matches(".*\\.(m3u8|mpd|mp4|m4v|m4s|cmfv|cmfa|ts|webm|mov|flv|mkv|m4a|aac|mp3|ogg|opus)([?#].*)?$");
+    }
+
+    private static String inferredMimeType(String value) {
+        try {
+            Uri uri = Uri.parse(value);
+            for (String key : uri.getQueryParameterNames()) {
+                String normalizedKey = key.toLowerCase(Locale.ROOT);
+                String parameter = uri.getQueryParameter(key);
+                if (parameter == null) continue;
+                String normalized = parameter.trim().toLowerCase(Locale.ROOT);
+                if (normalizedKey.matches("mime|mime-type|mimetype|content-type|content_type|type") &&
+                    normalized.matches("(?:video|audio)/[a-z0-9.+-]+")) {
+                    return normalized;
+                }
+                if (normalizedKey.matches("format|fmt|container|ext")) {
+                    if (normalized.matches("m3u8|hls")) return "application/vnd.apple.mpegurl";
+                    if (normalized.matches("mpd|dash")) return "application/dash+xml";
+                    if (normalized.matches("mp4|m4v|webm|mov|flv|mkv")) return "video/" + normalized;
+                    if (normalized.matches("m4a|aac|mp3|ogg|opus")) return "audio/" + normalized;
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Extension matching remains available for malformed URLs.
+        }
+        return null;
     }
 
     private void finishSniff(

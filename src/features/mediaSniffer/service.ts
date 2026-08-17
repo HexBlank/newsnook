@@ -12,6 +12,7 @@ import { observeMediaInNativePage } from './native'
 import type { MediaDescriptor, MediaObservation } from './types'
 
 const MAX_MANIFEST_BYTES = 512 * 1024
+const MAX_EMBEDDED_PAGES = 3
 
 function escapeHtml(value: string): string {
   return value
@@ -19,6 +20,51 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+export function embeddedPageUrlsInHtml(html: string, pageUrl: string): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  for (const match of html.matchAll(/<iframe\b[^>]*>/gi)) {
+    const tag = match[0]
+    const value = tag
+      .match(/\b(?:src|data-src|data-video-src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+      ?.slice(1)
+      .find((item): item is string => item !== undefined)
+    if (!value) continue
+    try {
+      const url = new URL(value.replace(/&amp;/g, '&'), pageUrl)
+      if (!/^https?:$/.test(url.protocol) || seen.has(url.href)) continue
+      seen.add(url.href)
+      urls.push(url.href)
+      if (urls.length >= MAX_EMBEDDED_PAGES) break
+    } catch {
+      // A malformed embed cannot be loaded safely and is left to the fallback.
+    }
+  }
+  return urls
+}
+
+export function runtimeProbePageUrl(pageUrl: string): string {
+  try {
+    const url = new URL(pageUrl)
+    const host = url.hostname.toLowerCase()
+    if (
+      /^(?:www\.)?youtube(?:-nocookie)?\.com$/.test(host) &&
+      /^\/embed\//i.test(url.pathname)
+    ) {
+      url.searchParams.set('autoplay', '1')
+      url.searchParams.set('mute', '1')
+      url.searchParams.set('playsinline', '1')
+    } else if (host === 'player.vimeo.com' && /^\/video\//i.test(url.pathname)) {
+      url.searchParams.set('autoplay', '1')
+      url.searchParams.set('muted', '1')
+      url.searchParams.set('playsinline', '1')
+    }
+    return url.href
+  } catch {
+    return pageUrl
+  }
 }
 
 async function manifestBodies(
@@ -54,6 +100,7 @@ export async function discoverMediaDescriptor(options: {
   payload?: unknown
   runtime?: boolean
   timeoutMs?: number
+  referrer?: string
   signal?: AbortSignal
 }): Promise<MediaDescriptor | null> {
   const staticObservations = options.html
@@ -64,10 +111,29 @@ export async function discoverMediaDescriptor(options: {
   const hasStaticPlayable = collectMediaCandidates(staticObservations).some(
     (candidate) => candidate.format !== 'segment',
   )
-  const runtimeObservations =
-    options.runtime !== false && !hasStaticPlayable && Capacitor.isNativePlatform()
-      ? await observeMediaInNativePage(options.pageUrl, options.timeoutMs ?? 6000).catch(() => [])
+  const runtimeObservations: MediaObservation[] = []
+  if (options.runtime !== false && !hasStaticPlayable && Capacitor.isNativePlatform()) {
+    const embeddedPages = options.html
+      ? embeddedPageUrlsInHtml(options.html, options.pageUrl)
       : []
+    const targets = [...embeddedPages, options.pageUrl]
+    const targetTimeoutMs = Math.max(
+      1500,
+      Math.floor((options.timeoutMs ?? 6000) / targets.length),
+    )
+    for (const target of targets) {
+      const probeTarget = runtimeProbePageUrl(target)
+      const observations = await observeMediaInNativePage(
+        probeTarget,
+        targetTimeoutMs,
+        target === options.pageUrl ? options.referrer : options.pageUrl,
+      ).catch(() => [])
+      runtimeObservations.push(...observations)
+      if (collectMediaCandidates(runtimeObservations).some((candidate) => candidate.format !== 'segment')) {
+        break
+      }
+    }
+  }
   const observations = mergeObservationSources(staticObservations, runtimeObservations)
   if (!observations.length) return null
   const manifests = await manifestBodies(observations, options.signal)

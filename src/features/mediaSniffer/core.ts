@@ -22,9 +22,45 @@ const HLS_EXT = /\.m3u8(?:$|[?#])/i
 const DASH_EXT = /\.mpd(?:$|[?#])/i
 const AUDIO_EXT = /\.(?:m4a|aac|mp3|ogg|opus)(?:$|[?#])/i
 const VOLATILE_QUERY_KEY = /^(?:token|auth|authorization|signature|sig|expires?|expiry|e|hdnts|policy|key-pair-id|x-amz-.+)$/i
+const MIME_QUERY_KEY = /^(?:mime|mime-type|mimetype|content-type|content_type|type)$/i
+const FORMAT_QUERY_KEY = /^(?:format|fmt|container|ext)$/i
+const AUDIO_CODEC = /(?:^|[\s,"'])(?:mp4a|aac|opus|vorbis|ac-3|ec-3)(?:[.\s,"']|$)/i
+const VIDEO_CODEC = /(?:^|[\s,"'])(?:avc1|av01|hvc1|hev1|vp0?9|vp8)(?:[.\s,"']|$)/i
 
 function normalizedMime(value?: string): string {
   return value?.split(';', 1)[0]?.trim().toLowerCase() || ''
+}
+
+function mimeFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    for (const [key, rawValue] of parsed.searchParams) {
+      const value = rawValue.trim().toLowerCase().replace(/^['"]|['"]$/g, '')
+      if (MIME_QUERY_KEY.test(key) && /^(?:video|audio)\/[a-z0-9.+-]+$/i.test(value)) {
+        return value
+      }
+      if (MIME_QUERY_KEY.test(key) && MANIFEST_MIMES.has(value)) return value
+      if (FORMAT_QUERY_KEY.test(key)) {
+        if (value === 'm3u8' || value === 'hls') return 'application/vnd.apple.mpegurl'
+        if (value === 'mpd' || value === 'dash') return 'application/dash+xml'
+        if (/^(?:mp4|m4v|webm|mov|flv|mkv)$/.test(value)) return `video/${value === 'm4v' ? 'mp4' : value}`
+        if (/^(?:m4a|aac|mp3|ogg|opus)$/.test(value)) return `audio/${value === 'm4a' ? 'mp4' : value}`
+      }
+    }
+  } catch {
+    // URL extension and explicit MIME checks still apply.
+  }
+  return ''
+}
+
+function isByteRangeResource(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const range = parsed.searchParams.get('range') || parsed.searchParams.get('bytes') || ''
+    return /^(?:bytes=)?\d+-\d+$/i.test(range.trim())
+  } catch {
+    return false
+  }
 }
 
 function isHttpUrl(value: string): boolean {
@@ -37,10 +73,12 @@ function isHttpUrl(value: string): boolean {
 }
 
 export function mediaFormatFor(url: string, mimeType?: string): MediaFormat {
-  const mime = normalizedMime(mimeType)
+  const mime = normalizedMime(mimeType) || mimeFromUrl(url)
   const byMime = MANIFEST_MIMES.get(mime)
   if (byMime) return byMime
-  if (mime.startsWith('video/') || mime.startsWith('audio/')) return 'progressive'
+  if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+    return isByteRangeResource(url) ? 'segment' : 'progressive'
+  }
   if (HLS_EXT.test(url)) return 'hls'
   if (DASH_EXT.test(url)) return 'dash'
   if (DIRECT_MEDIA_EXT.test(url)) return 'progressive'
@@ -68,7 +106,7 @@ export function mediaFingerprint(originalUrl: string): string {
 }
 
 function observationScore(observation: MediaObservation, format: MediaFormat): number {
-  const mime = normalizedMime(observation.mimeType)
+  const mime = normalizedMime(observation.mimeType) || mimeFromUrl(observation.url || '')
   let score = 0
   if (format === 'hls' || format === 'dash') score += 140
   else if (format === 'progressive') score += 50
@@ -86,6 +124,9 @@ function observationScore(observation: MediaObservation, format: MediaFormat): n
   else if (observation.source === 'performance') score += 15
   else if (observation.source === 'static') score += 20
 
+  if (observation.hasAudio === true && observation.hasVideo === true) score += 100
+  else if (observation.hasAudio === false && observation.hasVideo === true) score -= 20
+
   const range = Object.entries(observation.requestHeaders ?? {}).some(
     ([key]) => key.toLowerCase() === 'range',
   )
@@ -96,7 +137,7 @@ function observationScore(observation: MediaObservation, format: MediaFormat): n
 
 function mediaKindFor(observation: MediaObservation): MediaCandidate['mediaKind'] {
   if (observation.mediaKind) return observation.mediaKind
-  const mime = normalizedMime(observation.mimeType)
+  const mime = normalizedMime(observation.mimeType) || mimeFromUrl(observation.url || '')
   if (mime.startsWith('audio/') || (observation.url && AUDIO_EXT.test(observation.url))) return 'audio'
   if (mime.startsWith('video/') || (observation.url && DIRECT_MEDIA_EXT.test(observation.url))) return 'video'
   return 'unknown'
@@ -120,6 +161,11 @@ export function collectMediaCandidates(observations: MediaObservation[]): MediaC
         format,
         mediaKind: mediaKindFor(observation),
         mimeType: observation.mimeType,
+        hasAudio: observation.hasAudio,
+        hasVideo: observation.hasVideo,
+        width: observation.width,
+        height: observation.height,
+        bitrate: observation.bitrate,
         score,
         sources: [observation.source],
         requestHeaders: observation.requestHeaders,
@@ -129,6 +175,11 @@ export function collectMediaCandidates(observations: MediaObservation[]): MediaC
     const previousScore = existing.score
     existing.score = Math.max(previousScore, score) + 10
     if (existing.mediaKind === 'unknown') existing.mediaKind = mediaKindFor(observation)
+    if (observation.hasAudio !== undefined) existing.hasAudio = observation.hasAudio
+    if (observation.hasVideo !== undefined) existing.hasVideo = observation.hasVideo
+    if (observation.width) existing.width = observation.width
+    if (observation.height) existing.height = observation.height
+    if (observation.bitrate) existing.bitrate = observation.bitrate
     if (!existing.sources.includes(observation.source)) existing.sources.push(observation.source)
     if (score >= previousScore && observation.requestHeaders) {
       existing.requestHeaders = observation.requestHeaders
@@ -275,6 +326,7 @@ export function buildMediaDescriptor(
     pageUrl: candidate.pageUrl,
     score: candidate.score,
     mimeType: candidate.mimeType,
+    hasAudio: candidate.hasAudio,
     videoTracks: [],
     audioTracks: [],
     subtitles: [],
@@ -296,7 +348,13 @@ export function buildMediaDescriptor(
 }
 
 function resolvedUrl(value: string, pageUrl: string): string | undefined {
-  const trimmed = value.trim().replace(/&amp;/g, '&')
+  const trimmed = value
+    .trim()
+    .replace(/&amp;/g, '&')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003d/gi, '=')
+    .replace(/\\u002f/gi, '/')
+    .replace(/\\\//g, '/')
   if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('javascript:')) return undefined
   try {
     const url = new URL(trimmed, pageUrl).href
@@ -312,12 +370,55 @@ function addStaticObservation(
   pageUrl: string,
   mimeType?: string,
   mediaKind?: MediaObservation['mediaKind'],
+  hints?: Pick<MediaObservation, 'hasAudio' | 'hasVideo' | 'width' | 'height' | 'bitrate'>,
 ): void {
   const url = resolvedUrl(value, pageUrl)
   if (!url) return
   const format = mediaFormatFor(url, mimeType)
   if (format === 'unknown') return
-  observations.push({ url, pageUrl, source: 'static', mimeType, mediaKind })
+  observations.push({ url, pageUrl, source: 'static', mimeType, mediaKind, ...hints })
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : undefined
+}
+
+function addStructuredPayloadObservation(
+  value: Record<string, unknown>,
+  pageUrl: string,
+  observations: MediaObservation[],
+): void {
+  const mediaUrl = [value.url, value.contentUrl, value.playbackUrl, value.src]
+    .find((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  if (!mediaUrl) return
+
+  const mimeType = [value.mimeType, value.contentType, value.mime]
+    .find((item): item is string => typeof item === 'string')
+  const codecText = `${mimeType || ''} ${typeof value.codecs === 'string' ? value.codecs : ''}`
+  const width = positiveNumber(value.width)
+  const height = positiveNumber(value.height)
+  const bitrate = positiveNumber(value.bitrate)
+  const hasVideoSignal = Boolean(
+    width || height || value.qualityLabel || normalizedMime(mimeType).startsWith('video/') || VIDEO_CODEC.test(codecText),
+  )
+  const hasAudioSignal = Boolean(
+    value.audioQuality || value.audioSampleRate || value.audioChannels ||
+    normalizedMime(mimeType).startsWith('audio/') || AUDIO_CODEC.test(codecText),
+  )
+  const mediaKind = normalizedMime(mimeType).startsWith('audio/')
+    ? 'audio'
+    : hasVideoSignal
+      ? 'video'
+      : undefined
+
+  addStaticObservation(observations, mediaUrl, pageUrl, mimeType, mediaKind, {
+    hasAudio: hasAudioSignal ? true : hasVideoSignal && value.qualityLabel ? false : undefined,
+    hasVideo: hasVideoSignal || undefined,
+    width,
+    height,
+    bitrate,
+  })
 }
 
 function walkPayload(value: unknown, pageUrl: string, observations: MediaObservation[], seen: Set<object>, depth: number): void {
@@ -334,6 +435,7 @@ function walkPayload(value: unknown, pageUrl: string, observations: MediaObserva
   if (Array.isArray(value)) {
     for (const item of value) walkPayload(item, pageUrl, observations, seen, depth + 1)
   } else {
+    addStructuredPayloadObservation(value as Record<string, unknown>, pageUrl, observations)
     for (const item of Object.values(value as Record<string, unknown>)) {
       walkPayload(item, pageUrl, observations, seen, depth + 1)
     }

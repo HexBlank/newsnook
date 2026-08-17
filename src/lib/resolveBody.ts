@@ -238,6 +238,10 @@ function removeEmbedChrome(document: Document): void {
     .forEach((node) => node.remove())
 }
 
+function isLikelyVideoPageUrl(pageUrl: string): boolean {
+  return /\/(?:video|videos|watch|embed|player)(?:\/|[?#]|$)/i.test(pageUrl)
+}
+
 function videoFallbackBody(pageHtml: string, title?: string): ResolvedBody {
   const lead = buildPageLeadHtml(pageHtml)
   const embeds = collectYoutubeEmbedHtml(pageHtml)
@@ -343,7 +347,7 @@ async function extractWithReadability(
   })
   const article = reader.parse()
   // 仅 URL 像视频频道时才走「视频兜底」；正文里夹带 YouTube ≠ 整页只有视频
-  const isVideoPage = /\/video\//i.test(pageUrl)
+  const isVideoPage = isLikelyVideoPageUrl(pageUrl)
 
   if (!article?.content || stripTags(article.content).length < 80) {
     const fallback = await extractMainContentFallback(
@@ -761,12 +765,35 @@ export async function resolveArticleBody(
     (isInlineFlashBody(article.contentHtml, article.sourceId) ||
       (isSubstantialHtml(article.contentHtml) && !hasBrokenTextEncoding(article.contentHtml!)))
   ) {
+    let contentHtml = await absolutizeHtml(
+      article.contentHtml!,
+      article.originUrl || 'https://local.invalid/',
+    )
+    const embeddedFrames = article.contentHtml!.match(/<iframe\b[^>]*>/gi) || []
+    const hasNonYoutubeEmbed = embeddedFrames.some(
+      (frame) => !/youtube(?:-nocookie)?\.com\/embed\//i.test(frame),
+    )
+    if (hasNonYoutubeEmbed && article.originUrl) {
+      const descriptor = await discoverMediaDescriptor({
+        pageUrl: article.originUrl,
+        html: article.contentHtml,
+        runtime: true,
+        timeoutMs: 6000,
+        signal,
+      }).catch(() => null)
+      if (descriptor) {
+        contentHtml = sanitizeArticleHtml(
+          mediaDescriptorHtml(descriptor, {
+            title: article.title,
+            poster: article.image,
+            contentHtml,
+          }),
+        )
+      }
+    }
     return withArticleAudio(
       {
-        contentHtml: await absolutizeHtml(
-          article.contentHtml!,
-          article.originUrl || 'https://local.invalid/',
-        ),
+        contentHtml,
         bodySource: 'feed',
       },
       article,
@@ -889,14 +916,8 @@ export async function resolveArticleBody(
     if (hasBrokenTextEncoding(extracted.contentHtml)) {
       throw new Error('正文字符集解析失败')
     }
-    if (stripTags(extracted.contentHtml).length < 80) {
-      throw new Error('抽取正文过短')
-    }
-    if (isScrapeNoticeBody(extracted.contentHtml)) {
-      throw new Error('原站仅返回反爬声明')
-    }
     if (!/<video\b/i.test(extracted.contentHtml)) {
-      const mayContainMedia = /<(?:video|source|iframe)\b|VideoObject|\.m3u8(?:[?"'])|\.mpd(?:[?"'])|\.mp4(?:[?"'])/i.test(pageHtml)
+      const mayContainMedia = isLikelyVideoPageUrl(pageUrl) || /<(?:video|source|iframe)\b|VideoObject|\.m3u8(?:[?"'])|\.mpd(?:[?"'])|\.mp4(?:[?"'])/i.test(pageHtml)
       if (mayContainMedia) {
         const descriptor = await discoverMediaDescriptor({
           pageUrl,
@@ -918,6 +939,12 @@ export async function resolveArticleBody(
           }
         }
       }
+    }
+    if (stripTags(extracted.contentHtml).length < 80 && !/<video\b/i.test(extracted.contentHtml)) {
+      throw new Error('抽取正文过短')
+    }
+    if (isScrapeNoticeBody(extracted.contentHtml)) {
+      throw new Error('原站仅返回反爬声明')
     }
     return withArticleAudio({ ...extracted, resolvedOriginUrl }, article, pageHtml)
   }

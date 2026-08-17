@@ -21,6 +21,11 @@ export interface MediaObservation {
   drmKeySystem?: string
   mseMimeType?: string
   mediaKind?: 'video' | 'audio'
+  hasAudio?: boolean
+  hasVideo?: boolean
+  width?: number
+  height?: number
+  bitrate?: number
 }
 
 export interface MediaTrack {
@@ -41,6 +46,11 @@ export interface MediaCandidate {
   format: MediaFormat
   mediaKind: 'video' | 'audio' | 'unknown'
   mimeType?: string
+  hasAudio?: boolean
+  hasVideo?: boolean
+  width?: number
+  height?: number
+  bitrate?: number
   score: number
   sources: MediaObservationSource[]
   requestHeaders?: Record<string, string>
@@ -52,6 +62,7 @@ export interface MediaDescriptor {
   pageUrl: string
   score: number
   mimeType?: string
+  hasAudio?: boolean
   videoTracks: MediaTrack[]
   audioTracks: MediaTrack[]
   subtitles: MediaTrack[]
