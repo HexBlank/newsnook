@@ -17,6 +17,7 @@ interface NativeMediaSnifferPlugin {
     sourcePage?: string
     format?: string
     headers?: Record<string, string>
+    origins?: string[]
     proxy?: {
       type: 'http' | 'socks5'
       host: string
@@ -32,6 +33,7 @@ export async function prepareNativeMediaPlayback(options: {
   sourcePage?: string
   format?: string
   headers?: Record<string, string>
+  origins?: string[]
   forceBridge?: boolean
 }): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false
@@ -53,6 +55,7 @@ export async function prepareNativeMediaPlayback(options: {
     sourcePage: options.sourcePage,
     format: options.format,
     headers: options.headers,
+    ...(options.origins?.length ? { origins: options.origins } : {}),
     ...(transport.kind === 'native-tunnel' ? { proxy: transport.tunnel } : {}),
   })
   return intercept

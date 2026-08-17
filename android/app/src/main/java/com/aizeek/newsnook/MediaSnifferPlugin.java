@@ -15,6 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.webkit.ScriptHandler;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -69,17 +70,9 @@ public class MediaSnifferPlugin extends Plugin {
     private static final long PLAYBACK_CONTEXT_TTL_MS = 10 * 60 * 1000L;
     private static final ConcurrentHashMap<String, PlaybackContext> PLAYBACK_CONTEXTS =
         new ConcurrentHashMap<>();
-    /** Per-origin Cookie/Authorization/safe headers; moved to OriginHeaderStore in Task 6. */
-    static final ConcurrentHashMap<String, Map<String, String>> SNIFF_ORIGIN_HEADERS =
-        new ConcurrentHashMap<>();
     private static final Set<String> SAFE_REQUEST_HEADERS = Collections.unmodifiableSet(
         new HashSet<>(Arrays.asList(
             "accept", "accept-language", "origin", "referer", "user-agent"
-        ))
-    );
-    private static final Set<String> ORIGIN_STORE_HEADERS = Collections.unmodifiableSet(
-        new HashSet<>(Arrays.asList(
-            "accept", "accept-language", "authorization", "cookie", "origin", "referer", "user-agent"
         ))
     );
 
@@ -321,28 +314,30 @@ public class MediaSnifferPlugin extends Plugin {
             return;
         }
         JSObject headersObject = call.getObject("headers");
-        Map<String, String> headers = new HashMap<>();
+        Map<String, String> jsHeaders = new HashMap<>();
         if (headersObject != null) {
             Iterator<String> keys = headersObject.keys();
             while (keys.hasNext()) {
                 String key = keys.next();
                 String value = headersObject.getString(key);
                 if (value != null && SAFE_REQUEST_HEADERS.contains(key.toLowerCase(Locale.ROOT))) {
-                    headers.put(key, value);
+                    jsHeaders.put(key, value);
                 }
             }
         }
-        if (sourcePage != null && !hasHeader(headers, "referer")) {
-            headers.put("Referer", sourcePage);
+        OkHttpClient client = createPlaybackClient(call.getObject("proxy"));
+        long expiresAt = System.currentTimeMillis() + PLAYBACK_CONTEXT_TTL_MS;
+        PLAYBACK_CONTEXTS.put(url, new PlaybackContext(url, format, false, jsHeaders, sourcePage, client, expiresAt));
+        JSArray origins = call.getArray("origins");
+        if (origins != null) {
+            for (int index = 0; index < origins.length(); index += 1) {
+                String origin = origins.optString(index, "");
+                if (origin == null || origin.isEmpty()) continue;
+                String seed = origin.endsWith("/") ? origin : origin + "/";
+                if (!isAllowedPageUrl(seed)) continue;
+                PLAYBACK_CONTEXTS.put(origin, new PlaybackContext(seed, format, true, jsHeaders, sourcePage, client, expiresAt));
+            }
         }
-        PlaybackContext context = new PlaybackContext(
-            url,
-            format,
-            headers,
-            createPlaybackClient(call.getObject("proxy")),
-            System.currentTimeMillis() + PLAYBACK_CONTEXT_TTL_MS
-        );
-        PLAYBACK_CONTEXTS.put(url, context);
         purgePlaybackContexts();
         call.resolve();
     }
@@ -410,13 +405,12 @@ public class MediaSnifferPlugin extends Plugin {
     static PlaybackContext findPlaybackContext(String url) {
         long now = System.currentTimeMillis();
         PlaybackContext exact = PLAYBACK_CONTEXTS.get(url);
-        if (exact != null && exact.expiresAt >= now) return exact;
-        Uri requested = Uri.parse(url);
+        if (exact != null && exact.expiresAt >= now) return exact.forRequest(url);
+        String origin = OriginHeaderStore.originOf(url);
+        if (origin == null) return null;
         for (PlaybackContext context : PLAYBACK_CONTEXTS.values()) {
             if (context.expiresAt < now || !context.scoped) continue;
-            if (context.host.equalsIgnoreCase(requested.getHost()) && requested.getPath() != null && requested.getPath().startsWith(context.pathPrefix)) {
-                return context;
-            }
+            if (origin.equals(context.origin)) return context.forRequest(url);
         }
         return null;
     }
@@ -428,24 +422,80 @@ public class MediaSnifferPlugin extends Plugin {
 
     static final class PlaybackContext {
         final String originalUrl;
-        final String host;
-        final String pathPrefix;
+        final String origin;
         final boolean scoped;
         final Map<String, String> headers;
+        final Map<String, String> jsHeaders;
+        final String sourcePage;
         final OkHttpClient client;
         final long expiresAt;
 
-        PlaybackContext(String originalUrl, String format, Map<String, String> headers, OkHttpClient client, long expiresAt) {
+        PlaybackContext(
+            String originalUrl,
+            String format,
+            boolean extraOrigin,
+            Map<String, String> jsHeaders,
+            String sourcePage,
+            OkHttpClient client,
+            long expiresAt
+        ) {
             this.originalUrl = originalUrl;
-            Uri uri = Uri.parse(originalUrl);
-            this.host = uri.getHost() == null ? "" : uri.getHost();
-            String path = uri.getPath() == null ? "/" : uri.getPath();
-            int separator = path.lastIndexOf('/');
-            this.pathPrefix = separator >= 0 ? path.substring(0, separator + 1) : "/";
-            this.scoped = "dash".equalsIgnoreCase(format) || "hls".equalsIgnoreCase(format);
-            this.headers = Collections.unmodifiableMap(new HashMap<>(headers));
+            String origin = OriginHeaderStore.originOf(originalUrl);
+            this.origin = origin == null ? "" : origin;
+            this.scoped = extraOrigin || "dash".equalsIgnoreCase(format) || "hls".equalsIgnoreCase(format);
+            this.jsHeaders = Collections.unmodifiableMap(new HashMap<>(jsHeaders));
+            this.sourcePage = sourcePage;
+            this.headers = Collections.unmodifiableMap(mergePlaybackHeaders(originalUrl, sourcePage, jsHeaders));
             this.client = client;
             this.expiresAt = expiresAt;
+        }
+
+        private PlaybackContext(PlaybackContext source, Map<String, String> headers) {
+            this.originalUrl = source.originalUrl;
+            this.origin = source.origin;
+            this.scoped = source.scoped;
+            this.headers = Collections.unmodifiableMap(new HashMap<>(headers));
+            this.jsHeaders = source.jsHeaders;
+            this.sourcePage = source.sourcePage;
+            this.client = source.client;
+            this.expiresAt = source.expiresAt;
+        }
+
+        PlaybackContext forRequest(String requestUrl) {
+            return new PlaybackContext(this, mergePlaybackHeaders(requestUrl, sourcePage, jsHeaders));
+        }
+    }
+
+    private static Map<String, String> mergePlaybackHeaders(
+        String requestUrl,
+        String sourcePage,
+        Map<String, String> jsHeaders
+    ) {
+        Map<String, String> merged = new HashMap<>();
+        if (jsHeaders != null) putAllIgnoreCase(merged, jsHeaders);
+        putAllIgnoreCase(merged, OriginHeaderStore.headersFor(requestUrl, sourcePage));
+        if (sourcePage != null && !hasHeader(merged, "referer")) {
+            merged.put("referer", sourcePage);
+        }
+        merged.remove("range");
+        merged.remove("Range");
+        return merged;
+    }
+
+    private static void putAllIgnoreCase(Map<String, String> target, Map<String, String> incoming) {
+        if (incoming == null || incoming.isEmpty()) return;
+        for (Map.Entry<String, String> entry : incoming.entrySet()) {
+            String name = entry.getKey();
+            if (name == null || entry.getValue() == null) continue;
+            String existing = null;
+            for (String key : target.keySet()) {
+                if (name.equalsIgnoreCase(key)) {
+                    existing = key;
+                    break;
+                }
+            }
+            if (existing != null) target.remove(existing);
+            target.put(name, entry.getValue());
         }
     }
 
@@ -575,7 +625,7 @@ public class MediaSnifferPlugin extends Plugin {
         String url = request.getUrl().toString();
         Map<String, String> requestHeaders = request.getRequestHeaders();
         if (requestHeaders == null) requestHeaders = Collections.emptyMap();
-        noteOriginHeaders(url, requestHeaders);
+        OriginHeaderStore.note(url, requestHeaders);
         if (isSkippableStaticAsset(url)) return;
         synchronized (events) {
             if (events.length() >= MAX_NETWORK_EVENTS) return;
@@ -608,46 +658,6 @@ public class MediaSnifferPlugin extends Plugin {
             } catch (JSONException ignored) {
                 // 单条异常不影响页面继续加载。
             }
-        }
-    }
-
-    private static void noteOriginHeaders(String url, Map<String, String> requestHeaders) {
-        String origin = originOf(url);
-        if (origin == null || requestHeaders == null || requestHeaders.isEmpty()) return;
-        Map<String, String> captured = new HashMap<>();
-        for (Map.Entry<String, String> entry : requestHeaders.entrySet()) {
-            String headerName = entry.getKey();
-            String value = entry.getValue();
-            if (headerName == null || value == null || value.isEmpty()) continue;
-            String lower = headerName.toLowerCase(Locale.ROOT);
-            if (!ORIGIN_STORE_HEADERS.contains(lower)) continue;
-            captured.put(lower, value);
-        }
-        if (captured.isEmpty()) return;
-        SNIFF_ORIGIN_HEADERS.merge(origin, captured, (existing, incoming) -> {
-            Map<String, String> merged = new ConcurrentHashMap<>(existing);
-            merged.putAll(incoming);
-            return merged;
-        });
-    }
-
-    private static String originOf(String url) {
-        if (url == null || url.isEmpty()) return null;
-        try {
-            Uri uri = Uri.parse(url);
-            String scheme = uri.getScheme();
-            String host = uri.getHost();
-            if (scheme == null || host == null) return null;
-            String lowerScheme = scheme.toLowerCase(Locale.ROOT);
-            int port = uri.getPort();
-            if (port == -1 ||
-                ("https".equals(lowerScheme) && port == 443) ||
-                ("http".equals(lowerScheme) && port == 80)) {
-                return lowerScheme + "://" + host;
-            }
-            return lowerScheme + "://" + host + ":" + port;
-        } catch (RuntimeException ignored) {
-            return null;
         }
     }
 

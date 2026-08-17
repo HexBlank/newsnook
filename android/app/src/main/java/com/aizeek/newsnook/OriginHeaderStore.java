@@ -1,0 +1,167 @@
+package com.aizeek.newsnook;
+
+import android.webkit.CookieManager;
+import java.net.URI;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Per-origin request headers captured during sniff. Playback reads by exact origin
+ * (scheme+host+port, default ports omitted) and never copies Range.
+ */
+final class OriginHeaderStore {
+
+    private static final long TTL_MS = 10 * 60 * 1000L;
+    private static final Set<String> STORED_HEADERS = Collections.unmodifiableSet(
+        new HashSet<>(Arrays.asList(
+            "accept",
+            "accept-language",
+            "authorization",
+            "cookie",
+            "origin",
+            "referer",
+            "user-agent"
+        ))
+    );
+    private static final ConcurrentHashMap<String, OriginHeaders> STORE = new ConcurrentHashMap<>();
+
+    interface CookieSource {
+        String cookieFor(String url);
+    }
+
+    private static final class OriginHeaders {
+        final Map<String, String> headers;
+        final long expiresAt;
+
+        OriginHeaders(Map<String, String> headers, long expiresAt) {
+            this.headers = Collections.unmodifiableMap(new HashMap<>(headers));
+            this.expiresAt = expiresAt;
+        }
+    }
+
+    static void note(String url, Map<String, String> requestHeaders) {
+        String origin = originOf(url);
+        if (origin == null || requestHeaders == null || requestHeaders.isEmpty()) return;
+        Map<String, String> captured = filterStored(requestHeaders);
+        if (captured.isEmpty()) return;
+        long expiresAt = System.currentTimeMillis() + TTL_MS;
+        STORE.merge(origin, new OriginHeaders(captured, expiresAt), (existing, incoming) -> {
+            Map<String, String> merged = new HashMap<>(existing.headers);
+            merged.putAll(incoming.headers);
+            return new OriginHeaders(merged, incoming.expiresAt);
+        });
+    }
+
+    static Map<String, String> headersFor(String targetUrl, String pageUrl) {
+        return headersFor(targetUrl, pageUrl, OriginHeaderStore::webviewCookie);
+    }
+
+    static Map<String, String> headersFor(String targetUrl, String pageUrl, CookieSource cookies) {
+        purge();
+        String targetOrigin = originOf(targetUrl);
+        String pageOrigin = originOf(pageUrl);
+        if (targetOrigin == null) return Collections.emptyMap();
+        Map<String, String> captured = capturedFor(targetOrigin);
+        boolean sameOrigin = targetOrigin.equals(pageOrigin);
+        Map<String, String> result = new LinkedHashMap<>();
+        copy(captured, result, "user-agent");
+        copy(captured, result, "accept");
+        copy(captured, result, "accept-language");
+        if (sameOrigin) {
+            copy(captured, result, "authorization");
+            String referer = header(captured, "referer");
+            if (referer == null) referer = pageUrl;
+            if (referer != null && !referer.isEmpty()) result.put("referer", referer);
+            String origin = header(captured, "origin");
+            if (origin == null) origin = pageOrigin;
+            if (origin != null && !origin.isEmpty()) result.put("origin", origin);
+        } else if (pageOrigin != null) {
+            result.put("referer", pageOrigin.endsWith("/") ? pageOrigin : pageOrigin + "/");
+        }
+        String cookie = cookies == null ? null : cookies.cookieFor(targetUrl);
+        if (cookie != null && !cookie.isEmpty()) {
+            result.put("cookie", cookie);
+        } else if (sameOrigin) {
+            copy(captured, result, "cookie");
+        }
+        return result;
+    }
+
+    static String originOf(String url) {
+        if (url == null || url.isEmpty()) return null;
+        try {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) return null;
+            String lowerScheme = scheme.toLowerCase(Locale.ROOT);
+            int port = uri.getPort();
+            if (port == -1
+                || ("https".equals(lowerScheme) && port == 443)
+                || ("http".equals(lowerScheme) && port == 80)) {
+                return lowerScheme + "://" + host;
+            }
+            return lowerScheme + "://" + host + ":" + port;
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    static void clear() {
+        STORE.clear();
+    }
+
+    private static Map<String, String> capturedFor(String origin) {
+        OriginHeaders record = STORE.get(origin);
+        if (record == null || record.expiresAt < System.currentTimeMillis()) return Collections.emptyMap();
+        return record.headers;
+    }
+
+    private static Map<String, String> filterStored(Map<String, String> requestHeaders) {
+        Map<String, String> captured = new HashMap<>();
+        for (Map.Entry<String, String> entry : requestHeaders.entrySet()) {
+            String name = entry.getKey();
+            String value = entry.getValue();
+            if (name == null || value == null || value.isEmpty()) continue;
+            String lower = name.toLowerCase(Locale.ROOT);
+            if ("range".equals(lower) || !STORED_HEADERS.contains(lower)) continue;
+            captured.put(lower, value);
+        }
+        return captured;
+    }
+
+    private static void copy(Map<String, String> from, Map<String, String> to, String name) {
+        String value = header(from, name);
+        if (value != null) to.put(name, value);
+    }
+
+    private static String header(Map<String, String> map, String name) {
+        if (map == null || map.isEmpty()) return null;
+        for (Map.Entry<String, String> entry : map.entrySet()) {
+            if (name.equalsIgnoreCase(entry.getKey()) && entry.getValue() != null && !entry.getValue().isEmpty()) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static void purge() {
+        long now = System.currentTimeMillis();
+        STORE.entrySet().removeIf(entry -> entry.getValue().expiresAt < now);
+    }
+
+    private static String webviewCookie(String url) {
+        try {
+            return CookieManager.getInstance().getCookie(url);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+}

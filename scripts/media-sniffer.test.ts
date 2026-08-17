@@ -27,6 +27,7 @@ import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playbac
 import {
   discoverMediaDescriptor,
   embeddedPageUrlsInHtml,
+  mediaDescriptorHtml,
   runtimeProbePageUrl,
 } from '../src/features/mediaSniffer/service'
 
@@ -152,6 +153,36 @@ const pageUrl = 'https://news.example/articles/42'
   assert.equal(cross.authorization, undefined)
   assert.equal(cross.referer, 'https://news.example/')
   assert.equal(originOf('https://v1.cdn.example:443/a'), 'https://v1.cdn.example')
+  const ranged = playbackHeadersForTarget({
+    targetUrl: 'https://news.example/play.m3u8',
+    pageUrl,
+    capturedByOrigin: {
+      'https://news.example': { range: 'bytes=0-1', authorization: 'Bearer secret', 'user-agent': 'NewsNook' },
+    },
+  })
+  assert.equal(ranged.range, undefined, '播放头不得复制网页捕获的 Range')
+  const html = mediaDescriptorHtml(
+    {
+      type: 'progressive',
+      url: 'https://cdn.example/v.mp4',
+      pageUrl,
+      score: 1,
+      videoTracks: [],
+      audioTracks: [],
+      subtitles: [],
+      drm: false,
+      drmKeySystems: [],
+      requestHeaders: {
+        Referer: pageUrl,
+        cookie: 'sid=1',
+        Authorization: 'Bearer secret',
+      },
+    },
+    { title: 'clip' },
+  )
+  assert.equal(html.includes('sid=1'), false, 'data-media-headers 不得序列化 Cookie')
+  assert.equal(html.includes('Bearer'), false, 'data-media-headers 不得序列化 Authorization')
+  assert.equal(html.includes('Referer'), true)
 }
 
 {

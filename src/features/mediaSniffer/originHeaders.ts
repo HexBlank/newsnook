@@ -1,5 +1,18 @@
 const CREDENTIAL_HEADERS = new Set(['cookie', 'authorization'])
 
+export function publicPlaybackHeaders(
+  headers?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!headers) return undefined
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase()
+    if (CREDENTIAL_HEADERS.has(lower) || lower === 'range') continue
+    result[key] = value
+  }
+  return Object.keys(result).length ? result : undefined
+}
+
 export function originOf(url: string): string | undefined {
   try {
     return new URL(url).origin

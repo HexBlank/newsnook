@@ -9,6 +9,7 @@ import {
   observeMediaInPayload,
 } from './core'
 import { observeMediaInNativePage } from './native'
+import { publicPlaybackHeaders } from './originHeaders'
 import type { MediaDescriptor, MediaObservation } from './types'
 
 const MAX_MANIFEST_BYTES = 512 * 1024
@@ -151,8 +152,9 @@ export function mediaDescriptorHtml(
     'playsinline',
     'preload="metadata"',
   ]
-  if (descriptor.requestHeaders && Object.keys(descriptor.requestHeaders).length) {
-    attrs.push(`data-media-headers="${escapeHtml(JSON.stringify(descriptor.requestHeaders))}"`)
+  const publicHeaders = publicPlaybackHeaders(descriptor.requestHeaders)
+  if (publicHeaders) {
+    attrs.push(`data-media-headers="${escapeHtml(JSON.stringify(publicHeaders))}"`)
   }
   if (options.poster) attrs.push(`poster="${escapeHtml(options.poster)}"`)
   return `<video ${attrs.join(' ')}></video>${content}`
