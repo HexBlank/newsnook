@@ -11,6 +11,8 @@ import {
   parseHlsManifest,
   mediaFormatFor,
 } from '../src/features/mediaSniffer/core'
+import { logicalMediaUrl } from '../src/features/mediaSniffer/classifier'
+import { originOf, playbackHeadersForTarget } from '../src/features/mediaSniffer/originHeaders'
 import type { MediaObservation } from '../src/features/mediaSniffer/types'
 import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playback'
 import {
@@ -90,6 +92,56 @@ const pageUrl = 'https://news.example/articles/42'
     null,
     '私有传输协议不能伪装成 MP4；必须保留原播放器降级路径',
   )
+}
+
+{
+  const m4sVideo = 'https://upos.example/video.m4s?cdnid=1'
+  const m4sAudio = 'https://upos.example/audio.m4s'
+  assert.equal(
+    mediaFormatFor(m4sVideo, 'video/mp4'),
+    'video-track',
+    '.m4s 有 video MIME 时是完整 Representation，不是垃圾分片',
+  )
+  assert.equal(mediaFormatFor(m4sAudio, 'audio/mp4'), 'audio-track')
+  assert.equal(
+    mediaFormatFor(m4sVideo),
+    'video-track',
+    '无 MIME 的 .m4s 不得仅因扩展名变成 segment',
+  )
+  assert.equal(
+    logicalMediaUrl('https://cdn.example/videoplayback?id=42&mime=video%2Fmp4&range=0-524287'),
+    'https://cdn.example/videoplayback?id=42&mime=video%2Fmp4',
+  )
+}
+
+{
+  const pageUrl = 'https://news.example/articles/42'
+  const videoOrigin = 'https://v1.cdn.example'
+  const captured = {
+    'https://news.example': {
+      cookie: 'sid=1',
+      authorization: 'Bearer secret',
+      referer: pageUrl,
+      'user-agent': 'NewsNook',
+    },
+    [videoOrigin]: { referer: pageUrl, 'user-agent': 'NewsNook' },
+  }
+  const same = playbackHeadersForTarget({
+    targetUrl: 'https://news.example/play.m3u8',
+    pageUrl,
+    capturedByOrigin: captured,
+  })
+  assert.equal(same.cookie, 'sid=1')
+  assert.equal(same.authorization, 'Bearer secret')
+  const cross = playbackHeadersForTarget({
+    targetUrl: `${videoOrigin}/seg.ts`,
+    pageUrl,
+    capturedByOrigin: captured,
+  })
+  assert.equal(cross.cookie, undefined)
+  assert.equal(cross.authorization, undefined)
+  assert.equal(cross.referer, 'https://news.example/')
+  assert.equal(originOf('https://v1.cdn.example:443/a'), 'https://v1.cdn.example')
 }
 
 {

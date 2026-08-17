@@ -1,4 +1,14 @@
-export type MediaFormat = 'progressive' | 'hls' | 'dash' | 'segment' | 'blob' | 'unknown'
+export type MediaFormat =
+  | 'progressive'
+  | 'hls'
+  | 'dash'
+  | 'video-track'
+  | 'audio-track'
+  | 'segment'
+  | 'blob'
+  | 'unknown'
+
+export type PlayableMediaFormat = 'progressive' | 'hls' | 'dash'
 
 export type MediaObservationSource =
   | 'network'
@@ -26,6 +36,41 @@ export interface MediaObservation {
   width?: number
   height?: number
   bitrate?: number
+  bodyText?: string
+  fromServiceWorker?: boolean
+  sessionNonce?: string
+}
+
+export interface RequestContext {
+  origin: string
+  headers: Record<string, string>
+}
+
+export interface MediaAssetTrack {
+  id: string
+  url: string
+  role: 'video' | 'audio' | 'subtitle' | 'manifest'
+  mimeType?: string
+  codecs?: string
+  width?: number
+  height?: number
+  bitrate?: number
+  language?: string
+  quality?: string
+  requestContext: RequestContext
+}
+
+export interface MediaAsset {
+  id: string
+  pageUrl: string
+  score: number
+  drm: boolean
+  drmKeySystems: string[]
+  manifest?: MediaAssetTrack
+  videos: MediaAssetTrack[]
+  audios: MediaAssetTrack[]
+  subtitles: MediaAssetTrack[]
+  syntheticMpd?: string
 }
 
 export interface MediaTrack {
@@ -57,7 +102,7 @@ export interface MediaCandidate {
 }
 
 export interface MediaDescriptor {
-  type: Exclude<MediaFormat, 'segment' | 'blob' | 'unknown'>
+  type: PlayableMediaFormat
   url: string
   pageUrl: string
   score: number

@@ -1,5 +1,14 @@
 import { XMLParser } from 'fast-xml-parser'
 
+import {
+  DIRECT_MEDIA_EXT,
+  MANIFEST_MIMES,
+  isHttpUrl,
+  mediaFingerprint,
+  mediaFormatFor,
+  mimeFromUrl,
+  normalizedMime,
+} from './classifier'
 import type {
   MediaCandidate,
   MediaDescriptor,
@@ -7,109 +16,27 @@ import type {
   MediaObservation,
   MediaObservationSource,
   MediaTrack,
+  PlayableMediaFormat,
 } from './types'
 
-const MANIFEST_MIMES = new Map<string, MediaFormat>([
-  ['application/vnd.apple.mpegurl', 'hls'],
-  ['application/x-mpegurl', 'hls'],
-  ['audio/mpegurl', 'hls'],
-  ['application/dash+xml', 'dash'],
-])
+export {
+  mediaFormatFor,
+  mediaFingerprint,
+  isByteRangeResource,
+  isHttpUrl,
+  logicalMediaUrl,
+  normalizedMime,
+} from './classifier'
 
-const DIRECT_MEDIA_EXT = /\.(?:mp4|m4v|webm|mov|flv|mkv|m4a|aac|mp3|ogg|opus)(?:$|[?#])/i
-const SEGMENT_EXT = /\.(?:m4s|cmfv|cmfa|ts|aac)(?:$|[?#])/i
-const HLS_EXT = /\.m3u8(?:$|[?#])/i
-const DASH_EXT = /\.mpd(?:$|[?#])/i
 const AUDIO_EXT = /\.(?:m4a|aac|mp3|ogg|opus)(?:$|[?#])/i
-const VOLATILE_QUERY_KEY = /^(?:token|auth|authorization|signature|sig|expires?|expiry|e|hdnts|policy|key-pair-id|x-amz-.+)$/i
-const MIME_QUERY_KEY = /^(?:mime|mime-type|mimetype|content-type|content_type|type)$/i
-const FORMAT_QUERY_KEY = /^(?:format|fmt|container|ext)$/i
 const AUDIO_CODEC = /(?:^|[\s,"'])(?:mp4a|aac|opus|vorbis|ac-3|ec-3)(?:[.\s,"']|$)/i
 const VIDEO_CODEC = /(?:^|[\s,"'])(?:avc1|av01|hvc1|hev1|vp0?9|vp8)(?:[.\s,"']|$)/i
-
-function normalizedMime(value?: string): string {
-  return value?.split(';', 1)[0]?.trim().toLowerCase() || ''
-}
-
-function mimeFromUrl(url: string): string {
-  try {
-    const parsed = new URL(url)
-    for (const [key, rawValue] of parsed.searchParams) {
-      const value = rawValue.trim().toLowerCase().replace(/^['"]|['"]$/g, '')
-      if (MIME_QUERY_KEY.test(key) && /^(?:video|audio)\/[a-z0-9.+-]+$/i.test(value)) {
-        return value
-      }
-      if (MIME_QUERY_KEY.test(key) && MANIFEST_MIMES.has(value)) return value
-      if (FORMAT_QUERY_KEY.test(key)) {
-        if (value === 'm3u8' || value === 'hls') return 'application/vnd.apple.mpegurl'
-        if (value === 'mpd' || value === 'dash') return 'application/dash+xml'
-        if (/^(?:mp4|m4v|webm|mov|flv|mkv)$/.test(value)) return `video/${value === 'm4v' ? 'mp4' : value}`
-        if (/^(?:m4a|aac|mp3|ogg|opus)$/.test(value)) return `audio/${value === 'm4a' ? 'mp4' : value}`
-      }
-    }
-  } catch {
-    // URL extension and explicit MIME checks still apply.
-  }
-  return ''
-}
-
-function isByteRangeResource(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    const range = parsed.searchParams.get('range') || parsed.searchParams.get('bytes') || ''
-    return /^(?:bytes=)?\d+-\d+$/i.test(range.trim())
-  } catch {
-    return false
-  }
-}
-
-function isHttpUrl(value: string): boolean {
-  try {
-    const protocol = new URL(value).protocol
-    return protocol === 'http:' || protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
-export function mediaFormatFor(url: string, mimeType?: string): MediaFormat {
-  const mime = normalizedMime(mimeType) || mimeFromUrl(url)
-  const byMime = MANIFEST_MIMES.get(mime)
-  if (byMime) return byMime
-  if (mime.startsWith('video/') || mime.startsWith('audio/')) {
-    return isByteRangeResource(url) ? 'segment' : 'progressive'
-  }
-  if (HLS_EXT.test(url)) return 'hls'
-  if (DASH_EXT.test(url)) return 'dash'
-  if (DIRECT_MEDIA_EXT.test(url)) return 'progressive'
-  if (SEGMENT_EXT.test(url)) return 'segment'
-  if (url.startsWith('blob:')) return 'blob'
-  return 'unknown'
-}
-
-/** 播放 URL 原样保留；仅内部指纹移除常见临时授权参数并排序。 */
-export function mediaFingerprint(originalUrl: string): string {
-  try {
-    const url = new URL(originalUrl)
-    const stable = Array.from(url.searchParams.entries())
-      .filter(([key]) => !VOLATILE_QUERY_KEY.test(key))
-      .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
-        `${leftKey}=${leftValue}`.localeCompare(`${rightKey}=${rightValue}`),
-      )
-    url.search = ''
-    for (const [key, value] of stable) url.searchParams.append(key, value)
-    url.hash = ''
-    return url.href
-  } catch {
-    return originalUrl
-  }
-}
 
 function observationScore(observation: MediaObservation, format: MediaFormat): number {
   const mime = normalizedMime(observation.mimeType) || mimeFromUrl(observation.url || '')
   let score = 0
   if (format === 'hls' || format === 'dash') score += 140
-  else if (format === 'progressive') score += 50
+  else if (format === 'progressive' || format === 'video-track' || format === 'audio-track') score += 50
   else if (format === 'segment') score += 10
   else if (format === 'blob') score -= 100
 
@@ -148,7 +75,11 @@ export function collectMediaCandidates(observations: MediaObservation[]): MediaC
   for (const observation of observations) {
     const originalUrl = observation.url?.trim()
     if (!originalUrl || (!isHttpUrl(originalUrl) && !originalUrl.startsWith('blob:'))) continue
-    const format = mediaFormatFor(originalUrl, observation.mimeType)
+    const format = mediaFormatFor(
+      originalUrl,
+      observation.mimeType,
+      observation.mediaKind ? { mediaKind: observation.mediaKind } : undefined,
+    )
     if (format === 'unknown' || format === 'blob') continue
     const fingerprint = mediaFingerprint(originalUrl)
     const score = observationScore(observation, format)
@@ -307,6 +238,10 @@ export function parseDashManifest(text: string, manifestUrl: string): Pick<Media
   return { videoTracks, audioTracks, subtitles, drm }
 }
 
+function isPlayableFormat(format: MediaFormat): format is PlayableMediaFormat {
+  return format === 'progressive' || format === 'hls' || format === 'dash'
+}
+
 function drmKeySystems(observations: MediaObservation[]): string[] {
   return Array.from(new Set(observations.map((item) => item.drmKeySystem).filter((item): item is string => Boolean(item))))
 }
@@ -316,9 +251,9 @@ export function buildMediaDescriptor(
   manifests: ReadonlyMap<string, string> = new Map(),
 ): MediaDescriptor | null {
   const candidate = collectMediaCandidates(observations).find(
-    (item) => item.format !== 'segment' && item.mediaKind !== 'audio',
+    (item) => isPlayableFormat(item.format) && item.mediaKind !== 'audio',
   )
-  if (!candidate || candidate.format === 'unknown' || candidate.format === 'blob' || candidate.format === 'segment') return null
+  if (!candidate || !isPlayableFormat(candidate.format)) return null
 
   const descriptor: MediaDescriptor = {
     type: candidate.format,
@@ -374,7 +309,7 @@ function addStaticObservation(
 ): void {
   const url = resolvedUrl(value, pageUrl)
   if (!url) return
-  const format = mediaFormatFor(url, mimeType)
+  const format = mediaFormatFor(url, mimeType, mediaKind ? { mediaKind } : undefined)
   if (format === 'unknown') return
   observations.push({ url, pageUrl, source: 'static', mimeType, mediaKind, ...hints })
 }
