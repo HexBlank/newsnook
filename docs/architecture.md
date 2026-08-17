@@ -166,7 +166,34 @@ openArticle → setReading + markRead
 
 正文预取：稍后读加入时入队，`BODY_PREFETCH_CONCURRENCY = 2`，离开稍后读则跳过。
 
-### 8.3 文章翻译
+### 8.3 媒体嗅探与自定义播放器
+
+媒体能力分成“发现、描述、播放”三层，正文解析不直接控制播放器：
+
+```text
+HTML / JSON / Android 短生命周期 WebView
+  → MediaObservation[]（network / DOM / fetch / XHR / performance / MSE / DRM）
+  → collectMediaCandidates（分类、评分、指纹去重、分片抑制）
+  → HLS / DASH Manifest 轻量解析
+  → MediaDescriptor（原始 URL + pageUrl + headers + tracks + DRM）
+  → mediaDescriptorHtml
+  → InlineArticleVideos
+  → InkVideoPlayer
+```
+
+关键约束：
+
+- 静态 HTML / payload 已发现可播放资源时，不再启动 Android 运行时探测；否则由 `MediaSnifferPlugin` 在隔离 WebView 中观察网络、DOM、MSE 与 EME 信号。
+- 播放 URL 保留完整签名参数；去重指纹才忽略常见临时授权字段。完整 Manifest 存在时不把 `.ts` / `.m4s` 分片当成视频。
+- `MediaDescriptor` 只向播放器交付 `progressive`、`hls`、`dash`；`blob:`/MSE 是发现信号而非可移交 URL；DRM 进入原站授权边界，不尝试绕过。
+- Android 播放会话短时登记来源页、Cookie、必要请求头与用户代理路由。公开 progressive 优先使用 WebView 原生 Range 请求；显式请求头、隧道、DASH 或 progressive 直连失败时才启用 `MediaPlaybackWebViewClient` 流式桥接。
+- 播放失败后的“重新探测”通过 `ReaderScreen.retryToken` 重新执行正文解析与原页发现，不生成或逆向签名。
+
+`InkVideoPlayer` 统一处理 HLS/dash.js/HTMLMediaElement、播放控制、双击播放/暂停、长按临时倍速、进度/亮度/音量手势、捏合缩放、平移和还原。Android 横向视频进入全屏时优先锁定 Activity 横屏，系统导航栏和四向安全区随屏幕一起旋转；退出全屏或卸载播放器时恢复原方向。方向锁定不可用时才旋转播放器交互平面，确保视频与控件仍处于同一坐标系。
+
+完整设计与实现映射见 [`xiutan.md`](./xiutan.md#二十newsnook-当前实现)。
+
+### 8.4 文章翻译
 
 ```text
 ReaderScreen（只依赖 TranslationService）
@@ -186,7 +213,7 @@ ReaderScreen（只依赖 TranslationService）
 
 `features/translation/types.ts` 是稳定边界；新增提供商只需实现 `TranslationProvider` 并在工厂注册。`local` 构建变体注册 ML Kit 与 Bergamot 原生插件；`cloud` 变体提供空实现，保证轻量包不含 JNI 翻译库。
 
-### 8.4 跟贴评论
+### 8.5 跟贴评论
 
 ```text
 ReaderScreen / CommentsDrawer
@@ -197,7 +224,7 @@ ReaderScreen / CommentsDrawer
 
 仅部分源实现 `CommentProvider`；不支持时隐藏跟贴入口。
 
-### 8.5 持久化键
+### 8.6 持久化键
 
 前缀 `newsnook:`（`lib/storage.ts`）：
 
@@ -253,9 +280,10 @@ einkMode=false → 完全恢复现有上下滚动阅读，零残留
 | `src/App.tsx` | 全局状态机、返回键、正文预取队列、设置栈 |
 | `components/AppShell.tsx` | 墨砚壳 + safe-area |
 | `components/TabBar.tsx` | 底栏 |
-| `components/InkImage.tsx` / `InkVideoPlayer.tsx` | 图片渐进加载 / HLS 播放与全屏手势 |
+| `components/InkImage.tsx` / `InkVideoPlayer.tsx` | 图片渐进加载 / Progressive·HLS·DASH 播放 / 缩放、全屏与系统级横竖屏 |
 | `components/EinkReaderMenu.tsx` | 墨水屏阅读菜单（字号、页码、翻译、收藏） |
-| `lib/videoGestures.ts` / `lib/deviceMediaControls.ts` | 全屏手势 / 系统亮度与媒体音量 |
+| `lib/videoGestures.ts` / `lib/deviceMediaControls.ts` | 播放器手势 / 系统亮度、媒体音量与 Activity 方向控制 |
+| `features/mediaSniffer/*` | 媒体观察、候选评分、Manifest 解析、播放会话上下文 |
 | `hooks/useFeeds.ts` | 多源并行拉取与合并 |
 | `lib/http.ts` | 平台分流 GET + 代理隧道 |
 | `lib/parseFeed.ts` | 多 kind 列表 → `Article[]` |
@@ -288,7 +316,7 @@ npm run android:apk | android:aab
 
 | 插件 | 职责 |
 |---|---|
-| `DeviceMediaControls` | 全屏视频窗口亮度与媒体音量 |
+| `DeviceMediaControls` | 全屏视频窗口亮度、媒体音量与横竖屏锁定/恢复 |
 | `VolumePageTurn` | 墨水屏模式下音量键翻页 |
 | `MediaSniffer` | 短生命周期 WebView 观察网络、DOM、MSE 与 EME 信号；不接管 DRM 或授权 |
 
@@ -339,6 +367,7 @@ npm run android:apk | android:aab
 | HTTP / 代理 | `src/lib/http.ts` · `src/features/proxy/` |
 | 翻译 | `src/features/translation/` |
 | 跟贴 | `src/features/comments/` |
+| 媒体嗅探 / 播放器 | `src/features/mediaSniffer/` · `src/components/InkVideoPlayer.tsx` · `docs/xiutan.md` |
 | 应用更新 | `src/features/appUpdate/` |
 | Vite 代理 | `vite.config.ts` |
 | CF 边缘代理 | `functions/` |

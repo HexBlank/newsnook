@@ -1112,3 +1112,130 @@ PLAY
 对于 MSE，浏览器本身可以通过 `MediaSource` 和多个 `SourceBuffer` 动态构造音视频流，所以“找到一个视频 URL”已经不是现代嗅探器的正确抽象；应该恢复的是**媒体清单、轨道关系和播放会话**。([W3C][3])
 
 对于 DRM，则明确停在正常的 EME/CDM/License 播放链路，不把“拿到媒体 URL”误认为“拿到了播放权限”。([W3C][4])
+
+---
+
+# 二十、NewsNook 当前实现
+
+本节记录仓库中的实际实现，作为前述设计原则的落地说明。设计目标与代码现状发生差异时，以本节和 [`architecture.md`](./architecture.md) 为准。
+
+## 20.1 实际数据流
+
+```text
+resolveArticleBody
+  │
+  ├─ 静态发现：HTML / JSON payload
+  │    └─ video、audio、source、meta、任意嵌套 URL 与 MIME 信号
+  │
+  └─ Android 运行时发现（静态结果没有可播放资源时）
+       └─ 短生命周期 WebView 打开原页
+            ├─ shouldInterceptRequest 网络请求
+            ├─ video/audio/source DOM 与 currentSrc
+            ├─ MutationObserver
+            ├─ fetch / XMLHttpRequest
+            ├─ PerformanceObserver
+            ├─ MediaSource.addSourceBuffer MIME
+            └─ requestMediaKeySystemAccess DRM KeySystem
+                 │
+                 ▼
+          MediaObservation[]
+                 │
+                 ▼
+       分类、评分、去重、分片抑制
+                 │
+                 ▼
+       HLS / DASH Manifest 轻量解析
+                 │
+                 ▼
+          MediaDescriptor
+                 │
+                 ▼
+       正文 video 描述节点
+                 │
+                 ▼
+       InlineArticleVideos → InkVideoPlayer
+```
+
+运行时 WebView 仅用于当前文章的一次短时探测，不作为常驻浏览器，也不把媒体字节或登录凭据写入正文缓存。静态 HTML / JSON 已经给出可信媒体时，不再额外启动运行时探测。
+
+## 20.2 候选选择与媒体描述
+
+当前支持规范化为以下三类可播放描述：
+
+| `MediaDescriptor.type` | 发现信号 | 播放路径 |
+|---|---|---|
+| `progressive` | `video/*`、`audio/*` 或常见直链扩展名；视频描述会排除纯音频候选 | HTMLMediaElement；Android 必要时走流式请求桥 |
+| `hls` | HLS MIME 或 `.m3u8` | 原生 HLS 能力或 hls.js |
+| `dash` | `application/dash+xml` 或 `.mpd` | dash.js；Android 用会话化请求桥承接清单与分片 |
+
+选择规则不是“第一个看起来像视频的 URL”：
+
+- HLS / DASH Manifest 高于单文件和媒体分片；DOM `currentSrc`、MSE、fetch/XHR、网络与静态信号按可信度累计评分。
+- 同一资源按指纹合并多个观察来源；只有内部去重指纹会忽略常见临时授权参数，`MediaDescriptor.url` 始终保留原始签名 URL。
+- 一旦存在完整资源，`.ts`、`.m4s`、初始化段等分片不再作为独立视频候选。
+- 最多读取两个高分 Manifest 的前 512 KiB，用于补充 HLS 变体、音轨、字幕或 DASH Representation 与 DRM 状态；解析失败不会丢弃已经发现的可播放 URL。
+- `blob:` 只作为 MSE 运行时信号，不作为可移交的 CDN URL；当前实现不会重组任意站点私有的 SourceBuffer 字节流。
+
+稳定边界是 `src/features/mediaSniffer/types.ts` 中的 `MediaDescriptor`。正文解析只消费描述，不再依赖虎嗅、网易等站点的固定画质字段；站点适配负责取得可用页面或 payload，媒体识别交给通用模块。
+
+## 20.3 会话、防盗链与代理
+
+媒体 URL 不能脱离发现它的页面上下文。交给播放器的描述会携带：
+
+- 原始媒体 URL；
+- `pageUrl` / Referer 来源页；
+- 探测时可安全复用的请求头；
+- 当前 WebView Cookie；
+- 用户已配置的 HTTP / SOCKS5 代理路由。
+
+Android 播放前通过 `MediaSniffer.preparePlayback` 登记一个短生命周期会话，`MediaPlaybackWebViewClient` 仅在需要时流式补齐 Referer、Cookie、请求头或代理，不缓存、拼接或改写媒体字节。公开 progressive 视频优先留在 WebView 原生网络栈中，以保持 Range 请求和持续播放；显式请求头、用户隧道、DASH 或直连失败后的 progressive 重试才启用桥接。
+
+签名 URL 过期或服务端返回 401/403 时，播放器显示“重新探测”。该操作重新执行正文解析和原页探测，取得新的 `MediaDescriptor`；不会猜测、生成或逆向签名。
+
+## 20.4 DRM 与授权边界
+
+以下任一信号会把描述标记为 DRM：
+
+- HLS 非 `identity` 的 `KEYFORMAT`；
+- DASH `ContentProtection`；
+- 页面调用 EME `requestMediaKeySystemAccess`。
+
+自定义播放器只直接接收非 DRM 描述。检测到 DRM 时提示在原站授权播放，不截获 License、不绕过 CDM、不降级窃取加密分片。付费、地区、账号或会员权限仍由原站决定。
+
+## 20.5 自定义播放器能力
+
+`InkVideoPlayer` 是文章视频的统一播放表面：
+
+| 类型 | 操作 |
+|---|---|
+| 基础控制 | 播放/暂停、进度、缓冲状态、0.75x～2x 倍速、静音、全屏 |
+| 快捷操作 | 点击暂停态中央按钮继续播放；双击画面切换播放/暂停；播放时长按临时 2.5x |
+| 全屏手势 | 下半屏横滑调整进度；左下竖滑调整屏幕亮度；右下竖滑调整系统媒体音量 |
+| 画面手势 | 双指缩放；放大后单指平移；顶部按钮还原缩放和平移 |
+| 横竖屏 | Android 优先锁定 Activity 方向，使视频、控制条、系统返回/主页/最近任务区域一起旋转；横向视频进入全屏时自动请求横屏，退出或卸载播放器时恢复原方向 |
+| 降级 | Web 或系统拒绝方向锁定时，旋转整个播放器交互平面；视频、进度条和按钮保持同一坐标系 |
+
+装饰性渐变不拦截画面手势，只有实体按钮和进度条接管指针事件。Android 原生安全区同时注入上、下、左、右四个方向，横屏三键导航、手势导航或挖孔区域不会覆盖控制组件。
+
+## 20.6 代码与验证入口
+
+| 职责 | 入口 |
+|---|---|
+| 候选分类、评分、指纹、HLS/DASH 解析 | `src/features/mediaSniffer/core.ts` |
+| 静态/运行时发现编排、`MediaDescriptor` 输出 | `src/features/mediaSniffer/service.ts` |
+| Android 嗅探与播放会话桥 | `src/features/mediaSniffer/native.ts`、`android/.../MediaSnifferPlugin.java` |
+| Android 流式请求上下文 | `android/.../MediaPlaybackWebViewClient.java` |
+| 正文接入与失败重探测 | `src/lib/resolveBody.ts`、`src/screens/ReaderScreen.tsx` |
+| 自定义播放器 | `src/components/InkVideoPlayer.tsx` |
+| 手势纯函数 | `src/lib/videoGestures.ts` |
+| 亮度、音量、系统方向 | `src/lib/deviceMediaControls.ts`、`android/.../DeviceMediaControlsPlugin.java` |
+
+相关验证命令：
+
+```bash
+npm run test:media-sniffer
+npm run test:inline-video
+npm run test:video-gestures
+npm run build
+npm run android:sync
+```
