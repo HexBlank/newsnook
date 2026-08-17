@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import { getRuntimeProxyPrefs } from '../../lib/http'
 import { currentProxyRuntime } from '../proxy/runtime'
 import { resolveProxyTransport } from '../proxy/transport'
+import { shouldBridgeNativePlayback } from './playback'
 import type { MediaObservation } from './types'
 
 interface NativeMediaSnifferPlugin {
@@ -12,6 +13,7 @@ interface NativeMediaSnifferPlugin {
   }>
   preparePlayback(options: {
     url: string
+    intercept: boolean
     sourcePage?: string
     format?: string
     headers?: Record<string, string>
@@ -30,18 +32,30 @@ export async function prepareNativeMediaPlayback(options: {
   sourcePage?: string
   format?: string
   headers?: Record<string, string>
-}): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
+  forceBridge?: boolean
+}): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false
   const transport = resolveProxyTransport(
     options.url,
     undefined,
     getRuntimeProxyPrefs(),
     currentProxyRuntime(),
   )
+  const intercept = shouldBridgeNativePlayback({
+    format: options.format,
+    headers: options.headers,
+    forceBridge: options.forceBridge,
+    usesNativeTunnel: transport.kind === 'native-tunnel',
+  })
   await NativeMediaSniffer.preparePlayback({
-    ...options,
+    url: options.url,
+    intercept,
+    sourcePage: options.sourcePage,
+    format: options.format,
+    headers: options.headers,
     ...(transport.kind === 'native-tunnel' ? { proxy: transport.tunnel } : {}),
   })
+  return intercept
 }
 
 const NativeMediaSniffer = registerPlugin<NativeMediaSnifferPlugin>('MediaSniffer')

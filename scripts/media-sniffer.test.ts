@@ -10,8 +10,32 @@ import {
   parseHlsManifest,
 } from '../src/features/mediaSniffer/core'
 import type { MediaObservation } from '../src/features/mediaSniffer/types'
+import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playback'
 
 const pageUrl = 'https://news.example/articles/42'
+
+{
+  assert.equal(
+    shouldBridgeNativePlayback({ format: 'progressive' }),
+    false,
+    '公开 MP4 应交给 WebView 原生网络栈持续处理 Range 请求',
+  )
+  assert.equal(
+    shouldBridgeNativePlayback({ format: 'progressive', forceBridge: true }),
+    true,
+    '直连失败后可切换到带会话头的流式桥接',
+  )
+  assert.equal(
+    shouldBridgeNativePlayback({ format: 'dash' }),
+    true,
+    'DASH 清单与分片需要共享原生播放会话',
+  )
+  assert.equal(
+    shouldBridgeNativePlayback({ format: 'progressive', headers: { Referer: pageUrl } }),
+    true,
+    '显式请求头必须由原生桥接补齐',
+  )
+}
 
 {
   const signed = 'https://cdn.example/master.m3u8?token=secret&expires=1800000000&lang=zh'

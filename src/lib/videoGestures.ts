@@ -13,12 +13,22 @@ export const AXIS_BIAS = 1.15
 export const SEEK_FULL_WIDTH_SEC = 120
 /** 竖滑约 60% 屏高即可从 0 调到 100%，不需要从屏底划到屏顶。 */
 export const LEVEL_FULL_SWING_RATIO = 0.6
+export const MIN_VIDEO_SCALE = 1
+export const MAX_VIDEO_SCALE = 4
 
 export type VideoGesture = 'none' | 'seek' | 'volume' | 'brightness'
+export type VideoRotation = 0 | 90 | 180 | 270
 
 export interface GestureSurface {
   width: number
   height: number
+}
+
+export interface VideoViewportTransform {
+  scale: number
+  x: number
+  y: number
+  rotation: VideoRotation
 }
 
 /** 手势区限定在下半屏，且必须落在播放器内部。 */
@@ -68,4 +78,58 @@ export function levelOffset(dy: number, height: number): number {
 export function clampLevel(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.min(1, Math.max(0, value))
+}
+
+export function clampVideoScale(value: number): number {
+  if (!Number.isFinite(value)) return MIN_VIDEO_SCALE
+  return Math.min(MAX_VIDEO_SCALE, Math.max(MIN_VIDEO_SCALE, value))
+}
+
+export function pinchScale(from: number, fromDistance: number, distance: number): number {
+  if (fromDistance <= 0 || !Number.isFinite(distance)) return clampVideoScale(from)
+  return clampVideoScale(from * (distance / fromDistance))
+}
+
+export function normalizeVideoRotation(value: number): VideoRotation {
+  const normalized = ((Math.round(value / 90) * 90) % 360 + 360) % 360
+  return normalized as VideoRotation
+}
+
+/** 让旋转后的实际视频内容仍完整落在视口内，scale=1 始终代表“适应画面”。 */
+export function videoRotationFit(
+  surface: GestureSurface,
+  media: GestureSurface,
+  rotation: VideoRotation,
+): number {
+  if (surface.width <= 0 || surface.height <= 0 || media.width <= 0 || media.height <= 0) return 1
+  if (rotation === 0 || rotation === 180) return 1
+  const base = Math.min(surface.width / media.width, surface.height / media.height)
+  const renderedWidth = media.width * base
+  const renderedHeight = media.height * base
+  return Math.min(surface.width / renderedHeight, surface.height / renderedWidth)
+}
+
+/** 缩放后限制平移范围，避免把视频整块拖出播放区域。 */
+export function clampVideoPan(
+  x: number,
+  y: number,
+  surface: GestureSurface,
+  media: GestureSurface,
+  scale: number,
+  rotation: VideoRotation,
+): Pick<VideoViewportTransform, 'x' | 'y'> {
+  if (surface.width <= 0 || surface.height <= 0 || media.width <= 0 || media.height <= 0) {
+    return { x: 0, y: 0 }
+  }
+  const base = Math.min(surface.width / media.width, surface.height / media.height)
+  const fit = videoRotationFit(surface, media, rotation)
+  const quarterTurn = rotation === 90 || rotation === 270
+  const contentWidth = (quarterTurn ? media.height : media.width) * base * fit * scale
+  const contentHeight = (quarterTurn ? media.width : media.height) * base * fit * scale
+  const maxX = Math.max(0, (contentWidth - surface.width) / 2)
+  const maxY = Math.max(0, (contentHeight - surface.height) / 2)
+  return {
+    x: maxX === 0 ? 0 : Math.min(maxX, Math.max(-maxX, Number.isFinite(x) ? x : 0)),
+    y: maxY === 0 ? 0 : Math.min(maxY, Math.max(-maxY, Number.isFinite(y) ? y : 0)),
+  }
 }

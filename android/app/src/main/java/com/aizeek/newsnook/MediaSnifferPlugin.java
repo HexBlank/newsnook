@@ -185,6 +185,13 @@ public class MediaSnifferPlugin extends Plugin {
         String sourcePage = call.getString("sourcePage");
         if (sourcePage != null && !isAllowedPageUrl(sourcePage)) sourcePage = null;
         String format = call.getString("format", "progressive");
+        boolean intercept = call.getBoolean("intercept", true);
+        if (!intercept) {
+            PLAYBACK_CONTEXTS.remove(url);
+            purgePlaybackContexts();
+            call.resolve();
+            return;
+        }
         JSObject headersObject = call.getObject("headers");
         Map<String, String> headers = new HashMap<>();
         if (headersObject != null) {

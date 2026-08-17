@@ -3,14 +3,20 @@ import assert from 'node:assert/strict'
 import {
   AXIS_LOCK_PX,
   LEVEL_FULL_SWING_RATIO,
+  MAX_VIDEO_SCALE,
   SEEK_FULL_WIDTH_SEC,
   THUMB_ZONE_TOP_RATIO,
   clampLevel,
+  clampVideoPan,
+  clampVideoScale,
   clampSeekTarget,
   isThumbZone,
   levelOffset,
+  normalizeVideoRotation,
+  pinchScale,
   resolveGesture,
   seekOffsetSeconds,
+  videoRotationFit,
 } from '../src/lib/videoGestures'
 
 const surface = { width: 800, height: 400 }
@@ -55,5 +61,30 @@ assert.equal(clampLevel(1.4), 1)
 assert.equal(clampLevel(-0.2), 0)
 assert.equal(clampLevel(0.35), 0.35)
 assert.equal(clampLevel(Number.NaN), 0)
+
+assert.equal(clampVideoScale(0.5), 1)
+assert.equal(clampVideoScale(2.5), 2.5)
+assert.equal(clampVideoScale(8), MAX_VIDEO_SCALE)
+assert.equal(pinchScale(1, 100, 250), 2.5)
+assert.equal(pinchScale(2, 0, 300), 2)
+assert.equal(normalizeVideoRotation(90), 90)
+assert.equal(normalizeVideoRotation(450), 90)
+assert.equal(normalizeVideoRotation(-90), 270)
+
+const portraitSurface = { width: 400, height: 800 }
+const landscapeVideo = { width: 1920, height: 1080 }
+assert.equal(videoRotationFit(portraitSurface, landscapeVideo, 0), 1)
+assert.ok(
+  Math.abs(videoRotationFit(portraitSurface, landscapeVideo, 90) - 16 / 9) < 0.001,
+  '横向视频旋转后应放大到适合竖向视口',
+)
+assert.deepEqual(
+  clampVideoPan(500, -500, portraitSurface, landscapeVideo, 1, 90),
+  { x: 0, y: 0 },
+  '适应模式不允许把画面拖出黑边',
+)
+const zoomedPan = clampVideoPan(500, -500, portraitSurface, landscapeVideo, 2, 90)
+assert.equal(zoomedPan.x, 200)
+assert.ok(Math.abs(zoomedPan.y + 311.111) < 0.01)
 
 console.log('video-gestures: ok')
