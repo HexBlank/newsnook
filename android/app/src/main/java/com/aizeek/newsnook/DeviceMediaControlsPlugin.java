@@ -2,6 +2,7 @@ package com.aizeek.newsnook;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.media.AudioManager;
 import android.provider.Settings;
 import android.view.Window;
@@ -24,6 +25,7 @@ public class DeviceMediaControlsPlugin extends Plugin {
     private static final float BRIGHTNESS_FOLLOW_SYSTEM = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
     /** Settings.System.SCREEN_BRIGHTNESS 的常规量程，仅用于给出初始基准值。 */
     private static final float SYSTEM_BRIGHTNESS_SCALE = 255f;
+    private Integer orientationBeforeVideo;
 
     @PluginMethod
     public void getBrightness(PluginCall call) {
@@ -123,6 +125,53 @@ public class DeviceMediaControlsPlugin extends Plugin {
             return;
         }
         call.resolve(level((float) audio.getStreamVolume(AudioManager.STREAM_MUSIC) / max));
+    }
+
+    @PluginMethod
+    public void lockOrientation(PluginCall call) {
+        String orientation = call.getString("orientation");
+        final int requestedOrientation;
+        if ("landscape".equals(orientation)) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        } else if ("portrait".equals(orientation)) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
+        } else {
+            call.reject("Unsupported orientation");
+            return;
+        }
+
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Activity unavailable");
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            if (orientationBeforeVideo == null) {
+                orientationBeforeVideo = activity.getRequestedOrientation();
+            }
+            activity.setRequestedOrientation(requestedOrientation);
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void unlockOrientation(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            orientationBeforeVideo = null;
+            call.resolve();
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            int restore = orientationBeforeVideo == null
+                ? ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                : orientationBeforeVideo;
+            orientationBeforeVideo = null;
+            activity.setRequestedOrientation(restore);
+            call.resolve();
+        });
     }
 
     private AudioManager audioManager() {

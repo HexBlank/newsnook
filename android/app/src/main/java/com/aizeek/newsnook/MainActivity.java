@@ -31,6 +31,8 @@ public class MainActivity extends BridgeActivity {
     private volatile boolean webContentReady = false;
     private int nativeStatusBarDp = 0;
     private int nativeNavBarDp = 0;
+    private int nativeLeftInsetDp = 0;
+    private int nativeRightInsetDp = 0;
 
     private final Handler compositorWakeHandler = new Handler(Looper.getMainLooper());
 
@@ -262,6 +264,8 @@ public class MainActivity extends BridgeActivity {
 
         int statusBarPx = 0;
         int navBarPx = 0;
+        int leftInsetPx = 0;
+        int rightInsetPx = 0;
 
         if (windowInsets != null) {
             Insets statusInsets = windowInsets.getInsets(
@@ -270,6 +274,8 @@ public class MainActivity extends BridgeActivity {
             statusBarPx = statusInsets.top;
             Insets navInsets = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars());
             navBarPx = navInsets.bottom;
+            leftInsetPx = Math.max(statusInsets.left, navInsets.left);
+            rightInsetPx = Math.max(statusInsets.right, navInsets.right);
         }
 
         if (statusBarPx <= 0) {
@@ -279,19 +285,17 @@ public class MainActivity extends BridgeActivity {
             }
         }
 
-        if (statusBarPx > 0) {
-            nativeStatusBarDp = (int) Math.ceil(statusBarPx / density);
-        }
-        if (navBarPx > 0) {
-            nativeNavBarDp = (int) Math.ceil(navBarPx / density);
-        }
+        nativeStatusBarDp = (int) Math.ceil(Math.max(0, statusBarPx) / density);
+        nativeNavBarDp = (int) Math.ceil(Math.max(0, navBarPx) / density);
+        nativeLeftInsetDp = (int) Math.ceil(Math.max(0, leftInsetPx) / density);
+        nativeRightInsetDp = (int) Math.ceil(Math.max(0, rightInsetPx) / density);
 
         injectNativeInsets();
     }
 
     private void injectNativeInsets() {
         WebView webView = getCapacitorWebView();
-        if (webView == null || nativeStatusBarDp <= 0) return;
+        if (webView == null) return;
 
         final String js = String.format(
             Locale.US,
@@ -300,10 +304,14 @@ public class MainActivity extends BridgeActivity {
             "  if (r) {" +
             "    r.style.setProperty('--sat-native', '%dpx');" +
             "    r.style.setProperty('--sab-native', '%dpx');" +
+            "    r.style.setProperty('--sal-native', '%dpx');" +
+            "    r.style.setProperty('--sar-native', '%dpx');" +
             "  }" +
             "})();",
             nativeStatusBarDp,
-            nativeNavBarDp
+            nativeNavBarDp,
+            nativeLeftInsetDp,
+            nativeRightInsetDp
         );
 
         webView.post(() -> webView.evaluateJavascript(js, null));

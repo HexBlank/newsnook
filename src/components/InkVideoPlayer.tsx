@@ -27,7 +27,10 @@ import { getVideoStatusMessage } from '../lib/videoStatus'
 import {
   createBrightnessControl,
   createVolumeControl,
+  lockVideoScreenOrientation,
+  unlockVideoScreenOrientation,
   type LevelControl,
+  type VideoScreenOrientation,
 } from '../lib/deviceMediaControls'
 import {
   clampLevel,
@@ -209,6 +212,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
   const pinchRef = useRef<PinchState | null>(null)
   const multiTouchRef = useRef(false)
   const videoViewRef = useRef<VideoViewState>(DEFAULT_VIDEO_VIEW)
+  const screenOrientationLockedRef = useRef(false)
   const lastTapRef = useRef(0)
   const showChromeRef = useRef(true)
   const hudTimerRef = useRef<number | null>(null)
@@ -292,6 +296,21 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
   const updateVideoView = useCallback((next: VideoViewState) => {
     videoViewRef.current = next
     setVideoView(next)
+  }, [])
+
+  const lockPlayerScreenOrientation = useCallback(
+    async (orientation: VideoScreenOrientation): Promise<boolean> => {
+      const locked = await lockVideoScreenOrientation(orientation)
+      if (locked) screenOrientationLockedRef.current = true
+      return locked
+    },
+    [],
+  )
+
+  const releasePlayerScreenOrientation = useCallback(async () => {
+    if (!screenOrientationLockedRef.current) return
+    screenOrientationLockedRef.current = false
+    await unlockVideoScreenOrientation()
   }, [])
 
   useEffect(() => {
@@ -552,11 +571,14 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       const active = Boolean(node && document.fullscreenElement === node)
       setFullscreen(active)
       if (active) setFallbackFullscreen(false)
-      else updateVideoView(DEFAULT_VIDEO_VIEW)
+      else {
+        updateVideoView(DEFAULT_VIDEO_VIEW)
+        void releasePlayerScreenOrientation()
+      }
     }
     document.addEventListener('fullscreenchange', onFs)
     return () => document.removeEventListener('fullscreenchange', onFs)
-  }, [updateVideoView])
+  }, [releasePlayerScreenOrientation, updateVideoView])
 
   useEffect(() => {
     const currentView = videoViewRef.current
@@ -613,8 +635,9 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       // 卸载时若仍在全屏，窗口亮度必须归还系统，否则整个应用会一直停在调暗状态
       brightnessControl.release()
       volumeControl.release()
+      void releasePlayerScreenOrientation()
     },
-    [brightnessControl, volumeControl],
+    [brightnessControl, releasePlayerScreenOrientation, volumeControl],
   )
 
   const playWithFallback = async () => {
@@ -681,6 +704,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
   const toggleFullscreen = async () => {
     const root = rootRef.current
     if (!root) return
+    const exiting = fallbackFullscreen || document.fullscreenElement === root
     try {
       if (fallbackFullscreen) {
         setFallbackFullscreen(false)
@@ -691,7 +715,15 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         await root.requestFullscreen()
       }
     } catch {
-      setFallbackFullscreen(true)
+      if (!exiting) setFallbackFullscreen(true)
+    }
+
+    if (exiting) {
+      await releasePlayerScreenOrientation()
+      updateVideoView(DEFAULT_VIDEO_VIEW)
+    } else if (mediaSize.width > mediaSize.height) {
+      const locked = await lockPlayerScreenOrientation('landscape')
+      if (locked) updateVideoView(DEFAULT_VIDEO_VIEW)
     }
     revealControls()
   }
@@ -781,6 +813,15 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         setFallbackFullscreen(true)
       }
     }
+
+    const targetOrientation: VideoScreenOrientation =
+      viewport.width > viewport.height ? 'portrait' : 'landscape'
+    if (await lockPlayerScreenOrientation(targetOrientation)) {
+      updateVideoView(DEFAULT_VIDEO_VIEW)
+      revealControls()
+      return
+    }
+
     const currentView = videoViewRef.current
     const rotation = normalizeVideoRotation(currentView.rotation + 90)
     const pan = clampVideoPan(
@@ -1171,7 +1212,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
               event.stopPropagation()
               revealControls()
             }}
-            className={`pointer-events-none absolute inset-x-0 top-0 z-[3] flex items-start gap-2 bg-gradient-to-b from-black/75 via-black/30 to-transparent px-2.5 pb-8 transition-opacity duration-200 ${
+            className={`pointer-events-none absolute inset-x-0 top-0 z-[3] flex items-start gap-2 bg-gradient-to-b from-black/75 via-black/30 to-transparent pb-8 pl-[max(0.625rem,var(--sal,0px))] pr-[max(0.625rem,var(--sar,0px))] transition-opacity duration-200 ${
               immersive ? 'pt-[max(0.5rem,var(--sat,0px))]' : 'pt-2'
             } ${showChrome ? 'opacity-100' : 'opacity-0'}`}
           >
@@ -1189,8 +1230,8 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
 
             <button
               type="button"
-              aria-label="顺时针旋转 90 度"
-              title="旋转 90°"
+              aria-label="切换横竖屏"
+              title="切换横竖屏"
               onClick={() => void rotateVideoView()}
               className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-paper transition-colors active:bg-paper/15 ${
                 showChrome ? 'pointer-events-auto' : ''
@@ -1275,7 +1316,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
               event.stopPropagation()
               revealControls()
             }}
-            className={`pointer-events-none absolute inset-x-0 bottom-0 z-[3] bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3 pt-10 transition-opacity duration-200 ${
+            className={`pointer-events-none absolute inset-x-0 bottom-0 z-[3] bg-gradient-to-t from-black/80 via-black/45 to-transparent pl-[max(0.75rem,var(--sal,0px))] pr-[max(0.75rem,var(--sar,0px))] pt-10 transition-opacity duration-200 ${
               immersive
                 ? 'pb-[max(0.625rem,var(--sab,0px))]'
                 : 'pb-2.5'

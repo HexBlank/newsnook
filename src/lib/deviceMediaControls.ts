@@ -8,13 +8,71 @@ interface DeviceMediaControlsPlugin {
   clearBrightness(): Promise<void>
   getVolume(): Promise<{ value: number }>
   setVolume(options: { value: number }): Promise<{ value: number }>
+  lockOrientation(options: { orientation: VideoScreenOrientation }): Promise<void>
+  unlockOrientation(): Promise<void>
 }
+
+export type VideoScreenOrientation = 'portrait' | 'landscape'
 
 const DeviceMediaControls = registerPlugin<DeviceMediaControlsPlugin>('DeviceMediaControls')
 
 /** 真机才有原生实现；浏览器与未重新编译的旧包都走 Web 兜底。 */
 function nativeAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('DeviceMediaControls')
+}
+
+interface LockableScreenOrientation {
+  lock?: (orientation: VideoScreenOrientation) => Promise<void>
+  unlock?: () => void
+}
+
+function webScreenOrientation(): LockableScreenOrientation | null {
+  if (typeof screen === 'undefined') return null
+  return screen.orientation as unknown as LockableScreenOrientation
+}
+
+/**
+ * 优先请求 Android Activity 真正旋转，让系统导航栏、手势区和安全区一起换边。
+ * 浏览器实现仅作渐进增强；两条路径都失败时由播放器保留 CSS 旋转兜底。
+ */
+export async function lockVideoScreenOrientation(
+  orientation: VideoScreenOrientation,
+): Promise<boolean> {
+  if (nativeAvailable()) {
+    try {
+      await DeviceMediaControls.lockOrientation({ orientation })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const controller = webScreenOrientation()
+  if (!controller?.lock) return false
+  try {
+    await controller.lock(orientation)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 退出播放器全屏时归还方向控制权，不把阅读页锁死在横屏。 */
+export async function unlockVideoScreenOrientation(): Promise<void> {
+  if (nativeAvailable()) {
+    try {
+      await DeviceMediaControls.unlockOrientation()
+    } catch {
+      /* 旧安装包尚未包含此方法时安全降级。 */
+    }
+    return
+  }
+
+  try {
+    webScreenOrientation()?.unlock?.()
+  } catch {
+    /* 浏览器可能在离开全屏后自动解锁，视为已完成。 */
+  }
 }
 
 /**
