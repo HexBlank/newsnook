@@ -286,10 +286,17 @@ function isAudioOnly(asset: GraphAsset): boolean {
   return !asset.manifest && asset.videos.length === 0 && asset.audios.length > 0
 }
 
+function videoFileFormat(asset: GraphAsset): MediaFormat | undefined {
+  const video = asset.videos[0]
+  if (!video) return undefined
+  return mediaFormatFor(video.url, video.mimeType, { mediaKind: 'video' })
+}
+
 function isMuxedProgressive(asset: GraphAsset): boolean {
   if (asset.manifest || asset.syntheticMpd) return false
   if (asset.videos.length === 0) return false
-  return asset.hasAudio !== false
+  if (asset.hasAudio === false) return false
+  return videoFileFormat(asset) === 'progressive'
 }
 
 function deliveryRank(asset: GraphAsset): number | null {
@@ -298,7 +305,7 @@ function deliveryRank(asset: GraphAsset): number | null {
   if (asset.manifest) return 3
   if (isMuxedProgressive(asset)) return 2
   if (asset.syntheticMpd) return 1
-  if (asset.videos.length > 0) return 0
+  if (asset.videos.length > 0 && videoFileFormat(asset) === 'progressive') return 0
   return null
 }
 
@@ -428,5 +435,6 @@ export function descriptorFromAsset(
 
   const video = asset.videos[0]
   if (!video) return null
+  if (!asset.drm && videoFileFormat(graphAsset) !== 'progressive') return null
   return { ...base, type: 'progressive', url: video.url }
 }

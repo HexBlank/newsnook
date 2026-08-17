@@ -338,6 +338,23 @@ video/1080.m3u8`
 }
 
 {
+  const observation: MediaObservation = {
+    url: 'https://upos.example/video.m4s',
+    pageUrl,
+    source: 'network',
+    mimeType: 'video/mp4',
+  }
+  const assets = buildMediaGraph([observation])
+  assert.equal(selectPlayableAsset(assets), null, '未配对 video-track 不能进入可播集合')
+  const descriptor = buildMediaDescriptor([observation])
+  assert.equal(
+    descriptor,
+    null,
+    '单条 .m4s + video/mp4 不得产出可播的非 DRM descriptor',
+  )
+}
+
+{
   const assets = buildMediaGraph([
     { url: 'https://cdn.example/ad.mp4', pageUrl, source: 'network', mimeType: 'video/mp4', width: 640, height: 360 },
     { url: 'https://cdn.example/master.m3u8', pageUrl, source: 'network' },
