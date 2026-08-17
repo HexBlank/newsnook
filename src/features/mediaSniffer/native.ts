@@ -67,5 +67,12 @@ export async function observeMediaInNativePage(
 ): Promise<MediaObservation[]> {
   if (!Capacitor.isNativePlatform()) return []
   const result = await NativeMediaSniffer.sniff({ url, timeoutMs, referrer })
-  return Array.isArray(result.observations) ? result.observations : []
+  const observations = Array.isArray(result.observations) ? result.observations : []
+  return observations.map((observation) => ({
+    ...observation,
+    bodyText: observation.bodyText,
+    fromServiceWorker: observation.fromServiceWorker,
+    mimeType: observation.mimeType,
+    sessionNonce: observation.sessionNonce,
+  }))
 }

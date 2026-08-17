@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
@@ -59,36 +60,64 @@ public class MediaSnifferPlugin extends Plugin {
 
     private static final int MIN_TIMEOUT_MS = 1500;
     private static final int MAX_TIMEOUT_MS = 12000;
+    private static final int QUIET_MS = 800;
+    private static final int POLL_INTERVAL_MS = 200;
     private static final int MAX_NETWORK_EVENTS = 256;
+    private static final int MAX_BODY_TEXT_BYTES = 262144;
     private static final long PLAYBACK_CONTEXT_TTL_MS = 10 * 60 * 1000L;
     private static final ConcurrentHashMap<String, PlaybackContext> PLAYBACK_CONTEXTS =
         new ConcurrentHashMap<>();
+    /** Per-origin Cookie/Authorization/safe headers; moved to OriginHeaderStore in Task 6. */
+    static final ConcurrentHashMap<String, Map<String, String>> SNIFF_ORIGIN_HEADERS =
+        new ConcurrentHashMap<>();
     private static final Set<String> SAFE_REQUEST_HEADERS = Collections.unmodifiableSet(
         new HashSet<>(Arrays.asList(
-            "accept", "accept-language", "origin", "range", "referer", "user-agent"
+            "accept", "accept-language", "origin", "referer", "user-agent"
+        ))
+    );
+    private static final Set<String> ORIGIN_STORE_HEADERS = Collections.unmodifiableSet(
+        new HashSet<>(Arrays.asList(
+            "accept", "accept-language", "authorization", "cookie", "origin", "referer", "user-agent"
         ))
     );
 
-    private static final String PROBE_SCRIPT = """
+    private static final String PROBE_SCRIPT_TEMPLATE = """
         (() => {
           if (window.__newsnookMediaProbeInstalled) return;
           window.__newsnookMediaProbeInstalled = true;
+          const nonce = '__NEWSNOOK_SESSION_NONCE__';
+          const maxBodyText = __NEWSNOOK_MAX_BODY_TEXT__;
+          if (window.__newsnookLastHighValueAt == null) window.__newsnookLastHighValueAt = 0;
           const events = window.__newsnookMediaEvents = [];
           const seen = new Set();
           const inspectedPayloads = new WeakSet();
+          const isHighValue = (event) => {
+            if (!event || event.source === 'performance') return false;
+            const mime = String(event.mimeType || event.mseMimeType || '').toLowerCase();
+            if (/^(video|audio)\\//.test(mime)) return true;
+            if (mime.includes('mpegurl') || mime.includes('dash+xml') || mime.includes('vnd.apple.mpegurl')) return true;
+            if (event.source === 'mse' && event.mseMimeType) return true;
+            if (event.source === 'dom' && event.url) return true;
+            return false;
+          };
           const push = (event) => {
             try {
-              const key = [event.source, event.url || '', event.mimeType || '', event.drmKeySystem || ''].join('|');
+              const key = [event.source, event.url || '', event.mimeType || '', event.drmKeySystem || '', event.bodyText ? 'body' : ''].join('|');
               if (seen.has(key) || events.length >= 256) return;
               seen.add(key);
-              const observation = { pageUrl: location.href, timestamp: Date.now(), ...event };
+              const observation = { pageUrl: location.href, timestamp: Date.now(), sessionNonce: nonce, ...event };
               events.push(observation);
-              if (window !== window.top) window.top.postMessage({ __newsnookMediaObservation: observation }, '*');
-            } catch (_) {}
+              if (isHighValue(observation)) window.__newsnookLastHighValueAt = Date.now();
+              if (window !== window.top) window.top.postMessage({ __newsnookMediaObservation: observation, nonce }, '*');
+              return observation;
+            } catch (_) { return undefined; }
           };
           if (window === window.top) window.addEventListener('message', (message) => {
-            const observation = message.data?.__newsnookMediaObservation;
-            if (observation && typeof observation === 'object') push(observation);
+            try {
+              if (!message.data || message.data.nonce !== nonce) return;
+              const observation = message.data.__newsnookMediaObservation;
+              if (observation && typeof observation === 'object') push(observation);
+            } catch (_) {}
           });
           const positiveNumber = (value) => {
             const number = Number(value);
@@ -129,6 +158,7 @@ public class MediaSnifferPlugin extends Plugin {
           };
           const inspectPlayerState = () => {
             try { inspectPayload(window.ytInitialPlayerResponse); } catch (_) {}
+            try { inspectPayload(window.__playinfo__); } catch (_) {}
             try {
               const playerResponse = window.ytplayer?.config?.args?.player_response;
               if (typeof playerResponse === 'string') inspectPayload(JSON.parse(playerResponse));
@@ -184,7 +214,22 @@ public class MediaSnifferPlugin extends Plugin {
             const originalFetch = window.fetch;
             window.fetch = async function(...args) {
               const response = await originalFetch.apply(this, args);
-              try { push({ source: 'fetch', url: response.url || String(args[0]), mimeType: response.headers.get('content-type') || undefined, statusCode: response.status }); } catch (_) {}
+              try {
+                const mimeType = response.headers.get('content-type') || undefined;
+                const event = { source: 'fetch', url: response.url || String(args[0]), mimeType, statusCode: response.status };
+                const stored = push(event);
+                const mime = String(mimeType || '').toLowerCase();
+                if (/json|text\\/plain|javascript/.test(mime)) {
+                  const lengthHeader = response.headers.get('content-length');
+                  const reported = lengthHeader == null || lengthHeader === '' ? NaN : Number(lengthHeader);
+                  if (!Number.isFinite(reported) || reported <= maxBodyText) {
+                    try {
+                      const text = await response.clone().text();
+                      if (text && text.length <= maxBodyText && stored) stored.bodyText = text;
+                    } catch (_) {}
+                  }
+                }
+              } catch (_) {}
               return response;
             };
           } catch (_) {}
@@ -196,7 +241,20 @@ public class MediaSnifferPlugin extends Plugin {
               this.addEventListener('loadend', () => {
                 let mimeType;
                 try { mimeType = this.getResponseHeader('content-type') || undefined; } catch (_) {}
-                push({ source: 'xhr', url: this.responseURL || this.__newsnookUrl, method: this.__newsnookMethod, mimeType, statusCode: this.status });
+                const event = { source: 'xhr', url: this.responseURL || this.__newsnookUrl, method: this.__newsnookMethod, mimeType, statusCode: this.status };
+                try {
+                  const responseType = this.responseType;
+                  if (!responseType || responseType === 'text' || responseType === 'json') {
+                    let text;
+                    if (responseType === 'json') {
+                      text = typeof this.response === 'string' ? this.response : JSON.stringify(this.response);
+                    } else {
+                      text = this.responseText;
+                    }
+                    if (typeof text === 'string' && text.length > 0 && text.length <= maxBodyText) event.bodyText = text;
+                  }
+                } catch (_) {}
+                push(event);
               }, { once: true });
               return open.call(this, method, url, ...rest);
             };
@@ -221,6 +279,12 @@ public class MediaSnifferPlugin extends Plugin {
           window.__newsnookCollectMedia = () => { scan(); return events; };
         })();
         """;
+
+    private static String buildProbeScript(String nonce) {
+        return PROBE_SCRIPT_TEMPLATE
+            .replace("__NEWSNOOK_SESSION_NONCE__", nonce)
+            .replace("__NEWSNOOK_MAX_BODY_TEXT__", Integer.toString(MAX_BODY_TEXT_BYTES));
+    }
 
     @PluginMethod
     public void sniff(PluginCall call) {
@@ -416,19 +480,21 @@ public class MediaSnifferPlugin extends Plugin {
         JSONArray networkEvents = new JSONArray();
         AtomicReference<String> pageUrl = new AtomicReference<>(initialUrl);
         AtomicBoolean finished = new AtomicBoolean(false);
-        ScriptHandler scriptHandler = installDocumentStartProbe(webView);
+        String sessionNonce = UUID.randomUUID().toString();
+        String probeScript = buildProbeScript(sessionNonce);
+        ScriptHandler scriptHandler = installDocumentStartProbe(webView, probeScript);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageUrl.set(url);
-                if (scriptHandler == null) view.evaluateJavascript(PROBE_SCRIPT, null);
+                if (scriptHandler == null) view.evaluateJavascript(probeScript, null);
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 pageUrl.set(url);
-                view.evaluateJavascript(PROBE_SCRIPT, null);
+                view.evaluateJavascript(probeScript, null);
             }
 
             @Override
@@ -438,10 +504,43 @@ public class MediaSnifferPlugin extends Plugin {
             }
         });
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(1, 1);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(360, 640);
+        params.leftMargin = -10000;
         root.addView(webView, params);
-        Runnable complete = () -> finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished);
-        webView.postDelayed(complete, timeoutMs);
+
+        long startMs = System.currentTimeMillis();
+        Runnable[] pollHolder = new Runnable[1];
+        pollHolder[0] = () -> {
+            if (finished.get()) return;
+            long now = System.currentTimeMillis();
+            if (now - startMs >= timeoutMs) {
+                finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce);
+                return;
+            }
+            webView.evaluateJavascript(
+                "Number(window.__newsnookLastHighValueAt) || 0",
+                value -> {
+                    if (finished.get()) return;
+                    long lastHigh = parseJsMillis(value);
+                    long innerNow = System.currentTimeMillis();
+                    if (innerNow - startMs >= timeoutMs) {
+                        finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce);
+                        return;
+                    }
+                    if (innerNow - startMs >= MIN_TIMEOUT_MS && lastHigh > 0 && innerNow - lastHigh >= QUIET_MS) {
+                        finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce);
+                        return;
+                    }
+                    webView.postDelayed(pollHolder[0], POLL_INTERVAL_MS);
+                }
+            );
+        };
+        webView.postDelayed(pollHolder[0], POLL_INTERVAL_MS);
+        webView.postDelayed(
+            () -> finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce),
+            timeoutMs
+        );
+
         if (referrer == null) {
             webView.loadUrl(initialUrl);
         } else {
@@ -451,14 +550,17 @@ public class MediaSnifferPlugin extends Plugin {
         }
     }
 
-    private ScriptHandler installDocumentStartProbe(WebView webView) {
+    private ScriptHandler installDocumentStartProbe(WebView webView, String probeScript) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return null;
-        return WebViewCompat.addDocumentStartJavaScript(webView, PROBE_SCRIPT, Collections.singleton("*"));
+        return WebViewCompat.addDocumentStartJavaScript(webView, probeScript, Collections.singleton("*"));
     }
 
     private static void recordNetworkEvent(JSONArray events, String pageUrl, WebResourceRequest request) {
         String url = request.getUrl().toString();
-        if (!looksLikeMediaUrl(url)) return;
+        Map<String, String> requestHeaders = request.getRequestHeaders();
+        if (requestHeaders == null) requestHeaders = Collections.emptyMap();
+        noteOriginHeaders(url, requestHeaders);
+        if (isSkippableStaticAsset(url)) return;
         synchronized (events) {
             if (events.length() >= MAX_NETWORK_EVENTS) return;
             JSONObject event = new JSONObject();
@@ -475,9 +577,13 @@ public class MediaSnifferPlugin extends Plugin {
                     else if (mimeType.startsWith("video/")) event.put("mediaKind", "video");
                 }
                 JSONObject headers = new JSONObject();
-                for (Map.Entry<String, String> entry : request.getRequestHeaders().entrySet()) {
-                    if (SAFE_REQUEST_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT))) {
-                        headers.put(entry.getKey(), entry.getValue());
+                for (Map.Entry<String, String> entry : requestHeaders.entrySet()) {
+                    String headerName = entry.getKey();
+                    if (headerName == null) continue;
+                    String lower = headerName.toLowerCase(Locale.ROOT);
+                    if ("range".equals(lower)) continue;
+                    if (SAFE_REQUEST_HEADERS.contains(lower)) {
+                        headers.put(headerName, entry.getValue());
                     }
                 }
                 if (headers.length() > 0) event.put("requestHeaders", headers);
@@ -488,10 +594,51 @@ public class MediaSnifferPlugin extends Plugin {
         }
     }
 
-    private static boolean looksLikeMediaUrl(String url) {
-        String lower = url.toLowerCase(Locale.ROOT);
-        return inferredMimeType(url) != null ||
-            lower.matches(".*\\.(m3u8|mpd|mp4|m4v|m4s|cmfv|cmfa|ts|webm|mov|flv|mkv|m4a|aac|mp3|ogg|opus)([?#].*)?$");
+    private static void noteOriginHeaders(String url, Map<String, String> requestHeaders) {
+        String origin = originOf(url);
+        if (origin == null || requestHeaders == null || requestHeaders.isEmpty()) return;
+        Map<String, String> captured = new HashMap<>();
+        for (Map.Entry<String, String> entry : requestHeaders.entrySet()) {
+            String headerName = entry.getKey();
+            String value = entry.getValue();
+            if (headerName == null || value == null || value.isEmpty()) continue;
+            String lower = headerName.toLowerCase(Locale.ROOT);
+            if (!ORIGIN_STORE_HEADERS.contains(lower)) continue;
+            captured.put(lower, value);
+        }
+        if (captured.isEmpty()) return;
+        SNIFF_ORIGIN_HEADERS.merge(origin, captured, (existing, incoming) -> {
+            Map<String, String> merged = new ConcurrentHashMap<>(existing);
+            merged.putAll(incoming);
+            return merged;
+        });
+    }
+
+    private static String originOf(String url) {
+        if (url == null || url.isEmpty()) return null;
+        try {
+            Uri uri = Uri.parse(url);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) return null;
+            String lowerScheme = scheme.toLowerCase(Locale.ROOT);
+            int port = uri.getPort();
+            if (port == -1 ||
+                ("https".equals(lowerScheme) && port == 443) ||
+                ("http".equals(lowerScheme) && port == 80)) {
+                return lowerScheme + "://" + host;
+            }
+            return lowerScheme + "://" + host + ":" + port;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isSkippableStaticAsset(String url) {
+        Uri uri = Uri.parse(url);
+        String path = uri.getPath();
+        if (path == null) return false;
+        return path.toLowerCase(Locale.ROOT).matches(".*\\.(js|css|html?|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf)$");
     }
 
     private static String inferredMimeType(String value) {
@@ -526,7 +673,8 @@ public class MediaSnifferPlugin extends Plugin {
         ScriptHandler scriptHandler,
         JSONArray networkEvents,
         String pageUrl,
-        AtomicBoolean finished
+        AtomicBoolean finished,
+        String sessionNonce
     ) {
         if (!finished.compareAndSet(false, true)) return;
         webView.evaluateJavascript(
@@ -536,11 +684,36 @@ public class MediaSnifferPlugin extends Plugin {
                 appendEvaluatedEvents(combined, value);
                 JSObject result = new JSObject();
                 result.put("pageUrl", pageUrl);
-                result.put("observations", combined);
+                result.put("observations", keepTrustedObservations(combined, sessionNonce));
                 cleanup(webView, root, scriptHandler);
                 call.resolve(result);
             }
         );
+    }
+
+    private static JSONArray keepTrustedObservations(JSONArray events, String sessionNonce) {
+        JSONArray trusted = new JSONArray();
+        for (int index = 0; index < events.length(); index += 1) {
+            JSONObject event = events.optJSONObject(index);
+            if (event == null) continue;
+            String eventNonce = event.optString("sessionNonce", "");
+            if (!eventNonce.isEmpty() && !eventNonce.equals(sessionNonce)) continue;
+            trusted.put(event);
+        }
+        return trusted;
+    }
+
+    private static long parseJsMillis(String value) {
+        if (value == null || "null".equals(value) || "undefined".equals(value)) return 0L;
+        try {
+            String trimmed = value.trim();
+            if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+                trimmed = trimmed.substring(1, trimmed.length() - 1);
+            }
+            return (long) Double.parseDouble(trimmed);
+        } catch (NumberFormatException ignored) {
+            return 0L;
+        }
     }
 
     private static JSONArray copyEvents(JSONArray source) {
