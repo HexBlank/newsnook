@@ -6,6 +6,8 @@ import {
   ChevronDown,
   Download,
   ExternalLink,
+  FileText,
+  FolderOpen,
   Loader2,
   Plus,
   Rss,
@@ -23,6 +25,7 @@ import {
   downloadOpmlFile,
   exportOpml,
   OPML_IMPORT_SOFT_LIMIT,
+  OPML_STARTER_TEMPLATE,
   parseOpml,
   type OpmlParseResult,
 } from '../../lib/opml'
@@ -74,6 +77,9 @@ export function CustomSourcesScreen({
 
   // OPML 导入状态
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showOpmlImportChooser, setShowOpmlImportChooser] = useState(false)
+  const [showOpmlTextEditor, setShowOpmlTextEditor] = useState(false)
+  const [opmlDraftText, setOpmlDraftText] = useState(OPML_STARTER_TEMPLATE)
   const [opmlResult, setOpmlResult] = useState<OpmlParseResult | null>(null)
   const [importCategoriesOption, setImportCategoriesOption] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -138,15 +144,16 @@ export function CustomSourcesScreen({
   // 监听键盘 Escape 键关闭活动弹窗
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (showAddModal) resetForm()
-        else if (opmlResult) setOpmlResult(null)
-        else if (showExportModal) setShowExportModal(false)
-      }
+      if (e.key !== 'Escape') return
+      if (showAddModal) resetForm()
+      else if (opmlResult) setOpmlResult(null)
+      else if (showOpmlTextEditor) setShowOpmlTextEditor(false)
+      else if (showOpmlImportChooser) setShowOpmlImportChooser(false)
+      else if (showExportModal) setShowExportModal(false)
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [showAddModal, opmlResult, showExportModal])
+  }, [showAddModal, opmlResult, showOpmlTextEditor, showOpmlImportChooser, showExportModal])
 
   const openAddModal = () => {
     resetForm()
@@ -275,28 +282,59 @@ export function CustomSourcesScreen({
     resetForm()
   }
 
+  // 解析 OPML 文本（文件与编辑器共用）
+  const parseOpmlText = async (text: string) => {
+    setOpmlError(null)
+    setImporting(true)
+    try {
+      const result = parseOpml(text)
+      if (result.sources.length === 0) {
+        throw new Error('OPML 中未找到任何有效的 RSS / Atom 订阅条目（需要带 xmlUrl 的 outline）')
+      }
+      setShowOpmlImportChooser(false)
+      setShowOpmlTextEditor(false)
+      setOpmlResult(result)
+    } catch (err) {
+      setOpmlError(err instanceof Error ? err.message : '解析 OPML 失败')
+    } finally {
+      setImporting(false)
+    }
+  }
+
   // OPML 文件导入选择触发
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    setOpmlError(null)
-    setImporting(true)
-
     try {
       const text = await file.text()
-      const result = parseOpml(text)
-      if (result.sources.length === 0) {
-        throw new Error('OPML 文件中未找到任何有效的 RSS / Atom 订阅条目')
-      }
-      setOpmlResult(result)
+      await parseOpmlText(text)
     } catch (err) {
-      setOpmlError(err instanceof Error ? err.message : '解析 OPML 文件失败')
+      setOpmlError(err instanceof Error ? err.message : '读取 OPML 文件失败')
     } finally {
-      setImporting(false)
       // 重置 input 以便再次选择同一文件
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  const openOpmlImportChooser = () => {
+    setOpmlError(null)
+    setShowOpmlImportChooser(true)
+  }
+
+  const openOpmlFilePicker = () => {
+    setShowOpmlImportChooser(false)
+    setOpmlError(null)
+    // 等 chooser 收起后再唤起系统文件框，避免部分 WebView 吞掉 click
+    window.setTimeout(() => fileInputRef.current?.click(), 0)
+  }
+
+  const openOpmlTextEditor = (fresh = false) => {
+    setShowOpmlImportChooser(false)
+    setOpmlError(null)
+    if (fresh || !opmlDraftText.trim()) {
+      setOpmlDraftText(OPML_STARTER_TEMPLATE)
+    }
+    setShowOpmlTextEditor(true)
   }
 
   // 确认导入 OPML
@@ -375,7 +413,7 @@ export function CustomSourcesScreen({
           <button
             type="button"
             disabled={importing}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={openOpmlImportChooser}
             className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-haze/90 bg-ink-raised/60 p-4 text-center transition-all hover:border-paper/40 hover:bg-paper/5 disabled:opacity-50"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-full border border-haze bg-paper/5 text-paper-muted">
@@ -390,7 +428,7 @@ export function CustomSourcesScreen({
                 {importing ? '解析中...' : '导入 OPML'}
               </span>
               <span className="mt-0.5 block font-mono text-[10px] text-paper-faint">
-                从 NetNewsWire/Reeder 导入
+                选文件或粘贴文本
               </span>
             </div>
           </button>
@@ -431,7 +469,7 @@ export function CustomSourcesScreen({
             </div>
             <p className="mt-3 text-[14px] font-medium text-paper">暂无自定义订阅源</p>
             <p className="mt-1 text-[12px] text-paper-faint">
-              上方可添加 RSS，或导入 OPML。
+              上方可添加 RSS，或导入 OPML（选文件 / 粘贴文本）。
             </p>
           </div>
         ) : (
@@ -695,6 +733,148 @@ export function CustomSourcesScreen({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* OPML 导入方式选择 */}
+      {showOpmlImportChooser && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setShowOpmlImportChooser(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl border border-haze bg-ink p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-haze pb-4">
+              <div>
+                <h2 className="font-display text-[18px] font-medium text-paper">导入 OPML</h2>
+                <p className="mt-0.5 font-mono text-[11px] text-paper-faint">
+                  选择文件，或在编辑器中粘贴 / 新建
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOpmlImportChooser(false)}
+                className="rounded-full border border-haze p-1.5 text-paper-faint hover:text-paper"
+                aria-label="关闭"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <button
+                type="button"
+                disabled={importing}
+                onClick={openOpmlFilePicker}
+                className="flex items-center gap-3 rounded-2xl border border-haze bg-ink-raised/60 p-4 text-left transition-all hover:border-cinnabar/50 hover:bg-cinnabar/5 disabled:opacity-50"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-haze bg-paper/5 text-paper-muted">
+                  <FolderOpen size={20} />
+                </div>
+                <div className="min-w-0">
+                  <span className="block text-[14px] font-medium text-paper">从文件选择</span>
+                  <span className="mt-0.5 block text-[12px] text-paper-faint">
+                    打开设备上的 .opml / .xml（如 NetNewsWire、Reeder 导出）
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={importing}
+                onClick={() => openOpmlTextEditor(false)}
+                className="flex items-center gap-3 rounded-2xl border border-haze bg-ink-raised/60 p-4 text-left transition-all hover:border-cinnabar/50 hover:bg-cinnabar/5 disabled:opacity-50"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-haze bg-paper/5 text-paper-muted">
+                  <FileText size={20} />
+                </div>
+                <div className="min-w-0">
+                  <span className="block text-[14px] font-medium text-paper">粘贴或编辑文本</span>
+                  <span className="mt-0.5 block text-[12px] text-paper-faint">
+                    在编辑器中新建骨架，或粘贴完整 OPML 再解析
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OPML 文本编辑器 */}
+      {showOpmlTextEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setShowOpmlTextEditor(false)}
+        >
+          <div
+            className="flex max-h-[min(88vh,720px)] w-full max-w-lg flex-col rounded-3xl border border-haze bg-ink p-5 shadow-2xl sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-haze pb-4">
+              <div>
+                <h2 className="font-display text-[18px] font-medium text-paper">编辑 OPML</h2>
+                <p className="mt-0.5 font-mono text-[11px] text-paper-faint">
+                  粘贴导出内容，或改下方骨架后解析
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOpmlTextEditor(false)}
+                className="rounded-full border border-haze p-1.5 text-paper-faint hover:text-paper"
+                aria-label="关闭"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <label className="mt-4 block min-h-0 flex-1">
+              <span className="sr-only">OPML 文本</span>
+              <textarea
+                value={opmlDraftText}
+                onChange={(e) => setOpmlDraftText(e.target.value)}
+                spellCheck={false}
+                className="h-[min(48vh,420px)] w-full resize-y rounded-2xl border border-haze bg-ink-raised/50 p-3 font-mono text-[12px] leading-relaxed text-paper placeholder:text-paper-faint focus:border-cinnabar/50 focus:outline-none"
+                placeholder="在此粘贴或编写 OPML…"
+              />
+            </label>
+
+            {opmlError && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 text-[12px] text-rose-300">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <span>{opmlError}</span>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-haze pt-4">
+              <button
+                type="button"
+                onClick={() => setOpmlDraftText(OPML_STARTER_TEMPLATE)}
+                className="rounded-full border border-haze px-3.5 py-2 font-mono text-[11px] text-paper-faint hover:text-paper"
+              >
+                重置为骨架
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOpmlTextEditor(false)}
+                  className="rounded-full border border-haze px-4 py-2 font-mono text-[12px] text-paper-faint hover:text-paper"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={importing || !opmlDraftText.trim()}
+                  onClick={() => void parseOpmlText(opmlDraftText)}
+                  className="flex items-center gap-1.5 rounded-full border border-cinnabar bg-cinnabar/25 px-5 py-2 font-mono text-[12px] font-medium text-cinnabar-soft hover:bg-cinnabar/35 disabled:opacity-40"
+                >
+                  {importing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  解析并预览
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

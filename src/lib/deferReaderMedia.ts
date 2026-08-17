@@ -74,6 +74,21 @@ function deferImage(
   wrapHost(img, phases.get(src) ?? 'idle')
 }
 
+function deferAudio(audio: Element, unlocked: ReadonlySet<string>): void {
+  const src = audio.getAttribute('src') || audio.querySelector('source')?.getAttribute('src') || ''
+  if (src && unlocked.has(src)) return
+  if (src) {
+    audio.setAttribute(DEFERRED_SRC_ATTR, src)
+    audio.removeAttribute('src')
+  }
+  for (const source of Array.from(audio.querySelectorAll('source'))) {
+    const nested = source.getAttribute('src')
+    if (!nested) continue
+    if (!audio.getAttribute(DEFERRED_SRC_ATTR)) audio.setAttribute(DEFERRED_SRC_ATTR, nested)
+    source.removeAttribute('src')
+  }
+}
+
 function deferVideo(video: Element, unlocked: ReadonlySet<string>): void {
   const src = video.getAttribute('src') || video.querySelector('source')?.getAttribute('src') || ''
   const poster = video.getAttribute('poster') || ''
@@ -107,5 +122,6 @@ export function deferMediaInHtml(
     deferImage(img, unlockedUrls, phases, playableSrcByUrl)
   }
   for (const video of Array.from(root.querySelectorAll('video'))) deferVideo(video, unlockedUrls)
+  for (const audio of Array.from(root.querySelectorAll('audio'))) deferAudio(audio, unlockedUrls)
   return root.innerHTML
 }

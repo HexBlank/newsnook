@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser'
 
+import { collectAudioSrc, isAudioMediaUrl } from './articleAudio'
 import { cleanSummaryText } from './cleanSummary'
 import type { NewsSource, SourceKind } from '../sources/registry'
 import type { Article } from './types'
@@ -316,15 +317,68 @@ function linkOfAtomEntry(node: Unknown): string {
   return text(node.link)
 }
 
+function httpUrl(value: unknown): string | undefined {
+  return typeof value === 'string' && /^https?:\/\//i.test(value) ? value : undefined
+}
+
+function enclosureRecords(node: Unknown): Unknown[] {
+  return toArray(node.enclosure).map(asRecord).filter(Boolean) as Unknown[]
+}
+
+function audioUrlFromNode(node: Unknown, html: string): string | undefined {
+  for (const rec of enclosureRecords(node)) {
+    const url = httpUrl(rec['@_url'])
+    const type = typeof rec['@_type'] === 'string' ? rec['@_type'] : ''
+    if (url && isAudioMediaUrl(url, type)) return url
+  }
+  for (const raw of toArray(node.link)) {
+    const rec = asRecord(raw)
+    if (!rec) continue
+    const rel = String(rec['@_rel'] || '')
+    const href = httpUrl(rec['@_href'])
+    const type = typeof rec['@_type'] === 'string' ? rec['@_type'] : ''
+    if (href && rel === 'enclosure' && isAudioMediaUrl(href, type)) return href
+  }
+  for (const raw of toArray(node.attachments)) {
+    const rec = asRecord(raw)
+    if (!rec) continue
+    const url = httpUrl(text(rec.url))
+    const type = text(rec.mime_type) || text(rec.mimeType)
+    if (url && isAudioMediaUrl(url, type)) return url
+  }
+  return collectAudioSrc(html)
+}
+
 function imageOf(node: Unknown, html: string): string | undefined {
-  const candidates = [
-    attr(node.enclosure, '@_url'),
+  const candidates: Array<string | undefined> = []
+  for (const rec of enclosureRecords(node)) {
+    const url = httpUrl(rec['@_url'])
+    const type = typeof rec['@_type'] === 'string' ? rec['@_type'] : ''
+    if (url && !isAudioMediaUrl(url, type) && !/^video\//i.test(type)) {
+      candidates.push(url)
+    }
+  }
+  candidates.push(
     attr(node.thumbnail, '@_url'),
     attr(node.content, '@_url'),
     attr(node.image, '@_url'),
+    attr(node.image, '@_href'),
     text(asRecord(node.image)?.url),
-  ]
-  const direct = candidates.find((value) => typeof value === 'string' && /^https?:\/\//.test(value))
+  )
+  for (const raw of toArray(node.attachments)) {
+    const rec = asRecord(raw)
+    if (!rec) continue
+    const url = httpUrl(text(rec.url))
+    const type = text(rec.mime_type) || text(rec.mimeType)
+    if (
+      url &&
+      !isAudioMediaUrl(url, type) &&
+      (/^image\//i.test(type) || /\.(?:png|jpe?g|gif|webp)(?:$|[?#])/i.test(url))
+    ) {
+      candidates.push(url)
+    }
+  }
+  const direct = candidates.find((value) => httpUrl(value))
   return direct ?? firstImageIn(html)
 }
 
@@ -339,6 +393,7 @@ function buildArticle(
     image?: string
     contentType?: Article['contentType']
     videoUrl?: string
+    audioUrl?: string
     neteaseDocId?: string
   },
   fetchedAt: number,
@@ -365,6 +420,7 @@ function buildArticle(
     originUrl: raw.link,
     contentType: raw.contentType ?? 'article',
     videoUrl: raw.videoUrl,
+    audioUrl: raw.audioUrl,
     neteaseDocId: raw.neteaseDocId,
   }
 }
@@ -385,10 +441,7 @@ function parseJsonFeed(source: NewsSource, payload: string, fetchedAt: number): 
       text(node.content_text) ||
       stripTags(html)
     const link = text(node.url) || text(node.external_url) || text(node.id)
-    const image =
-      text(node.image) ||
-      text(asRecord(node.attachments)?.url) ||
-      imageOf(node, html)
+    const image = text(node.image) || imageOf(node, html)
 
     const article = buildArticle(
       source,
@@ -399,6 +452,7 @@ function parseJsonFeed(source: NewsSource, payload: string, fetchedAt: number): 
         summaryText,
         dateRaw: text(node.date_published) || text(node.date_modified),
         image,
+        audioUrl: audioUrlFromNode(node, html),
       },
       fetchedAt,
     )
@@ -470,6 +524,7 @@ function parseXmlFeed(source: NewsSource, payload: string, fetchedAt: number): A
         summaryText: descriptionText,
         dateRaw,
         image: imageOf(node, html),
+        audioUrl: audioUrlFromNode(node, html),
         contentType,
       },
       fetchedAt,

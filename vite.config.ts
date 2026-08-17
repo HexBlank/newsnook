@@ -415,11 +415,12 @@ function upstreamProxy(): Plugin {
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
           }
           if (!isWechatImage) {
-            headers.Referer = isMedia
-              ? 'https://3g.163.com/'
-              : targetUrl.hostname.endsWith('.translate.goog')
-                ? 'https://translate.google.com/'
-                : `${targetUrl.origin}/`
+            headers.Referer =
+              isMedia && isNetease
+                ? 'https://3g.163.com/'
+                : targetUrl.hostname.endsWith('.translate.goog')
+                  ? 'https://translate.google.com/'
+                  : `${targetUrl.origin}/`
           }
 
           const upstream = await fetchUpstream(target, { headers })

@@ -5,6 +5,7 @@ import { hydrateNativeTunnelImages } from '../features/proxy/hydrateImages'
 import { currentProxyRuntime } from '../features/proxy/runtime'
 import { resolveProxyTransport } from '../features/proxy/transport'
 import { findSource, userAgentFor, type NewsSource } from '../sources/registry'
+import { collectAudioSrc, ensureArticleAudioHtml } from './articleAudio'
 import {
   fetchAbsoluteFormPost,
   fetchAbsoluteText,
@@ -734,6 +735,21 @@ async function resolveJiqizhixinBody(
   }
 }
 
+function withArticleAudio(
+  resolved: ResolvedBody,
+  article: Article,
+  pageHtml?: string,
+): ResolvedBody {
+  if (resolved.bodySource === 'video' || resolved.bodySource === 'blocked') return resolved
+  const audioUrl =
+    article.audioUrl || collectAudioSrc(resolved.contentHtml) || collectAudioSrc(pageHtml)
+  if (!audioUrl) return resolved
+  return {
+    ...resolved,
+    contentHtml: sanitizeArticleHtml(ensureArticleAudioHtml(resolved.contentHtml, audioUrl)),
+  }
+}
+
 /**
  * 保证详情页拿到可渲染全文。
  * 优先级：视频稿 → Feed 充足全文 → 网易正文接口 → 原文 HTML + Readability。
@@ -752,13 +768,16 @@ export async function resolveArticleBody(
     (isInlineFlashBody(article.contentHtml, article.sourceId) ||
       (isSubstantialHtml(article.contentHtml) && !hasBrokenTextEncoding(article.contentHtml!)))
   ) {
-    return {
-      contentHtml: await absolutizeHtml(
-        article.contentHtml!,
-        article.originUrl || 'https://local.invalid/',
-      ),
-      bodySource: 'feed',
-    }
+    return withArticleAudio(
+      {
+        contentHtml: await absolutizeHtml(
+          article.contentHtml!,
+          article.originUrl || 'https://local.invalid/',
+        ),
+        bodySource: 'feed',
+      },
+      article,
+    )
   }
 
   // 新 RSS 视频稿带 contentType；旧列表缓存没有该字段，但正文同样很短。
@@ -853,7 +872,7 @@ export async function resolveArticleBody(
     if (isScrapeNoticeBody(extracted.contentHtml)) {
       throw new Error('原站仅返回反爬声明')
     }
-    return { ...extracted, resolvedOriginUrl }
+    return withArticleAudio({ ...extracted, resolvedOriginUrl }, article, pageHtml)
   }
 
   for (const pageUrl of candidates) {

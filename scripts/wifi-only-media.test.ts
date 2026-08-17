@@ -166,6 +166,18 @@ console.log('wifi-only media policy tests passed')
   assert.equal(host.querySelector('.reader-deferred-label')?.textContent, DEFERRED_LABEL_FAILED)
 }
 
+{
+  const html = deferMediaInHtml(
+    '<audio controls src="https://cdn.example/ep.mp3"></audio>',
+    new Set(),
+  )
+  const { document } = parseHTML(`<div id="r">${html}</div>`)
+  const audio = document.querySelector('audio')
+  assert.ok(audio)
+  assert.equal(audio.getAttribute('src'), null)
+  assert.equal(audio.getAttribute(DEFERRED_SRC_ATTR), 'https://cdn.example/ep.mp3')
+}
+
 console.log('wifi-only media defer tests passed')
 
 {

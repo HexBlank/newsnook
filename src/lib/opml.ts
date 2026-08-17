@@ -22,6 +22,20 @@ import {
 /** 超过此数量导入时需二次确认（仍允许导入，避免手机全量并发压力被忽视） */
 export const OPML_IMPORT_SOFT_LIMIT = 100
 
+/** 文本编辑器「新建」时的空白 OPML 骨架，便于手写或粘贴后改 */
+export const OPML_STARTER_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>我的订阅</title>
+  </head>
+  <body>
+    <outline text="分类名" title="分类名">
+      <outline type="rss" text="源名称" title="源名称" xmlUrl="https://example.com/feed.xml" htmlUrl="https://example.com/" />
+    </outline>
+  </body>
+</opml>
+`
+
 export interface OpmlOutlineItem {
   title: string
   xmlUrl: string

@@ -1,7 +1,7 @@
 {
   "name": "web",
   "private": true,
-  "version": "1.5.7",
+  "version": "1.5.8",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -29,6 +29,7 @@
     "test:refresh-progress": "rolldown scripts/refresh-progress.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/refresh-progress.test.mjs && node node_modules/.cache/newsnook/refresh-progress.test.mjs",
     "test:reader-images": "rolldown scripts/reader-image-role.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/reader-image-role.test.mjs && node node_modules/.cache/newsnook/reader-image-role.test.mjs",
     "test:inline-video": "rolldown scripts/inline-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/inline-video.test.mjs && node node_modules/.cache/newsnook/inline-video.test.mjs",
+    "test:podcast": "npx tsx scripts/podcast-audio.test.ts",
     "test:huxiu-video": "rolldown scripts/huxiu-video.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/huxiu-video.test.mjs && node node_modules/.cache/newsnook/huxiu-video.test.mjs",
     "test:netease-ugc-video": "npx tsx scripts/netease-ugc-video.test.ts",
     "test:video-gestures": "rolldown scripts/video-gestures.test.ts --platform=node --format=esm --file=node_modules/.cache/newsnook/video-gestures.test.mjs && node node_modules/.cache/newsnook/video-gestures.test.mjs",

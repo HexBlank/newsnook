@@ -1,6 +1,8 @@
 import createDOMPurify from 'dompurify'
 import { parseHTML } from 'linkedom'
 
+import { isAudioMediaUrl } from './articleAudio'
+
 type PurifyLike = { sanitize: (dirty: string, config?: object) => string }
 
 /** 浏览器用全局 window；Node 测试用 linkedom，避免 DOMPurify.sanitize 为空 */
@@ -83,6 +85,24 @@ function keepAllowedEmbeds(html: string): string {
   })
 }
 
+function audioSrcIn(block: string): string | undefined {
+  return (
+    block.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1] ||
+    block.match(/<source\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1]
+  )
+}
+
+/** 只保留 https 音频；javascript: 等伪协议整段丢掉 */
+function keepAllowedAudio(html: string): string {
+  return html
+    .replace(/<audio\b[^>]*\/>/gi, (block) =>
+      isAudioMediaUrl(audioSrcIn(block)) ? block : '',
+    )
+    .replace(/<audio\b[^>]*>[\s\S]*?<\/audio>/gi, (block) =>
+      isAudioMediaUrl(audioSrcIn(block)) ? block : '',
+    )
+}
+
 const CJK_REGEX = /[\p{Script=Han}\u3040-\u30ff\uac00-\ud7af]/u
 const LEADING_SPACE_REGEX = /^[\s\u3000\u00a0\u2000-\u200b\ufeff]+/
 
@@ -152,7 +172,7 @@ export function normalizeParagraphTypography(html: string): string {
 export function sanitizeArticleHtml(html: string): string {
   const withoutNoise = stripEmbedNoise(html)
   const sanitized = DOMPurify.sanitize(withoutNoise, {
-    ADD_TAGS: ['video', 'source', 'iframe'],
+    ADD_TAGS: ['video', 'source', 'iframe', 'audio'],
     ADD_ATTR: [
       'controls',
       'playsinline',
@@ -184,7 +204,7 @@ export function sanitizeArticleHtml(html: string): string {
     // 允许 https? 以及本地图片代理路径
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|\/api\/image\?)/i,
   })
-  const stripped = stripEmptyArticleBlocks(keepAllowedEmbeds(sanitized))
+  const stripped = stripEmptyArticleBlocks(keepAllowedAudio(keepAllowedEmbeds(sanitized)))
   return normalizeParagraphTypography(stripped)
 }
 

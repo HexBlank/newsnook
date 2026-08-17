@@ -2,6 +2,7 @@ import { memo, useState } from 'react'
 import { BookmarkCheck } from 'lucide-react'
 
 import { InkImage } from './InkImage'
+import { articleCoverUrl } from '../lib/articleAudio'
 import { cleanSummaryText } from '../lib/cleanSummary'
 import type { Article } from '../lib/types'
 import { articleRelativeTime } from '../lib/time'
@@ -38,6 +39,7 @@ export const ArticleRow = memo(function ArticleRow({
   const isTranslated = hasTranslation && !showOriginal
   const activeTitle = isTranslated ? (translated?.title || article.title) : article.title
   const displaySummary = cleanSummaryText(article.summary, activeTitle)
+  const cover = articleCoverUrl(article.image)
 
   const renderTranslateBadge = () => {
     if (!hasTranslation) return null
@@ -148,10 +150,10 @@ export const ArticleRow = memo(function ArticleRow({
           </span>
 
           {/* 缩略图容器：微圆角与极细边框，强制满幅裁切消除 Letterboxing */}
-          {article.image && (
+          {cover && (
             <span className="relative shrink-0 overflow-hidden rounded-lg border border-haze/70 bg-ink-deep/30 shadow-2xs mt-0.5 h-16 w-16 sm:h-17 sm:w-17">
               <InkImage
-                src={article.image}
+                src={cover}
                 collapseOnError
                 className={`h-full w-full object-cover transition-all duration-300 ${
                   read
@@ -179,10 +181,10 @@ export const ArticleRow = memo(function ArticleRow({
         >
           <div className="w-full">
             {/* 大图展示 (如果有图) */}
-            {article.image && (
+            {cover && (
               <div className="mb-3.5 overflow-hidden rounded-lg bg-ink border border-haze/60">
                 <InkImage
-                  src={article.image}
+                  src={cover}
                   collapseOnError
                   className={`h-38 w-full object-cover transition-all duration-500 group-hover:scale-105 ${
                     read
@@ -304,6 +306,7 @@ export const LeadStory = memo(function LeadStory({
   const isTranslated = hasTranslation && !showOriginal
   const activeTitle = isTranslated ? (translated?.title || article.title) : article.title
   const displaySummary = cleanSummaryText(article.summary, activeTitle)
+  const cover = articleCoverUrl(article.image)
 
   const renderTranslateBadge = () => {
     if (!hasTranslation) return null
@@ -338,8 +341,9 @@ export const LeadStory = memo(function LeadStory({
           className={`lead-hero group text-left ${variant === 'auto' ? 'lg:hidden' : ''}`}
         >
           <InkImage
-            src={article.image}
+            src={cover || article.image}
             eager
+            collapseOnError
             className={`h-[13.75rem] w-full sm:h-[15rem] ${
               read ? 'opacity-[0.78] grayscale-[0.12] saturate-[0.9]' : 'opacity-100'
             }`}
@@ -406,8 +410,9 @@ export const LeadStory = memo(function LeadStory({
             {/* 左侧大图 (7 栅格) */}
             <div className="col-span-7 h-[300px] xl:h-[350px] 2xl:h-[400px] w-full overflow-hidden rounded-xl bg-ink border border-haze/70 relative">
               <InkImage
-                src={article.image}
+                src={cover || article.image}
                 eager
+                collapseOnError
                 className={`h-full w-full object-cover transition-all duration-700 ease-ink group-hover:scale-105 ${
                   read ? 'opacity-80 grayscale-[0.15] saturate-[0.88]' : 'opacity-100'
                 }`}

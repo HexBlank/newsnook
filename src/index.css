@@ -879,7 +879,6 @@ button.reader-youtube-action {
   font-style: normal;
 }
 
-.reader-prose audio,
 .reader-prose canvas,
 .reader-prose svg:not(.lucide) {
   display: block;
@@ -887,6 +886,97 @@ button.reader-youtube-action {
   max-width: 100%;
   height: auto;
   margin: 0.8em 0 1.2em;
+}
+
+.reader-inline-audio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.8em 0 1.2em;
+}
+
+.reader-audio-deferred {
+  min-height: 56px;
+  aspect-ratio: auto;
+}
+
+.reader-audio-player {
+  display: grid;
+  gap: 0.55em;
+  width: 100%;
+  margin: 0.8em 0 1.2em;
+  padding: 0.9em 1em 1em;
+  border: 1px solid color-mix(in srgb, var(--color-paper) 14%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-paper) 7%, transparent);
+  text-indent: 0;
+}
+
+.reader-audio-player-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.55em;
+}
+
+.reader-audio-player-kicker {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-paper-muted);
+}
+
+.reader-audio-player-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: calc(var(--reader-font-size) * 0.82);
+  line-height: 1.35;
+  color: var(--color-paper);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-prose audio,
+.reader-audio-player-media {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 40px;
+  margin: 0;
+}
+
+.reader-audio-rates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+}
+
+.reader-audio-rates button {
+  min-height: 28px;
+  padding: 0 0.7em;
+  border: 1px solid color-mix(in srgb, var(--color-paper) 16%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-paper-muted);
+  font-size: 12px;
+}
+
+.reader-audio-rates button.is-active {
+  border-color: color-mix(in oklab, var(--color-cinnabar) 45%, transparent);
+  background: color-mix(in oklab, var(--color-cinnabar) 16%, transparent);
+  color: var(--color-paper);
+}
+
+.reader-audio-player-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-cinnabar-soft, var(--color-paper-muted));
 }
 
 /* Wide tables keep their real column geometry and scroll only inside this rail. */

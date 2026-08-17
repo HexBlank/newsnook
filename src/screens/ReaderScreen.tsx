@@ -5,8 +5,10 @@ import { ArrowLeft, BookmarkCheck, BookmarkPlus, Globe, Languages, LoaderCircle,
 
 import { ImageLightbox } from '../components/ImageLightbox'
 import { EinkReaderMenu } from '../components/EinkReaderMenu'
+import { InkAudioPlayer } from '../components/InkAudioPlayer'
 import { InkImage } from '../components/InkImage'
 import { InkVideoPlayer } from '../components/InkVideoPlayer'
+import { InlineArticleAudio } from '../components/InlineArticleAudio'
 import { InlineArticleVideos } from '../components/InlineArticleVideos'
 import { InlineYoutubeEmbeds } from '../components/InlineYoutubeEmbeds'
 import { loadCachedBody, saveCachedBody } from '../lib/bodyCache'
@@ -22,6 +24,7 @@ import { stageYoutubeEmbedsInHtml } from '../lib/youtubeEmbeds'
 import { shouldAutoLoadMedia } from '../lib/mediaLoadPolicy'
 import { revealReader } from '../lib/motion'
 import { resolveArticleBody, type BodySource } from '../lib/resolveBody'
+import { articleCoverUrl } from '../lib/articleAudio'
 import { articleRelativeTime } from '../lib/time'
 import type { Article } from '../lib/types'
 import type { TypographyPrefs } from '../sources/preferences'
@@ -378,6 +381,7 @@ export function ReaderScreen({
   }, [article.id, loadState, reduced])
 
   const displayedHtml = showTranslation && translated ? translated.html : html
+  const coverUrl = articleCoverUrl(article.image)
   const autoLoadMedia = shouldAutoLoadMedia({
     wifiOnlyAutoLoadMedia: Boolean(wifiOnlyAutoLoadMedia),
     isNative: Capacitor.isNativePlatform(),
@@ -962,10 +966,10 @@ export function ReaderScreen({
               )}
             </div>
 
-            {article.image && article.contentType !== 'video' && (
+            {coverUrl && article.contentType !== 'video' && (
               <div className="mt-5 page-x lg:px-8">
                 <InkImage
-                  src={article.image}
+                  src={coverUrl}
                   deferLoad={!autoLoadMedia}
                   eager
                   collapseOnError
@@ -988,6 +992,23 @@ export function ReaderScreen({
                     if (article.videoUrl) {
                       setUnlockedMediaUrls((prev) =>
                         prev.includes(article.videoUrl!) ? prev : [...prev, article.videoUrl!],
+                      )
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            {article.audioUrl && loadState === 'ready' && !/<audio\b/i.test(displayedHtml) && (
+              <div data-reader-block className="page-x mt-5">
+                <InkAudioPlayer
+                  src={article.audioUrl}
+                  title={article.title}
+                  deferLoad={!autoLoadMedia}
+                  onUnlocked={() => {
+                    if (article.audioUrl) {
+                      setUnlockedMediaUrls((prev) =>
+                        prev.includes(article.audioUrl!) ? prev : [...prev, article.audioUrl!],
                       )
                     }
                   }}
@@ -1042,6 +1063,14 @@ export function ReaderScreen({
                     }`}
                   />
                   <InlineArticleVideos
+                    rootRef={proseRef}
+                    html={proseHtml}
+                    enabled={loadState === 'ready' && translationState !== 'loading'}
+                    fallbackTitle={displayedTitle}
+                    deferLoad={!autoLoadMedia}
+                    onUnlocked={onUnlockedMedia}
+                  />
+                  <InlineArticleAudio
                     rootRef={proseRef}
                     html={proseHtml}
                     enabled={loadState === 'ready' && translationState !== 'loading'}

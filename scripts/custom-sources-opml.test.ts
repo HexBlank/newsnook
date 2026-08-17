@@ -11,6 +11,7 @@ import {
   discoverFeedsFromHtml,
   exportOpml,
   OPML_IMPORT_SOFT_LIMIT,
+  OPML_STARTER_TEMPLATE,
   parseOpml,
 } from '../src/lib/opml'
 import {
@@ -134,6 +135,17 @@ assert.ok(coolshellId && opmlParsed.categories[0].sourceIds.includes(coolshellId
 assert.ok(codingnowId && opmlParsed.categories[0].sourceIds.includes(codingnowId))
 
 assert.equal(OPML_IMPORT_SOFT_LIMIT, 100)
+
+{
+  const starter = parseOpml(OPML_STARTER_TEMPLATE)
+  assert.equal(starter.title, '我的订阅')
+  assert.equal(starter.sources.length, 1)
+  assert.equal(starter.sources[0].url, 'https://example.com/feed.xml')
+  assert.equal(starter.categories.length, 1)
+  assert.equal(starter.categories[0].label, '分类名')
+}
+
+console.log('✓ OPML starter template parses for text-editor import')
 
 // 7. Batch Import Sources & Categories
 const batchPrefs = batchImportSourcesAndCategories(
