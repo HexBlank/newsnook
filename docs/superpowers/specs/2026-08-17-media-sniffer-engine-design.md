@@ -1,7 +1,7 @@
 # 媒体嗅探引擎（Media Resource Engine）
 
 > 日期：2026-08-17  
-> 状态：已定稿，待实现  
+> 状态：已定稿，已实现  
 > 范围：把文章页媒体发现从「候选 URL 探测器」做成 `docs/xiutan.md` 中的 Media Graph；Android 观察层 + TypeScript 分类/建图/会话  
 > 不改：`InkVideoPlayer` 手势与内核、Media3、站内浏览 WebView、海阔视界式资源列表 UI、账号/后端、DRM 绕过
 

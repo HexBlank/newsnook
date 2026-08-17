@@ -126,6 +126,9 @@ const pageUrl = 'https://news.example/articles/42'
 }
 
 {
+  // Fixture 06 (HLS 三域名头隔离) and 09/10 (Cookie/Bearer same vs cross origin):
+  // covered by playbackHeadersForTarget — Cookie/Authorization stay on exact origin;
+  // captured Range is never copied into playback headers.
   const pageUrl = 'https://news.example/articles/42'
   const videoOrigin = 'https://v1.cdn.example'
   const captured = {

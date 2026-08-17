@@ -1123,42 +1123,21 @@ PLAY
 
 ```text
 resolveArticleBody
-  │
-  ├─ 静态发现：HTML / JSON payload
-  │    └─ video、audio、source、meta、任意嵌套 URL 与 MIME 信号
-  │
-  └─ Android 运行时发现（静态结果没有可播放资源时）
-       └─ 短生命周期 WebView 打开原页
-            ├─ shouldInterceptRequest 网络请求
-            ├─ video/audio/source DOM 与 currentSrc
-            ├─ MutationObserver
-            ├─ fetch / XMLHttpRequest
-            ├─ PerformanceObserver
-            ├─ MediaSource.addSourceBuffer MIME
-            └─ requestMediaKeySystemAccess DRM KeySystem
-                 │
-                 ▼
-          MediaObservation[]
-                 │
-                 ▼
-       分类、评分、去重、分片抑制
-                 │
-                 ▼
-       HLS / DASH Manifest 轻量解析
-                 │
-                 ▼
-          MediaDescriptor
-                 │
-                 ▼
-       正文 video 描述节点
-                 │
-                 ▼
-       InlineArticleVideos → InkVideoPlayer
+  ├─ 静态 HTML/JSON（始终）
+  └─ Android SniffSession（始终，quiet window）
+       Network + SW + DOM/MSE + fetch/XHR JSON + __playinfo__
+            → Classifier / Probe / ApiParser
+            → MediaAsset[]
+            → selectPlayableAsset → MediaDescriptor 适配
+            → InkVideoPlayer
+            → OriginHeaderStore exact origin
 ```
 
-运行时 WebView 仅用于当前文章或其播放器嵌入页的一次短时探测，不作为常驻浏览器，也不把媒体字节或登录凭据写入正文缓存。静态 HTML / JSON 已经给出可信媒体时，不再额外启动运行时探测；正文含 iframe 且没有静态可播放资源时，最多对 3 个嵌入页逐一探测，得到完整候选后立即停止。
+运行时 WebView（SniffSession）仅用于当前文章或其播放器嵌入页的一次短时探测，不作为常驻浏览器，也不把媒体字节或登录凭据写入正文缓存。静态 HTML / JSON 与 Android 运行时嗅探始终都跑：静态已经给出可信媒体时仍会启动 SniffSession，在 quiet window（高价值网络/MSE 信号静止约 800ms，且已过最短时长）结束后收集观察，而不是「得到完整候选后立即停止」。正文含 iframe 时最多对 3 个嵌入页与文章页一并探测，全部跑完再交给 Graph 选最优资产。Web 平台无 SniffSession，仅静态 HTML/JSON 观察。
 
 ## 20.2 候选选择与媒体描述
+
+内部先建成 `MediaAsset[]`（清单 + 多轨），再由 `selectPlayableAsset` 选出一个最优非 DRM 资产，薄适配为现有 `MediaDescriptor`。阅读器仍只交给自定义播放器一个结果；播放表面仍是 `InkVideoPlayer`，不上 Media3。
 
 当前支持规范化为以下三类可播放描述：
 
@@ -1166,29 +1145,39 @@ resolveArticleBody
 |---|---|---|
 | `progressive` | `video/*`、`audio/*` 或常见直链扩展名；视频描述会排除纯音频候选 | HTMLMediaElement；Android 必要时走流式请求桥 |
 | `hls` | HLS MIME 或 `.m3u8` | 原生 HLS 能力或 hls.js |
-| `dash` | `application/dash+xml` 或 `.mpd` | dash.js；Android 用会话化请求桥承接清单与分片 |
+| `dash` | `application/dash+xml`、`.mpd`，或分离音视频轨合成的最小 MPD | dash.js；Android 用会话化请求桥承接清单与分片 |
 
-选择规则不是“第一个看起来像视频的 URL”：
+选择规则不是“第一个看起来像视频的 URL”，也不是“第一个完整候选就停”：
 
-- HLS / DASH Manifest 高于单文件和媒体分片；DOM `currentSrc`、MSE、fetch/XHR、网络与静态信号按可信度累计评分。
-- 不要求 URL 带文件扩展名：`mime` / `content-type` / `format` 等查询参数及结构化播放器 payload 中的 MIME、codec、音视频属性都会参与分类。
+- HLS / DASH Manifest 高于单文件；广告 MP4 与后期 HLS 并存时选出 HLS。DOM `currentSrc`、MSE、fetch/XHR、网络、Service Worker 与静态信号都进入同一观察池。
+- 不要求 URL 带文件扩展名：`mime` / `content-type` / `format` 等查询参数、Probe 得到的 Content-Type、以及结构化播放器 payload 中的 MIME、codec、音视频属性都会参与 Classifier。无扩展名的未知 URL 可由 Android `MediaProbe`（HEAD，必要时小 Range GET）补 MIME。
+- `.m4s` 按角色分类：video MIME（或无 MIME 的 `.m4s`）为 `video-track`，audio MIME 为 `audio-track`，不是一律当垃圾分片丢弃。成对的音视频轨可合成最小 MPD，以 `dash` 交给现有 dash.js。
+- URL 查询参数中的 `range` / `bytes` 经 `logicalMediaUrl` 剥离后聚合为同一条轨；带 byte-range 的响应不得作为 `MediaDescriptor.url` 交给播放器。
 - 同一资源按指纹合并多个观察来源；只有内部去重指纹会忽略常见临时授权参数，`MediaDescriptor.url` 始终保留原始签名 URL。
-- 一旦存在完整资源，`.ts`、`.m4s`、初始化段等分片不再作为独立视频候选；URL 查询参数中明确携带 `range=起止字节` 的响应同样只算分片，避免把短片段交给播放器后很快中断。
 - 结构化播放器数据能够明确区分 muxed 音视频资源和 video-only 自适应轨；自定义播放器优先完整资源，不能把单独视频轨伪装成可完整播放的视频。
+- fetch/XHR 的小型 JSON/text 与页面 `__playinfo__` 由 ApiParser 抽出 playurl / DASH 轨。
 - 最多读取两个高分 Manifest 的前 512 KiB，用于补充 HLS 变体、音轨、字幕或 DASH Representation 与 DRM 状态；解析失败不会丢弃已经发现的可播放 URL。
-- `blob:` 只作为 MSE 运行时信号，不作为可移交的 CDN URL；当前实现不会重组任意站点私有的 SourceBuffer 字节流。
+- `blob:` 只作为 MSE 运行时信号，不作为可移交的 CDN URL；Graph 合成的 MPD 可以使用阅读器 WebView 里创建的 `blob:`。当前实现不会重组任意站点私有的 SourceBuffer 字节流。
 
-稳定边界是 `src/features/mediaSniffer/types.ts` 中的 `MediaDescriptor`。正文解析只消费描述，不再依赖虎嗅、网易等站点的固定画质字段；站点适配负责取得可用页面或 payload，媒体识别交给通用模块。
+稳定边界是 `src/features/mediaSniffer/types.ts`：阅读器消费 `MediaDescriptor`；图与轨模型是 `MediaAsset` / `MediaAssetTrack`（`role`）。正文解析只消费描述，不再依赖虎嗅、网易等站点的固定画质字段；站点适配负责取得可用页面或 payload，媒体识别交给通用模块。
 
 ## 20.3 会话、防盗链与代理
 
-媒体 URL 不能脱离发现它的页面上下文。交给播放器的描述会携带：
+媒体 URL 不能脱离发现它的页面上下文。Android `OriginHeaderStore` 按 **exact origin**（scheme+host+port，默认端口省略）键入嗅探时捕获的请求头；播放时按目标 URL 的 origin 取头。
+
+交给播放器的描述会携带：
 
 - 原始媒体 URL；
 - `pageUrl` / Referer 来源页；
-- 探测时可安全复用的请求头；
-- 当前 WebView Cookie；
+- 探测时可安全复用的请求头（`data-media-headers` 只序列化非凭证头）；
+- 当前 WebView Cookie（仅 exact origin）；
 - 用户已配置的 HTTP / SOCKS5 代理路由。
+
+规则：
+
+- Cookie / Authorization **不跨 origin**：同 origin 才带页面凭证；跨 origin 的 CDN 只用该 origin 自己捕获的头，Referer 回落到页面 origin。
+- 从不复制网页捕获的 `Range`，以免播放被钉死在旧字节窗口。
+- `InkVideoPlayer` 手势与内核未改。
 
 Android 播放前通过 `MediaSniffer.preparePlayback` 登记一个短生命周期会话，`MediaPlaybackWebViewClient` 仅在需要时流式补齐 Referer、Cookie、请求头或代理，不缓存、拼接或改写媒体字节。公开 progressive 视频优先留在 WebView 原生网络栈中，以保持 Range 请求和持续播放；显式请求头、用户隧道、DASH 或直连失败后的 progressive 重试才启用桥接。
 
@@ -1232,7 +1221,7 @@ iframe URL
       └─ 否 → 原站 iframe / 原文兜底
 ```
 
-隔离 WebView 会在静音状态尝试启动页面已有的媒体元素，以让按需加载的资源实际进入网络拓扑；不会点击任意页面按钮、提交表单或伪造账号权限。YouTube 这类 MSE 播放器常同时暴露 video-only 与 audio-only 自适应轨，因此只有发现 muxed 资源、HLS/DASH 清单或其他能完整播放的描述时才切换到自定义播放器。只观察到 `blob:`、byte-range 分片、分离轨、DRM/EME 或失效签名时，均视为尚未形成可交付资源并保留原站播放链路。
+隔离 WebView 会在静音状态尝试启动页面已有的媒体元素，以让按需加载的资源实际进入网络拓扑；不会点击任意页面按钮、提交表单或伪造账号权限。YouTube 这类 MSE 播放器常同时暴露 video-only 与 audio-only 自适应轨；成对轨可由 Graph 合成最小 MPD 后交给 `InkVideoPlayer`，muxed 资源或 HLS/DASH 清单同样可切换到自定义播放器。只观察到 `blob:`、byte-range 分片、无法配对的分离轨、DRM/EME 或失效签名时，均视为尚未形成可交付资源并保留原站播放链路。
 
 “全部资源嗅探”指观察当前合法页面会话能够公开产生的媒体信号，并不承诺把任何站点都转换成直链。付费、登录、地区、DRM/CDM、私有加密协议或服务端拒绝仍是明确的降级边界。
 
@@ -1240,9 +1229,14 @@ iframe URL
 
 | 职责 | 入口 |
 |---|---|
-| 候选分类、评分、指纹、HLS/DASH 解析 | `src/features/mediaSniffer/core.ts` |
-| 静态/运行时发现编排、`MediaDescriptor` 输出 | `src/features/mediaSniffer/service.ts` |
+| 分类、Range 聚合、`.m4s` 角色 | `src/features/mediaSniffer/classifier.ts` |
+| exact origin 头策略 | `src/features/mediaSniffer/originHeaders.ts` |
+| JSON / `__playinfo__` | `src/features/mediaSniffer/apiParser.ts` |
+| Media Graph、`selectPlayableAsset`、合成 MPD | `src/features/mediaSniffer/graph.ts` |
+| 静态 HTML/payload、HLS/DASH 解析、Descriptor 适配 | `src/features/mediaSniffer/core.ts` |
+| 静态+runtime 始终编排、`MediaDescriptor` 输出 | `src/features/mediaSniffer/service.ts` |
 | Android 嗅探与播放会话桥 | `src/features/mediaSniffer/native.ts`、`android/.../MediaSnifferPlugin.java` |
+| Probe / Service Worker / Origin 头存储 | `android/.../MediaProbe.java`、`ServiceWorkerSniffer.java`、`OriginHeaderStore.java` |
 | Android 流式请求上下文 | `android/.../MediaPlaybackWebViewClient.java` |
 | 正文接入与失败重探测 | `src/lib/resolveBody.ts`、`src/screens/ReaderScreen.tsx` |
 | 自定义播放器 | `src/components/InkVideoPlayer.tsx` |
