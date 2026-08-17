@@ -60,6 +60,15 @@ export async function prepareNativeMediaPlayback(options: {
 
 const NativeMediaSniffer = registerPlugin<NativeMediaSnifferPlugin>('MediaSniffer')
 
+export function observationsWithoutSessionNonce(
+  observations: MediaObservation[],
+): MediaObservation[] {
+  return observations.map((observation) => {
+    const { sessionNonce: _sessionNonce, ...rest } = observation
+    return rest
+  })
+}
+
 export async function observeMediaInNativePage(
   url: string,
   timeoutMs = 6000,
@@ -68,11 +77,5 @@ export async function observeMediaInNativePage(
   if (!Capacitor.isNativePlatform()) return []
   const result = await NativeMediaSniffer.sniff({ url, timeoutMs, referrer })
   const observations = Array.isArray(result.observations) ? result.observations : []
-  return observations.map((observation) => ({
-    ...observation,
-    bodyText: observation.bodyText,
-    fromServiceWorker: observation.fromServiceWorker,
-    mimeType: observation.mimeType,
-    sessionNonce: observation.sessionNonce,
-  }))
+  return observationsWithoutSessionNonce(observations)
 }

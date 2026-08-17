@@ -217,7 +217,6 @@ public class MediaSnifferPlugin extends Plugin {
               try {
                 const mimeType = response.headers.get('content-type') || undefined;
                 const event = { source: 'fetch', url: response.url || String(args[0]), mimeType, statusCode: response.status };
-                const stored = push(event);
                 const mime = String(mimeType || '').toLowerCase();
                 if (/json|text\\/plain|javascript/.test(mime)) {
                   const lengthHeader = response.headers.get('content-length');
@@ -225,10 +224,11 @@ public class MediaSnifferPlugin extends Plugin {
                   if (!Number.isFinite(reported) || reported <= maxBodyText) {
                     try {
                       const text = await response.clone().text();
-                      if (text && text.length <= maxBodyText && stored) stored.bodyText = text;
+                      if (text && text.length <= maxBodyText) event.bodyText = text;
                     } catch (_) {}
                   }
                 }
+                push(event);
               } catch (_) {}
               return response;
             };
@@ -698,6 +698,7 @@ public class MediaSnifferPlugin extends Plugin {
             if (event == null) continue;
             String eventNonce = event.optString("sessionNonce", "");
             if (!eventNonce.isEmpty() && !eventNonce.equals(sessionNonce)) continue;
+            event.remove("sessionNonce");
             trusted.put(event);
         }
         return trusted;

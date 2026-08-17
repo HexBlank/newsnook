@@ -21,6 +21,7 @@ import {
   synthesizeDashMpd,
 } from '../src/features/mediaSniffer/graph'
 import { originOf, playbackHeadersForTarget } from '../src/features/mediaSniffer/originHeaders'
+import { observationsWithoutSessionNonce } from '../src/features/mediaSniffer/native'
 import type { MediaObservation } from '../src/features/mediaSniffer/types'
 import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playback'
 import {
@@ -397,6 +398,39 @@ video/1080.m3u8`
       network,
     ),
     true,
+  )
+}
+
+{
+  const leftover: MediaObservation = {
+    url: 'https://cdn.example/master.m3u8',
+    pageUrl,
+    source: 'fetch',
+    sessionNonce: 'native-session',
+  }
+  assert.equal(
+    buildMediaGraph([leftover]).length,
+    0,
+    'Graph 不得吞带 leftover sessionNonce 的探针观察',
+  )
+  const stripped = observationsWithoutSessionNonce([leftover])
+  assert.equal('sessionNonce' in stripped[0], false)
+  assert.equal(
+    selectPlayableAsset(buildMediaGraph(stripped))?.manifest?.url,
+    'https://cdn.example/master.m3u8',
+    'native 剥掉 nonce 后 Graph 应摄入 fetch 清单',
+  )
+  const jsonBody = observationsWithoutSessionNonce([{
+    url: 'https://api.example/playurl',
+    pageUrl,
+    source: 'fetch',
+    bodyText: '{"url":"https://cdn.example/from-json.m3u8"}',
+    sessionNonce: 'native-session',
+  }])
+  assert.equal(
+    selectPlayableAsset(buildMediaGraph(jsonBody))?.manifest?.url,
+    'https://cdn.example/from-json.m3u8',
+    '剥掉 nonce 的 fetch JSON bodyText 应展开为 HLS',
   )
 }
 
