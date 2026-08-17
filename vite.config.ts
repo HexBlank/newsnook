@@ -369,6 +369,7 @@ function upstreamProxy(): Plugin {
 
           const targetUrl = new URL(target)
           const requestedUa = incoming.searchParams.get('ua')
+          const requestedAccept = incoming.searchParams.get('accept')
           const isPost = incoming.pathname === '/api/post' || req.url.startsWith('/api/post?')
           const isImage = incoming.pathname === '/api/image' || req.url.startsWith('/api/image?')
           const isMedia = incoming.pathname === '/api/media' || req.url.startsWith('/api/media?')
@@ -411,7 +412,8 @@ function upstreamProxy(): Plugin {
               ? 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
               : isMedia
                 ? '*/*'
-                : 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
+                : requestedAccept ||
+                  'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
           }
           if (!isWechatImage) {

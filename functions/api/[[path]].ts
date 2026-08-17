@@ -121,12 +121,15 @@ export const onRequest: PagesFunction = async (context) => {
 
       const targetUrl = new URL(target)
       const requestedUa = url.searchParams.get('ua')
+      const requestedAccept = url.searchParams.get('accept')
       const isNetease =
         target.includes('163.com') || target.includes('netease.com') || target.includes('126.net')
 
       const headers: Record<string, string> = {
         'User-Agent': isNetease ? 'NewsApp' : requestedUa || BROWSER_UA,
-        Accept: 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
+        Accept:
+          requestedAccept ||
+          'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         Referer: targetUrl.hostname.endsWith('.translate.goog')
           ? 'https://translate.google.com/'

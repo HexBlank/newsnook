@@ -14,6 +14,7 @@ import {
   type SourcePagingState,
 } from '../lib/feedPagination'
 import { fetchAbsoluteText, fetchSourceText } from '../lib/http'
+import { describeNonFeedPayload } from '../lib/feedPayload'
 import {
   enrichJazzyearDates,
   enrichLatepostDates,
@@ -510,7 +511,9 @@ export function useFeeds(
             const payload = await fetchSourceText(source, controller.signal)
             if (controller.signal.aborted) return
             const articles = parseSourcePayload(source, payload)
-            if (!articles.length) throw new Error('返回内容为空')
+            if (!articles.length) {
+              throw new Error(describeNonFeedPayload(payload) || '返回内容为空')
+            }
             applyHeadPage(id, source, payload, articles)
             scheduleDetailDateEnrichment(
               id,
@@ -600,7 +603,9 @@ export function useFeeds(
               const payload = await fetchSourceText(source, controller.signal)
               if (controller.signal.aborted) return
               const articles = parseSourcePayload(source, payload)
-              if (!articles.length) throw new Error('返回内容为空')
+              if (!articles.length) {
+                throw new Error(describeNonFeedPayload(payload) || '返回内容为空')
+              }
               applyHeadPage(id, source, payload, articles)
               scheduleDetailDateEnrichment(
                 id,

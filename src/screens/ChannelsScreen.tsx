@@ -98,6 +98,11 @@ export function ChannelsScreen({
                           {STATE_TEXT[status?.state ?? 'idle']}
                           {status?.count ? ` · ${status.count} 条` : ''}
                         </span>
+                        {status?.state === 'error' && status.error ? (
+                          <span className="mt-0.5 block truncate font-mono text-[10px] text-cinnabar/80">
+                            {status.error}
+                          </span>
+                        ) : null}
                       </span>
                       <ChevronRight size={14} strokeWidth={1.5} className="text-paper-faint" />
                     </button>

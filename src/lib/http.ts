@@ -13,6 +13,7 @@ import { decodeBase64ToArrayBuffer, nativeProxiedRequest } from '../features/pro
 import { currentProxyRuntime } from '../features/proxy/runtime'
 import { resolveProxyTransport, type NativeTunnelProxy } from '../features/proxy/transport'
 import type { ProxyPrefs } from '../features/proxy/types'
+import { FEED_ACCEPT } from './feedPayload'
 import { decodeResponseBytes } from './textEncoding'
 
 let activeProxyPrefs: ProxyPrefs = (() => {
@@ -145,7 +146,12 @@ export async function fetchSourceText(
     source.id.startsWith('custom_') ||
     (options?.url && options.url !== source.url)
   ) {
-    return fetchAbsoluteText(rawUrl, { userAgent: ua, signal })
+    return fetchAbsoluteText(rawUrl, {
+      userAgent: ua,
+      signal,
+      accept: FEED_ACCEPT,
+      headers: { Accept: FEED_ACCEPT },
+    })
   }
 
   const init: RequestInit = { signal }
@@ -176,28 +182,46 @@ function encodeFormBody(form?: Record<string, string | number>): string {
 /** 拉取任意绝对 URL（用于详情页全文抽取） */
 export async function fetchAbsoluteText(
   url: string,
-  options?: { userAgent?: string; signal?: AbortSignal },
+  options?: {
+    userAgent?: string
+    signal?: AbortSignal
+    /** 传给边缘/开发代理的 Accept；原生则写入请求头 */
+    accept?: string
+    headers?: Record<string, string>
+  },
 ): Promise<string> {
   const ua = options?.userAgent ?? BROWSER_UA
   const transport = transportFor(url)
+  const extraHeaders = {
+    ...(options?.accept ? { Accept: options.accept } : {}),
+    ...(options?.headers ?? {}),
+  }
 
   if (Capacitor.isNativePlatform()) {
     const targetUrl = transport.kind === 'web-wrap' ? transport.requestUrl : url
     const tunnel = transport.kind === 'native-tunnel' ? transport.tunnel : undefined
-    return nativeGet(targetUrl, ua, options?.signal, undefined, tunnel)
+    return nativeGet(
+      targetUrl,
+      ua,
+      options?.signal,
+      Object.keys(extraHeaders).length ? extraHeaders : undefined,
+      tunnel,
+    )
   }
 
   if (transport.kind === 'web-wrap') {
     const response = await fetch(transport.requestUrl, {
       signal: options?.signal,
-      headers: { 'User-Agent': ua },
+      headers: { 'User-Agent': ua, ...extraHeaders },
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return decodeBrowserResponse(response)
   }
 
   // direct / dev-vite / unsupported → 开发态 CORS 代理（unsupported 不宣称已走用户 SOCKS）
-  const proxy = `/api/page?url=${encodeURIComponent(url)}&ua=${encodeURIComponent(ua)}`
+  const params = new URLSearchParams({ url, ua })
+  if (options?.accept) params.set('accept', options.accept)
+  const proxy = `/api/page?${params.toString()}`
   const response = await fetch(proxy, { signal: options?.signal })
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
