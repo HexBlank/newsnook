@@ -1,5 +1,9 @@
 import { XMLParser } from 'fast-xml-parser'
 
+import {
+  bestMediaUrlInPayload,
+  bestPosterUrlInPayload,
+} from '../features/mediaSniffer/core'
 import { collectAudioSrc, isAudioMediaUrl } from './articleAudio'
 import { cleanSummaryText } from './cleanSummary'
 import type { NewsSource, SourceKind } from '../sources/registry'
@@ -599,21 +603,13 @@ function parseNetease(source: NewsSource, payload: string, fetchedAt: number): A
         stripTags(text(videoinfo?.description)) ||
         stripTags(text(entry.digest)) ||
         title
-      const cover =
-        text(videoinfo?.cover) ||
-        text(videoinfo?.firstFrameImg) ||
-        text(videoinfo?.shortVideoImg) ||
-        text(entry.imgsrc) ||
-        undefined
-      const coverHttps = cover ? preferHttpsAsset(cover) : undefined
-      const mp4 = text(videoinfo?.mp4_url) || undefined
-      const m3u8 =
-        text(videoinfo?.m3u8_url) ||
-        text(asRecord(videoinfo?.video_data)?.sd_url) ||
-        undefined
-      // 实测 mp4 直链常失效，m3u8 可播；优先 HLS
-      const videoUrl = m3u8 || mp4
       const link = `https://3g.163.com/news/video/${vid}.html`
+      const cover = bestPosterUrlInPayload(
+        { videoinfo, image: entry.imgsrc },
+        link,
+      )
+      const coverHttps = cover ? preferHttpsAsset(cover) : undefined
+      const videoUrl = bestMediaUrlInPayload(videoinfo, link)
 
       const article = buildArticle(
         source,

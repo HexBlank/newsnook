@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { parseHTML } from 'linkedom'
 
 import { describeInlineVideo } from '../src/lib/inlineVideos'
+import { sanitizeArticleHtml } from '../src/lib/sanitize'
 
 function videoFrom(html: string): Element {
   const { document } = parseHTML(`<article>${html}</article>`)
@@ -73,6 +74,20 @@ function videoFrom(html: string): Element {
 {
   const result = describeInlineVideo(videoFrom('<video controls></video>'), '文章标题')
   assert.equal(result, null, 'source-less videos should remain available for native fallback')
+}
+
+{
+  const result = describeInlineVideo(
+    videoFrom(
+      sanitizeArticleHtml(
+        '<video src="https://cdn.example/live.m3u8" data-media-format="hls" data-source-page="https://news.example/story" data-media-headers="{&quot;Referer&quot;:&quot;https://news.example/story&quot;}"></video>',
+      ),
+    ),
+    '文章标题',
+  )
+  assert.equal(result?.format, 'hls')
+  assert.equal(result?.sourcePage, 'https://news.example/story')
+  assert.deepEqual(result?.requestHeaders, { Referer: 'https://news.example/story' })
 }
 
 console.log('inline-video.test.ts: ok')

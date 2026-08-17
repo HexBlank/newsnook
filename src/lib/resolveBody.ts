@@ -2,6 +2,17 @@ import { Capacitor } from '@capacitor/core'
 import { parseHTML } from 'linkedom'
 
 import { hydrateNativeTunnelImages } from '../features/proxy/hydrateImages'
+import {
+  buildMediaDescriptor,
+  bestMediaUrlInPayload,
+  bestPosterUrlInPayload,
+  mediaFormatFor,
+  observeMediaInPayload,
+} from '../features/mediaSniffer/core'
+import {
+  discoverMediaDescriptor,
+  mediaDescriptorHtml,
+} from '../features/mediaSniffer/service'
 import { currentProxyRuntime } from '../features/proxy/runtime'
 import { resolveProxyTransport } from '../features/proxy/transport'
 import { findSource, userAgentFor, type NewsSource } from '../sources/registry'
@@ -406,15 +417,6 @@ function buildVideoBody(article: Article): ResolvedBody {
 
 const HUXIU_ARTICLE_DETAIL_API =
   'https://api-web-article.huxiu.com/web/article/detail'
-const HUXIU_VIDEO_LINK_KEYS = [
-  'fhd_medium_link',
-  'wifi_link',
-  'hd_link',
-  'fhd_low_link',
-  'flow_link',
-  'sd_link',
-  'fhd_link',
-] as const
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -443,7 +445,7 @@ function huxiuArticleId(article: Article): string | undefined {
   }
 }
 
-/** 把虎嗅详情接口的 video_info 转为现有正文内播放器可消费的 <video>。 */
+/** 详情接口仅负责补充结构化正文；媒体地址由通用候选评分器发现。 */
 function buildHuxiuVideoBody(
   article: Article,
   payload: unknown,
@@ -451,21 +453,18 @@ function buildHuxiuVideoBody(
   const root = objectRecord(payload)
   if (!root || root.success === false) return null
   const data = objectRecord(root.data)
-  const video = objectRecord(data?.video_info)
-  if (!data || !video) return null
+  if (!data) return null
 
   const expectedAid = huxiuArticleId(article)
   if (expectedAid && data.aid != null && String(data.aid) !== expectedAid) return null
 
-  const videoUrl = HUXIU_VIDEO_LINK_KEYS
-    .map((key) => httpUrl(video[key]))
-    .find(Boolean)
-  if (!videoUrl) return null
+  const descriptor = buildMediaDescriptor(
+    observeMediaInPayload(data, article.originUrl),
+  )
+  if (!descriptor || descriptor.drm) return null
 
   const poster =
-    httpUrl(video.custom_cover_path) ||
-    httpUrl(video.cover) ||
-    httpUrl(data.pic_path) ||
+    bestPosterUrlInPayload(data, article.originUrl) ||
     httpUrl(article.image)
   const title =
     typeof data.title === 'string' && data.title.trim()
@@ -478,11 +477,13 @@ function buildHuxiuVideoBody(
         ? `<p>${escapeHtml(article.summary)}</p>`
         : ''
   const attrs = [
-    `src="${escapeHtml(videoUrl)}"`,
+    `src="${escapeHtml(descriptor.url)}"`,
     'controls',
     'playsinline',
     'preload="metadata"',
     `title="${escapeHtml(title)}"`,
+    `data-media-format="${descriptor.type}"`,
+    `data-source-page="${escapeHtml(article.originUrl)}"`,
   ]
   if (poster) attrs.push(`poster="${escapeHtml(poster)}"`)
 
@@ -578,6 +579,7 @@ function preferHttpsAsset(url: string): string {
 function expandNeteaseMediaPlaceholders(
   body: string,
   node: Record<string, unknown>,
+  pageUrl: string,
 ): string {
   let html = body
 
@@ -605,14 +607,7 @@ function expandNeteaseMediaPlaceholders(
 
     const poster =
       typeof entry.cover === 'string' ? preferHttpsAsset(entry.cover) : ''
-    const mp4 = typeof entry.mp4_url === 'string' ? entry.mp4_url : ''
-    const m3u8 =
-      typeof entry.m3u8_url === 'string'
-        ? entry.m3u8_url
-        : typeof entry.url_m3u8 === 'string'
-          ? entry.url_m3u8
-          : ''
-    const src = mp4 || m3u8
+    const src = bestMediaUrlInPayload(entry, pageUrl) || ''
     const alt =
       typeof entry.alt === 'string' && entry.alt.trim()
         ? escapeHtml(entry.alt.trim())
@@ -625,6 +620,8 @@ function expandNeteaseMediaPlaceholders(
         'controls',
         'playsinline',
         'preload="metadata"',
+        `data-media-format="${mediaFormatFor(src)}"`,
+        `data-source-page="${escapeHtml(pageUrl)}"`,
       ]
       if (poster) attrs.push(`poster="${escapeHtml(poster)}"`)
       tag = `<video ${attrs.join(' ')}></video>`
@@ -664,7 +661,7 @@ async function resolveNetEaseArticleBody(
       const rawBody = String(record.body ?? '')
       if (!rawBody || stripTags(rawBody).length < 40) continue
 
-      const body = expandNeteaseMediaPlaceholders(rawBody, record)
+      const body = expandNeteaseMediaPlaceholders(rawBody, record, article.originUrl || api)
       return {
         contentHtml: await absolutizeHtml(body, article.originUrl || api),
         bodySource: 'netease',
@@ -759,10 +756,6 @@ export async function resolveArticleBody(
   signal?: AbortSignal,
   extraSources?: NewsSource[],
 ): Promise<ResolvedBody> {
-  if (article.contentType === 'video' && article.sourceId !== 'huxiu') {
-    return buildVideoBody(article)
-  }
-
   if (
     article.contentType !== 'video' &&
     (isInlineFlashBody(article.contentHtml, article.sourceId) ||
@@ -784,6 +777,36 @@ export async function resolveArticleBody(
   // 两种情况都在通用网页抽取前查一次详情 API，普通 RSS 全文已在上方直接返回。
   const huxiu = await resolveHuxiuVideoBody(article, signal).catch(() => null)
   if (huxiu) return huxiu
+
+  if (article.contentType === 'video') {
+    if (article.videoUrl || !article.originUrl) return buildVideoBody(article)
+    const pageHtml = await fetchAbsoluteText(article.originUrl, {
+      signal,
+      userAgent: pageUserAgentForArticle(article, extraSources),
+    }).catch(() => undefined)
+    const descriptor = await discoverMediaDescriptor({
+      pageUrl: article.originUrl,
+      html: pageHtml,
+      runtime: true,
+      timeoutMs: 6000,
+      signal,
+    }).catch(() => null)
+    if (!descriptor) return buildVideoBody(article)
+    const content = article.summary
+      ? `<p>${escapeHtml(article.summary)}</p>`
+      : ''
+    return {
+      contentHtml: sanitizeArticleHtml(
+        mediaDescriptorHtml(descriptor, {
+          title: article.title,
+          poster: article.image,
+          contentHtml: content,
+        }),
+      ),
+      image: article.image,
+      bodySource: 'video',
+    }
+  }
 
   const netease = await resolveNetEaseArticleBody(article, signal).catch(() => null)
   if (netease) return netease
@@ -862,7 +885,7 @@ export async function resolveArticleBody(
     if (hasBrokenTextEncoding(pageHtml)) {
       throw new Error('原文字符集解析失败')
     }
-    const extracted = await extractWithReadability(pageHtml, pageUrl)
+    let extracted = await extractWithReadability(pageHtml, pageUrl)
     if (hasBrokenTextEncoding(extracted.contentHtml)) {
       throw new Error('正文字符集解析失败')
     }
@@ -871,6 +894,30 @@ export async function resolveArticleBody(
     }
     if (isScrapeNoticeBody(extracted.contentHtml)) {
       throw new Error('原站仅返回反爬声明')
+    }
+    if (!/<video\b/i.test(extracted.contentHtml)) {
+      const mayContainMedia = /<(?:video|source|iframe)\b|VideoObject|\.m3u8(?:[?"'])|\.mpd(?:[?"'])|\.mp4(?:[?"'])/i.test(pageHtml)
+      if (mayContainMedia) {
+        const descriptor = await discoverMediaDescriptor({
+          pageUrl,
+          html: pageHtml,
+          runtime: true,
+          timeoutMs: 4500,
+          signal,
+        }).catch(() => null)
+        if (descriptor) {
+          extracted = {
+            ...extracted,
+            contentHtml: sanitizeArticleHtml(
+              mediaDescriptorHtml(descriptor, {
+                title: extracted.title || article.title,
+                poster: extracted.image || article.image,
+                contentHtml: extracted.contentHtml,
+              }),
+            ),
+          }
+        }
+      }
     }
     return withArticleAudio({ ...extracted, resolvedOriginUrl }, article, pageHtml)
   }

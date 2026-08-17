@@ -41,8 +41,8 @@ newsnook/
 |---|---|
 | UI | React 19、TypeScript、Tailwind CSS v4、lucide-react、animejs |
 | 解析 | fast-xml-parser、@mozilla/readability、linkedom、DOMPurify |
-| 媒体 | hls.js（网易 HLS） |
-| 原生 | Capacitor 8（App / Browser / Preferences / StatusBar / CapacitorHttp / Share）+ 可选 ML Kit / Bergamot 翻译 + DeviceMediaControls + VolumePageTurn |
+| 媒体 | hls.js（HLS）、dash.js（MPEG-DASH）、`features/mediaSniffer`（资源发现与媒体图） |
+| 原生 | Capacitor 8（App / Browser / Preferences / StatusBar / CapacitorHttp / Share）+ 可选 ML Kit / Bergamot 翻译 + DeviceMediaControls + VolumePageTurn + MediaSniffer |
 | 构建 | Vite 8、oxlint、Gradle（minSdk 24 / targetSdk 36） |
 
 ## 5. 分层架构
@@ -60,6 +60,7 @@ newsnook/
 │  features/translation/   TranslationService + Provider 接口    │
 │  features/proxy/         智能分流 / 隧道 / 原生 HTTP 封装       │
 │  features/comments/      跟贴 Provider（网易/知乎/煎蛋等）      │
+│  features/mediaSniffer/  媒体候选 / HLS·DASH 清单 / DRM 状态  │
 │  features/appUpdate/     GitHub Release 检测与应用内更新        │
 ├──────────────────────────────────────────────────────────────┤
 │  Data                                                        │
@@ -153,7 +154,8 @@ openArticle → setReading + markRead
   → ReaderScreen
       → 命中 bodyCache？→ 直接渲染
       → 否则 resolveArticleBody(article)：
-           1. 视频稿 → 占位 HTML + InkVideoPlayer（bodySource: video）
+           1. 视频稿/正文媒体 → 静态 HTML·JSON + Android 网络/DOM/MSE 观察
+              → 候选评分与去重 → HLS/DASH 媒体图 → InkVideoPlayer
            2. Feed 已有足够 HTML → feed
            3. 网易 / 知乎 / 站点定制 kind → 各专用解析路径
            4. GET originUrl（简繁 URL 互试，最多 2 次）
@@ -288,6 +290,11 @@ npm run android:apk | android:aab
 |---|---|
 | `DeviceMediaControls` | 全屏视频窗口亮度与媒体音量 |
 | `VolumePageTurn` | 墨水屏模式下音量键翻页 |
+| `MediaSniffer` | 短生命周期 WebView 观察网络、DOM、MSE 与 EME 信号；不接管 DRM 或授权 |
+
+媒体播放前只在内存登记 10 分钟会话上下文；`MediaPlaybackWebViewClient` 以 OkHttp
+流式复用 WebView Cookie、来源页请求头和用户 HTTP/SOCKS 隧道。签名 URL 原样播放，
+仅另算去重指纹；401/403 或过期失败由阅读器重新激活原网页探测，不逆向生成签名。
 
 | 配置 | 值 |
 |---|---|

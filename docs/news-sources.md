@@ -911,6 +911,8 @@ POST https://api-web-article.huxiu.com/web/article/detail
 platform=www&aid={aid}
 ```
 
-解析 `data.video_info` 中的 MP4 地址和封面，生成正文内 `<video>`，再交给统一的
-`InkVideoPlayer` 播放。普通文章仍优先使用 RSS 全文，不额外请求详情接口；接口缺少
-可播放地址或暂时失败时继续走现有原文抽取与反爬软降级。
+详情响应只作为结构化正文输入，不再枚举 `video_info` 的画质字段。响应内媒体 URL
+统一交给 `features/mediaSniffer`，按 MIME/URL/上下文信号评分并保留原始签名参数，
+再生成媒体描述交给 `InkVideoPlayer`。Android 上若静态响应没有地址，还可由短生命周期
+WebView 观察页面的网络、DOM、MSE 与 DRM 信号；接口或观察失败时继续走原文抽取与
+反爬软降级。DRM 资源只标记状态，不进入普通直链播放。

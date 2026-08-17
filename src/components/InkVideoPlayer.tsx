@@ -18,7 +18,6 @@ import {
 import {
   browserMediaProxyUrl,
   createHotlinkHlsLoader,
-  fetchMediaBytes,
   needsMediaHotlinkBypass,
 } from '../lib/mediaFetch'
 import { getVideoStatusMessage } from '../lib/videoStatus'
@@ -37,13 +36,18 @@ import {
   type VideoGesture,
 } from '../lib/videoGestures'
 import { Capacitor } from '@capacitor/core'
+import { prepareNativeMediaPlayback } from '../features/mediaSniffer/native'
 
 interface Props {
   src: string
   poster?: string
   title?: string
+  format?: 'progressive' | 'hls' | 'dash'
+  sourcePage?: string
+  requestHeaders?: Record<string, string>
   deferLoad?: boolean
   onUnlocked?: () => void
+  onRefreshSource?: () => void
 }
 
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const
@@ -122,7 +126,7 @@ function formatTime(seconds: number): string {
  * - 全屏：下半屏（拇指区）横滑调进度、左下竖滑调亮度、右下竖滑调音量，
  *   双击专职播放 / 暂停；上半屏与内嵌一致。
  */
-export function InkVideoPlayer({ src, poster, title, deferLoad, onUnlocked }: Props) {
+export function InkVideoPlayer({ src, poster, title, format, sourcePage, requestHeaders, deferLoad, onUnlocked, onRefreshSource }: Props) {
   const [allowed, setAllowed] = useState(!deferLoad)
 
   useEffect(() => {
@@ -154,13 +158,14 @@ export function InkVideoPlayer({ src, poster, title, deferLoad, onUnlocked }: Pr
     )
   }
 
-  return <InkVideoPlayerReady src={src} poster={poster} title={title} />
+  return <InkVideoPlayerReady src={src} poster={poster} title={title} format={format} sourcePage={sourcePage} requestHeaders={requestHeaders} onRefreshSource={onRefreshSource} />
 }
 
-function InkVideoPlayerReady({ src, poster, title }: Props) {
+function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHeaders, onRefreshSource }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
+  const dashRef = useRef<{ reset: () => void } | null>(null)
   const hideTimerRef = useRef<number | null>(null)
   const scrubbingRef = useRef(false)
   const rateRef = useRef(1)
@@ -248,9 +253,9 @@ function InkVideoPlayerReady({ src, poster, title }: Props) {
     if (!video || !src) return
 
     const url = src
-    const isHls = /\.m3u8(\?|$)/i.test(url)
+    const isHls = format === 'hls' || /\.m3u8(\?|$)/i.test(url)
+    const isDash = format === 'dash' || /\.mpd(\?|$)/i.test(url)
     let cancelled = false
-    let objectUrl: string | null = null
 
     setReady(false)
     setFatal(null)
@@ -352,21 +357,37 @@ function InkVideoPlayerReady({ src, poster, title }: Props) {
     video.addEventListener('ratechange', onRateChange)
 
     void (async () => {
-      const bypass = needsMediaHotlinkBypass(url)
+      await prepareNativeMediaPlayback({
+        url,
+        sourcePage,
+        format: isDash ? 'dash' : isHls ? 'hls' : 'progressive',
+        headers: requestHeaders,
+      })
+      if (cancelled) return
+      const requestContext = sourcePage || requestHeaders
+        ? { sourcePage, headers: requestHeaders }
+        : undefined
+      const bypass = needsMediaHotlinkBypass(url) || Boolean(isHls && sourcePage && Capacitor.isNativePlatform())
       // 防盗链 CDN：即使系统原生支持 HLS，也走 hls.js + 自定义 loader，避免 WebView 带 localhost Origin 被 403
       const useNativeHls = !bypass && Boolean(video.canPlayType('application/vnd.apple.mpegurl'))
       const HlsClass =
         isHls && !useNativeHls ? (await import('hls.js')).default : null
       if (cancelled) return
 
-      if (isHls) {
+      if (isDash) {
+        const module = await import('dashjs')
+        if (cancelled) return
+        const dash = module.MediaPlayer().create()
+        dashRef.current = dash
+        dash.initialize(video, url, false)
+      } else if (isHls) {
         if (useNativeHls) {
           video.src = url
         } else if (HlsClass?.isSupported()) {
           const hls = new HlsClass({
             enableWorker: true,
             lowLatencyMode: false,
-            ...(bypass ? { loader: createHotlinkHlsLoader() } : {}),
+            ...(bypass ? { loader: createHotlinkHlsLoader(requestContext) } : {}),
           })
           hlsRef.current = hls
           hls.loadSource(url)
@@ -389,12 +410,8 @@ function InkVideoPlayerReady({ src, poster, title }: Props) {
         }
       } else if (bypass) {
         if (Capacitor.isNativePlatform()) {
-          const { data, contentType } = await fetchMediaBytes(url)
-          if (cancelled) return
-          objectUrl = URL.createObjectURL(
-            new Blob([data], { type: contentType || 'video/mp4' }),
-          )
-          video.src = objectUrl
+          // Main WebView 的流式请求桥接会补齐 Referer/Cookie/代理，避免整段视频进内存。
+          video.src = url
         } else {
           video.src = browserMediaProxyUrl(url)
         }
@@ -428,11 +445,12 @@ function InkVideoPlayerReady({ src, poster, title }: Props) {
       video.removeEventListener('volumechange', onVolumeChange)
       hlsRef.current?.destroy()
       hlsRef.current = null
+      dashRef.current?.reset()
+      dashRef.current = null
       video.removeAttribute('src')
       video.load()
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [clearHideTimer, src, syncBoostIndicator])
+  }, [clearHideTimer, format, requestHeaders, sourcePage, src, syncBoostIndicator])
 
   useEffect(() => {
     const onFs = () => {
@@ -923,6 +941,18 @@ function InkVideoPlayerReady({ src, poster, title }: Props) {
           <div className="absolute inset-0 z-[4] flex flex-col items-center justify-center gap-2 bg-black/70 px-4 text-center">
             <AlertCircle className="h-6 w-6 text-cinnabar-soft" strokeWidth={1.6} />
             <div className="text-[13px] text-paper">{fatal}</div>
+            {onRefreshSource && (
+              <button
+                type="button"
+                className="rounded-full border border-paper/30 px-3 py-1.5 text-[12px] text-paper"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onRefreshSource()
+                }}
+              >
+                重新探测
+              </button>
+            )}
           </div>
         )}
 

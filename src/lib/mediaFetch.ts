@@ -8,6 +8,31 @@ import { resolveProxyTransport } from '../features/proxy/transport'
 const BROWSER_UA =
   'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Mobile Safari/537.36'
 
+export interface MediaFetchContext {
+  sourcePage?: string
+  headers?: Record<string, string>
+  range?: string
+}
+
+function mediaRequestHeaders(url: string, context?: MediaFetchContext): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': BROWSER_UA,
+    Accept: '*/*',
+    'Accept-Language': 'zh-CN,zh;q=0.9',
+  }
+  const allowed = new Set(['accept', 'accept-language', 'origin', 'range', 'referer', 'user-agent'])
+  for (const [key, value] of Object.entries(context?.headers ?? {})) {
+    if (allowed.has(key.toLowerCase()) && value) headers[key] = value
+  }
+  if (context?.sourcePage && !Object.keys(headers).some((key) => key.toLowerCase() === 'referer')) {
+    headers.Referer = context.sourcePage
+  } else if (needsMediaHotlinkBypass(url)) {
+    headers.Referer = 'https://3g.163.com/'
+  }
+  if (context?.range) headers.Range = context.range
+  return headers
+}
+
 /** 网易视频 CDN：浏览器带 localhost Origin 会 403，需代理或原生 HTTP + 站点 Referer */
 export function needsMediaHotlinkBypass(url: string): boolean {
   try {
@@ -47,6 +72,7 @@ function emptyStats(): LoaderStats {
 export async function fetchMediaBytes(
   url: string,
   signal?: AbortSignal,
+  context?: MediaFetchContext,
 ): Promise<{ data: ArrayBuffer; contentType?: string }> {
   const transport = resolveProxyTransport(
     url,
@@ -60,12 +86,7 @@ export async function fetchMediaBytes(
     const tunnel = transport.kind === 'native-tunnel' ? transport.tunnel : undefined
     const result = await nativeFetchBytes(
       targetUrl,
-      {
-        'User-Agent': BROWSER_UA,
-        Accept: '*/*',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        Referer: 'https://3g.163.com/',
-      },
+      mediaRequestHeaders(url, context),
       tunnel,
       signal,
     )
@@ -93,7 +114,7 @@ export async function fetchMediaBytes(
 }
 
 /** hls.js 自定义 loader：绕开网易 CDN 对 localhost Origin 的 403 */
-export function createHotlinkHlsLoader(): HlsConfig['loader'] {
+export function createHotlinkHlsLoader(requestContext?: MediaFetchContext): HlsConfig['loader'] {
   return class HotlinkLoader implements Loader<LoaderContext> {
     context: LoaderContext | null = null
     stats: LoaderStats = emptyStats()
@@ -136,7 +157,7 @@ export function createHotlinkHlsLoader(): HlsConfig['loader'] {
         callbacks.onTimeout(this.stats, context, null)
       }, timeoutMs)
 
-      void fetchMediaBytes(context.url, controller.signal)
+      void fetchMediaBytes(context.url, controller.signal, requestContext)
         .then(({ data }) => {
           if (controller.signal.aborted) return
           if (this.timeoutId != null) {

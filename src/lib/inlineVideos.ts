@@ -2,6 +2,9 @@ export interface InlineVideoDescriptor {
   src: string
   poster?: string
   title: string
+  format?: 'progressive' | 'hls' | 'dash'
+  sourcePage?: string
+  requestHeaders?: Record<string, string>
 }
 
 const VIDEO_SOURCE_ATTRS = [
@@ -38,6 +41,22 @@ function resolveMediaUrl(value: string, baseUrl?: string): string {
   }
 }
 
+function parseMediaRequestHeaders(video: Element): Record<string, string> | undefined {
+  const value = firstAttribute(video, ['data-media-headers'])
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>)
+        .filter(([, headerValue]) => typeof headerValue === 'string')
+        .map(([key, headerValue]) => [key, String(headerValue)]),
+    )
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Read a playable source from sanitized article HTML. Publishers use both a
  * direct `video[src]` and nested `source[src]`, with lazy-loading attributes as
@@ -65,10 +84,20 @@ export function describeInlineVideo(
     figureCaption ||
     fallbackTitle ||
     '文章视频'
+  const requestHeaders = parseMediaRequestHeaders(video)
 
   return {
     src,
     ...(poster ? { poster } : {}),
     title,
+    ...(firstAttribute(video, ['data-media-format'])
+      ? {
+          format: firstAttribute(video, ['data-media-format']) as InlineVideoDescriptor['format'],
+        }
+      : {}),
+    ...(firstAttribute(video, ['data-source-page'])
+      ? { sourcePage: firstAttribute(video, ['data-source-page']) }
+      : {}),
+    ...(requestHeaders ? { requestHeaders } : {}),
   }
 }

@@ -349,7 +349,13 @@ export function ReaderScreen({
     setResolvedOriginUrl(undefined)
     setFromCache(false)
 
-    resolveArticleBody(article, controller.signal, customSources)
+    resolveArticleBody(
+      retryToken > 0 && article.videoUrl
+        ? { ...article, videoUrl: undefined }
+        : article,
+      controller.signal,
+      customSources,
+    )
       .then((resolved) => {
         if (controller.signal.aborted) return
         setHtml(resolved.contentHtml)
@@ -981,12 +987,14 @@ export function ReaderScreen({
               </div>
             )}
 
-            {article.contentType === 'video' && article.videoUrl && loadState === 'ready' && (
+            {article.contentType === 'video' && article.videoUrl && loadState === 'ready' && !/<video\b/i.test(displayedHtml) && (
               <div data-reader-block className="page-x mt-5">
                 <InkVideoPlayer
                   src={article.videoUrl}
                   poster={article.image}
                   title={article.title}
+                  sourcePage={resolvedOriginUrl || article.originUrl}
+                  onRefreshSource={() => setRetryToken((value) => value + 1)}
                   deferLoad={!autoLoadMedia}
                   onUnlocked={() => {
                     if (article.videoUrl) {
@@ -1067,6 +1075,8 @@ export function ReaderScreen({
                     html={proseHtml}
                     enabled={loadState === 'ready' && translationState !== 'loading'}
                     fallbackTitle={displayedTitle}
+                    sourcePage={resolvedOriginUrl || article.originUrl}
+                    onRefreshSource={() => setRetryToken((value) => value + 1)}
                     deferLoad={!autoLoadMedia}
                     onUnlocked={onUnlockedMedia}
                   />

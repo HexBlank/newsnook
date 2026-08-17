@@ -9,8 +9,10 @@ interface Props {
   html: string
   enabled: boolean
   fallbackTitle: string
+  sourcePage?: string
   deferLoad?: boolean
   onUnlocked?: (src: string) => void
+  onRefreshSource?: () => void
 }
 
 interface MountedInlineVideo extends InlineVideoDescriptor {
@@ -29,8 +31,10 @@ export function InlineArticleVideos({
   html,
   enabled,
   fallbackTitle,
+  sourcePage,
   deferLoad,
   onUnlocked,
+  onRefreshSource,
 }: Props) {
   const [mounted, setMounted] = useState<MountedInlineVideo[]>([])
 
@@ -46,7 +50,7 @@ export function InlineArticleVideos({
       const descriptor = describeInlineVideo(
         video,
         fallbackTitle,
-        document.baseURI,
+        sourcePage || document.baseURI,
       )
       if (!descriptor) return
 
@@ -69,7 +73,7 @@ export function InlineArticleVideos({
         if (host.isConnected) host.replaceWith(original)
       })
     }
-  }, [enabled, fallbackTitle, html, rootRef])
+  }, [enabled, fallbackTitle, html, rootRef, sourcePage])
 
   return mounted.map(({ host, original: _original, ...video }, index) =>
     createPortal(
@@ -77,6 +81,10 @@ export function InlineArticleVideos({
         src={video.src}
         poster={video.poster}
         title={video.title}
+        format={video.format}
+        sourcePage={video.sourcePage || sourcePage}
+        requestHeaders={video.requestHeaders}
+        onRefreshSource={onRefreshSource}
         deferLoad={deferLoad}
         onUnlocked={() => onUnlocked?.(video.src)}
       />,

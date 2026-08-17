@@ -129,6 +129,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DeviceMediaControlsPlugin.class);
         registerPlugin(VolumePageTurnPlugin.class);
         registerPlugin(ProxiedHttpPlugin.class);
+        registerPlugin(MediaSnifferPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
         bridgeBuilder.addWebViewListener(
             new WebViewListener() {
@@ -157,6 +158,11 @@ public class MainActivity extends BridgeActivity {
             }
         );
         super.onCreate(savedInstanceState);
+
+        // 外部媒体仍由 WebView 播放；仅已登记的媒体会话走流式请求上下文桥接。
+        if (bridge != null) {
+            bridge.setWebViewClient(new MediaPlaybackWebViewClient(bridge));
+        }
 
         View decorView = getWindow().getDecorView();
         ViewCompat.setOnApplyWindowInsetsListener(decorView, (v, insets) -> {
