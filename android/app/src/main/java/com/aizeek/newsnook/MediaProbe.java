@@ -1,6 +1,8 @@
 package com.aizeek.newsnook;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Arrays;
 import java.util.Locale;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -30,13 +32,7 @@ final class MediaProbe {
                 .build();
             try (Response response = client.newCall(get).execute()) {
                 String mime = contentType(response);
-                ResponseBody body = response.body();
-                byte[] prefix = body == null ? new byte[0] : body.bytes();
-                if (prefix.length > MAX_BYTES) {
-                    byte[] cut = new byte[MAX_BYTES];
-                    System.arraycopy(prefix, 0, cut, 0, MAX_BYTES);
-                    prefix = cut;
-                }
+                byte[] prefix = readPrefix(response.body(), MAX_BYTES);
                 String text = new String(prefix, java.nio.charset.StandardCharsets.UTF_8);
                 if (text.startsWith("#EXTM3U") || text.contains("#EXTM3U")) {
                     return new Result("application/vnd.apple.mpegurl");
@@ -51,6 +47,21 @@ final class MediaProbe {
             return null;
         }
         return null;
+    }
+
+    /** Reads at most {@code maxBytes} from the body. Closing the response aborts any remainder. */
+    private static byte[] readPrefix(ResponseBody body, int maxBytes) throws IOException {
+        if (body == null || maxBytes <= 0) return new byte[0];
+        InputStream stream = body.byteStream();
+        byte[] buffer = new byte[maxBytes];
+        int total = 0;
+        while (total < maxBytes) {
+            int n = stream.read(buffer, total, maxBytes - total);
+            if (n < 0) break;
+            total += n;
+        }
+        if (total == maxBytes) return buffer;
+        return Arrays.copyOf(buffer, total);
     }
 
     private static int indexOf(byte[] haystack, String ascii) {

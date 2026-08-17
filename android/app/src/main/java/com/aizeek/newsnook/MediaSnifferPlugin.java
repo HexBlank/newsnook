@@ -797,6 +797,7 @@ public class MediaSnifferPlugin extends Plugin {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true);
         String ua = userAgent == null ? "" : userAgent.trim();
