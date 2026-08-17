@@ -102,38 +102,31 @@ export async function discoverMediaDescriptor(options: {
   timeoutMs?: number
   referrer?: string
   signal?: AbortSignal
+  observeNative?: (url: string, timeoutMs: number, referrer?: string) => Promise<MediaObservation[]>
 }): Promise<MediaDescriptor | null> {
   const staticObservations = options.html
     ? observeMediaInHtml(options.html, options.pageUrl)
     : options.payload === undefined
       ? []
       : observeMediaInPayload(options.payload, options.pageUrl)
-  const hasStaticPlayable = collectMediaCandidates(staticObservations).some(
-    (candidate) => candidate.format !== 'segment',
-  )
+
   const runtimeObservations: MediaObservation[] = []
-  if (options.runtime !== false && !hasStaticPlayable && Capacitor.isNativePlatform()) {
-    const embeddedPages = options.html
-      ? embeddedPageUrlsInHtml(options.html, options.pageUrl)
-      : []
+  const observe = options.observeNative ?? (Capacitor.isNativePlatform() ? observeMediaInNativePage : undefined)
+  if (options.runtime !== false && observe) {
+    const embeddedPages = options.html ? embeddedPageUrlsInHtml(options.html, options.pageUrl) : []
     const targets = [...embeddedPages, options.pageUrl]
-    const targetTimeoutMs = Math.max(
-      1500,
-      Math.floor((options.timeoutMs ?? 6000) / targets.length),
-    )
+    const targetTimeoutMs = Math.max(1500, Math.floor((options.timeoutMs ?? 6000) / Math.max(targets.length, 1)))
     for (const target of targets) {
       const probeTarget = runtimeProbePageUrl(target)
-      const observations = await observeMediaInNativePage(
+      const observations = await observe(
         probeTarget,
         targetTimeoutMs,
         target === options.pageUrl ? options.referrer : options.pageUrl,
       ).catch(() => [])
       runtimeObservations.push(...observations)
-      if (collectMediaCandidates(runtimeObservations).some((candidate) => candidate.format !== 'segment')) {
-        break
-      }
     }
   }
+
   const observations = mergeObservationSources(staticObservations, runtimeObservations)
   if (!observations.length) return null
   const manifests = await manifestBodies(observations, options.signal)

@@ -24,6 +24,7 @@ import { originOf, playbackHeadersForTarget } from '../src/features/mediaSniffer
 import type { MediaObservation } from '../src/features/mediaSniffer/types'
 import { shouldBridgeNativePlayback } from '../src/features/mediaSniffer/playback'
 import {
+  discoverMediaDescriptor,
   embeddedPageUrlsInHtml,
   runtimeProbePageUrl,
 } from '../src/features/mediaSniffer/service'
@@ -407,6 +408,30 @@ video/1080.m3u8`
   ])
   assert.equal(descriptor?.url, base)
   assert.equal(descriptor?.type, 'progressive')
+}
+
+{
+  const calls: string[] = []
+  const html = '<video src="https://cdn.example/preview.mp4"></video><iframe src="https://player.example/ad"></iframe><iframe src="https://player.example/real"></iframe>'
+  await discoverMediaDescriptor({
+    pageUrl,
+    html,
+    runtime: true,
+    timeoutMs: 6000,
+    observeNative: async (url) => {
+      calls.push(url)
+      if (url.includes('/ad')) {
+        return [{ url: 'https://cdn.example/ad.mp4', pageUrl: url, source: 'network', mimeType: 'video/mp4' }]
+      }
+      if (url.includes('/real')) {
+        return [{ url: 'https://cdn.example/master.m3u8', pageUrl: url, source: 'network' }]
+      }
+      return [{ url: 'https://cdn.example/preview.mp4', pageUrl: url, source: 'network', mimeType: 'video/mp4' }]
+    },
+  })
+  assert.ok(calls.some((item) => item.includes('/ad')))
+  assert.ok(calls.some((item) => item.includes('/real')))
+  assert.ok(calls.some((item) => item === pageUrl || item.includes('articles/42')))
 }
 
 console.log('media-sniffer tests passed')
