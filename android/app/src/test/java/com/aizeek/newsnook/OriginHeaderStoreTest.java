@@ -2,14 +2,21 @@ package com.aizeek.newsnook;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import okhttp3.OkHttpClient;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 34)
 public class OriginHeaderStoreTest {
 
     private static final String PAGE = "https://news.example/articles/42";
@@ -19,6 +26,7 @@ public class OriginHeaderStoreTest {
     @Before
     public void reset() {
         OriginHeaderStore.clear();
+        MediaSnifferPlugin.clearPlaybackContexts();
     }
 
     @Test
@@ -26,6 +34,62 @@ public class OriginHeaderStoreTest {
         assertEquals("https://v1.cdn.example", OriginHeaderStore.originOf("https://v1.cdn.example:443/a"));
         assertEquals("http://news.example", OriginHeaderStore.originOf("http://news.example:80/a"));
         assertEquals("https://news.example:8443", OriginHeaderStore.originOf("https://news.example:8443/a"));
+        assertEquals("https://news.example", OriginHeaderStore.originOf("https://News.Example/a"));
+        assertEquals(
+            "https://cdn_video.example.com",
+            OriginHeaderStore.originOf("https://cdn_video.example.com/play.m3u8")
+        );
+    }
+
+    @Test
+    public void sameOriginHlsThenProgressiveInterceptFalseLeavesWebViewStack() {
+        MediaSnifferPlugin.registerPlaybackContext(
+            "https://news.example/play.m3u8",
+            "hls",
+            true,
+            false,
+            Collections.emptyMap(),
+            PAGE,
+            new OkHttpClient()
+        );
+        MediaSnifferPlugin.registerPlaybackContext(
+            "https://news.example/video.mp4",
+            "progressive",
+            false,
+            false,
+            Collections.emptyMap(),
+            PAGE,
+            null
+        );
+        assertNull(MediaSnifferPlugin.findPlaybackContext("https://news.example/video.mp4"));
+        assertNull(MediaSnifferPlugin.findPlaybackContext("https://news.example/play.m3u8"));
+        assertNull(MediaSnifferPlugin.findPlaybackContext("https://news.example/seg.ts"));
+    }
+
+    @Test
+    public void laterPreparePlaybackOverwritesSameOriginSession() {
+        MediaSnifferPlugin.registerPlaybackContext(
+            "https://news.example/a.m3u8",
+            "hls",
+            true,
+            false,
+            Collections.emptyMap(),
+            PAGE,
+            new OkHttpClient()
+        );
+        MediaSnifferPlugin.registerPlaybackContext(
+            "https://news.example/b.m3u8",
+            "hls",
+            true,
+            false,
+            Collections.emptyMap(),
+            PAGE,
+            new OkHttpClient()
+        );
+        MediaSnifferPlugin.PlaybackContext found =
+            MediaSnifferPlugin.findPlaybackContext("https://news.example/seg.ts");
+        assertNotNull(found);
+        assertEquals("https://news.example/b.m3u8", found.originalUrl);
     }
 
     @Test

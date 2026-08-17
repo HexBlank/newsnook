@@ -96,6 +96,11 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
 }
 
 // cloud flavor 不需要原生引擎；禁用其 CMake/Ninja 任务以免空跑。
@@ -124,6 +129,7 @@ dependencies {
     implementation project(':capacitor-android')
     localImplementation 'com.google.mlkit:translate:17.0.3'
     testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.robolectric:robolectric:4.14.1"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

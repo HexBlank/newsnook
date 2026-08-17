@@ -307,12 +307,6 @@ public class MediaSnifferPlugin extends Plugin {
         if (sourcePage != null && !isAllowedPageUrl(sourcePage)) sourcePage = null;
         String format = call.getString("format", "progressive");
         boolean intercept = call.getBoolean("intercept", true);
-        if (!intercept) {
-            PLAYBACK_CONTEXTS.remove(url);
-            purgePlaybackContexts();
-            call.resolve();
-            return;
-        }
         JSObject headersObject = call.getObject("headers");
         Map<String, String> jsHeaders = new HashMap<>();
         if (headersObject != null) {
@@ -325,21 +319,56 @@ public class MediaSnifferPlugin extends Plugin {
                 }
             }
         }
-        OkHttpClient client = createPlaybackClient(call.getObject("proxy"));
-        long expiresAt = System.currentTimeMillis() + PLAYBACK_CONTEXT_TTL_MS;
-        PLAYBACK_CONTEXTS.put(url, new PlaybackContext(url, format, false, jsHeaders, sourcePage, client, expiresAt));
-        JSArray origins = call.getArray("origins");
-        if (origins != null) {
-            for (int index = 0; index < origins.length(); index += 1) {
-                String origin = origins.optString(index, "");
-                if (origin == null || origin.isEmpty()) continue;
-                String seed = origin.endsWith("/") ? origin : origin + "/";
-                if (!isAllowedPageUrl(seed)) continue;
-                PLAYBACK_CONTEXTS.put(origin, new PlaybackContext(seed, format, true, jsHeaders, sourcePage, client, expiresAt));
+        OkHttpClient client = intercept ? createPlaybackClient(call.getObject("proxy")) : null;
+        registerPlaybackContext(url, format, intercept, false, jsHeaders, sourcePage, client);
+        if (intercept) {
+            JSArray origins = call.getArray("origins");
+            if (origins != null) {
+                for (int index = 0; index < origins.length(); index += 1) {
+                    String origin = origins.optString(index, "");
+                    if (origin == null || origin.isEmpty()) continue;
+                    String seed = origin.endsWith("/") ? origin : origin + "/";
+                    if (!isAllowedPageUrl(seed)) continue;
+                    registerPlaybackContext(seed, format, true, true, jsHeaders, sourcePage, client);
+                }
             }
         }
-        purgePlaybackContexts();
         call.resolve();
+    }
+
+    static void clearPlaybackContexts() {
+        PLAYBACK_CONTEXTS.clear();
+    }
+
+    static void registerPlaybackContext(
+        String url,
+        String format,
+        boolean intercept,
+        boolean extraOrigin,
+        Map<String, String> jsHeaders,
+        String sourcePage,
+        OkHttpClient client
+    ) {
+        String origin = OriginHeaderStore.originOf(url);
+        if (!intercept) {
+            if (origin != null) PLAYBACK_CONTEXTS.remove(origin);
+            purgePlaybackContexts();
+            return;
+        }
+        if (origin == null) return;
+        Map<String, String> headers = jsHeaders == null ? Collections.emptyMap() : jsHeaders;
+        OkHttpClient playbackClient = client == null ? new OkHttpClient() : client;
+        long expiresAt = System.currentTimeMillis() + PLAYBACK_CONTEXT_TTL_MS;
+        PLAYBACK_CONTEXTS.put(origin, new PlaybackContext(
+            url,
+            format,
+            extraOrigin,
+            headers,
+            sourcePage,
+            playbackClient,
+            expiresAt
+        ));
+        purgePlaybackContexts();
     }
 
     private static boolean hasHeader(Map<String, String> headers, String target) {
@@ -403,16 +432,14 @@ public class MediaSnifferPlugin extends Plugin {
     }
 
     static PlaybackContext findPlaybackContext(String url) {
-        long now = System.currentTimeMillis();
-        PlaybackContext exact = PLAYBACK_CONTEXTS.get(url);
-        if (exact != null && exact.expiresAt >= now) return exact.forRequest(url);
+        purgePlaybackContexts();
         String origin = OriginHeaderStore.originOf(url);
         if (origin == null) return null;
-        for (PlaybackContext context : PLAYBACK_CONTEXTS.values()) {
-            if (context.expiresAt < now || !context.scoped) continue;
-            if (origin.equals(context.origin)) return context.forRequest(url);
-        }
-        return null;
+        PlaybackContext context = PLAYBACK_CONTEXTS.get(origin);
+        long now = System.currentTimeMillis();
+        if (context == null || context.expiresAt < now) return null;
+        if (!context.scoped && !url.equals(context.originalUrl)) return null;
+        return context.forRequest(url);
     }
 
     private static void purgePlaybackContexts() {

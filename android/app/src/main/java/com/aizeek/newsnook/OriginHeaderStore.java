@@ -1,7 +1,7 @@
 package com.aizeek.newsnook;
 
+import android.net.Uri;
 import android.webkit.CookieManager;
-import java.net.URI;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -97,20 +97,69 @@ final class OriginHeaderStore {
     static String originOf(String url) {
         if (url == null || url.isEmpty()) return null;
         try {
-            URI uri = URI.create(url);
+            Uri uri = Uri.parse(url);
             String scheme = uri.getScheme();
             String host = uri.getHost();
-            if (scheme == null || host == null) return null;
-            String lowerScheme = scheme.toLowerCase(Locale.ROOT);
             int port = uri.getPort();
+            if (host == null || host.isEmpty()) {
+                host = hostFromAuthority(firstNonEmpty(uri.getEncodedAuthority(), uri.getAuthority()));
+                if (port == -1) {
+                    port = portFromAuthority(firstNonEmpty(uri.getEncodedAuthority(), uri.getAuthority()));
+                }
+            }
+            if (scheme == null || host == null || host.isEmpty()) return null;
+            String lowerScheme = scheme.toLowerCase(Locale.ROOT);
+            String originHost = formatOriginHost(host);
             if (port == -1
                 || ("https".equals(lowerScheme) && port == 443)
                 || ("http".equals(lowerScheme) && port == 80)) {
-                return lowerScheme + "://" + host;
+                return lowerScheme + "://" + originHost;
             }
-            return lowerScheme + "://" + host + ":" + port;
-        } catch (IllegalArgumentException ignored) {
+            return lowerScheme + "://" + originHost + ":" + port;
+        } catch (RuntimeException ignored) {
             return null;
+        }
+    }
+
+    private static String formatOriginHost(String host) {
+        String lower = host.toLowerCase(Locale.ROOT);
+        if (lower.indexOf(':') >= 0 && lower.charAt(0) != '[') {
+            return "[" + lower + "]";
+        }
+        return lower;
+    }
+
+    private static String firstNonEmpty(String first, String second) {
+        if (first != null && !first.isEmpty()) return first;
+        return second;
+    }
+
+    private static String hostFromAuthority(String authority) {
+        if (authority == null || authority.isEmpty()) return null;
+        int at = authority.lastIndexOf('@');
+        String hostPort = at >= 0 ? authority.substring(at + 1) : authority;
+        if (hostPort.startsWith("[")) {
+            int end = hostPort.indexOf(']');
+            return end > 1 ? hostPort.substring(1, end) : null;
+        }
+        int colon = hostPort.lastIndexOf(':');
+        return colon >= 0 ? hostPort.substring(0, colon) : hostPort;
+    }
+
+    private static int portFromAuthority(String authority) {
+        if (authority == null || authority.isEmpty()) return -1;
+        int at = authority.lastIndexOf('@');
+        String hostPort = at >= 0 ? authority.substring(at + 1) : authority;
+        int colon = hostPort.startsWith("[") ? hostPort.indexOf("]:") : hostPort.lastIndexOf(':');
+        if (colon < 0) return -1;
+        String portText = hostPort.startsWith("[")
+            ? hostPort.substring(colon + 2)
+            : hostPort.substring(colon + 1);
+        if (portText.isEmpty()) return -1;
+        try {
+            return Integer.parseInt(portText);
+        } catch (NumberFormatException ignored) {
+            return -1;
         }
     }
 
