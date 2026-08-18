@@ -1327,14 +1327,16 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
               setResourceMenuOpen((open) => !open)
               revealControls()
             }}
-            className="fixed z-[60] flex h-11 items-center gap-1.5 rounded-full border border-paper/20 bg-ink-raised/95 px-3 text-paper shadow-[0_8px_28px_rgba(0,0,0,0.28)] backdrop-blur-md transition-transform active:scale-95"
+            className="fixed z-[60] flex items-center gap-2 rounded-full border border-haze bg-ink/95 px-3.5 py-2 text-paper shadow-xl shadow-black/35 backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
             style={{
               bottom: 'max(calc(var(--sab, 0px) + 76px), 76px)',
               right: 'max(calc(var(--sar, 0px) + 1rem), 1rem)',
             }}
           >
-            <ListVideo size={17} strokeWidth={1.7} />
-            <span className="font-mono text-[11px]">{resourceOptions.length}</span>
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-cinnabar/15 text-cinnabar">
+              <ListVideo size={13} strokeWidth={2} />
+            </span>
+            <span className="font-mono text-[12px] font-medium tracking-[0.03em]">嗅探 {resourceOptions.length}</span>
           </button>
         )}
 
