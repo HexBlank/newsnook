@@ -6,6 +6,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   LoaderCircle,
+  ListVideo,
   Maximize2,
   Minimize2,
   Pause,
@@ -48,7 +49,8 @@ import {
   type VideoRotation,
 } from '../lib/videoGestures'
 import { Capacitor } from '@capacitor/core'
-import { prepareNativeMediaPlayback } from '../features/mediaSniffer/native'
+import { clearNativeMediaPlayback, prepareNativeMediaPlayback } from '../features/mediaSniffer/native'
+import type { MediaResourceDescriptor } from '../features/mediaSniffer/types'
 
 interface Props {
   src: string
@@ -58,6 +60,7 @@ interface Props {
   sourcePage?: string
   requestHeaders?: Record<string, string>
   extraUrls?: string[]
+  resources?: MediaResourceDescriptor[]
   deferLoad?: boolean
   onUnlocked?: () => void
   onRefreshSource?: () => void
@@ -163,8 +166,13 @@ function formatTime(seconds: number): string {
  *   双击专职播放 / 暂停；上半屏与内嵌一致。
  * - 通用：双指缩放，放大后单指平移；顶部按钮旋转 / 还原画面。
  */
-export function InkVideoPlayer({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, deferLoad, onUnlocked, onRefreshSource, onPlaybackError }: Props) {
+export function InkVideoPlayer({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, resources, deferLoad, onUnlocked, onRefreshSource, onPlaybackError }: Props) {
   const [allowed, setAllowed] = useState(!deferLoad)
+  const [selectedResource, setSelectedResource] = useState<MediaResourceDescriptor | null>(null)
+
+  useEffect(() => {
+    setSelectedResource(null)
+  }, [src, resources])
 
   useEffect(() => {
     if (!deferLoad) setAllowed(true)
@@ -195,10 +203,28 @@ export function InkVideoPlayer({ src, poster, title, format, sourcePage, request
     )
   }
 
-  return <InkVideoPlayerReady src={src} poster={poster} title={title} format={format} sourcePage={sourcePage} requestHeaders={requestHeaders} extraUrls={extraUrls} onRefreshSource={onRefreshSource} onPlaybackError={onPlaybackError} />
+  const active = selectedResource
+  const activeExtraUrls = Array.from(new Set([
+    ...(active?.relatedUrls ?? []),
+    ...(extraUrls ?? []),
+  ]))
+  return <InkVideoPlayerReady
+    key={`${active?.id || active?.type || format || 'media'}:${active?.url || src}`}
+    src={active?.url || src}
+    poster={poster}
+    title={title}
+    format={active?.type || format}
+    sourcePage={active?.pageUrl || sourcePage}
+    requestHeaders={active?.requestHeaders || requestHeaders}
+    extraUrls={activeExtraUrls.length ? activeExtraUrls : undefined}
+    resources={resources}
+    onSelectResource={setSelectedResource}
+    onRefreshSource={onRefreshSource}
+    onPlaybackError={onPlaybackError}
+  />
 }
 
-function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, onRefreshSource, onPlaybackError }: Props) {
+function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, resources, onSelectResource, onRefreshSource, onPlaybackError }: Props & { onSelectResource?: (resource: MediaResourceDescriptor) => void }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -242,6 +268,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
   const [seeking, setSeeking] = useState(false)
   const [rate, setRate] = useState(1)
   const [rateMenuOpen, setRateMenuOpen] = useState(false)
+  const [resourceMenuOpen, setResourceMenuOpen] = useState(false)
   const [boosting, setBoosting] = useState(false)
   const [gestureHud, setGestureHud] = useState<GestureHud | null>(null)
   const [videoView, setVideoView] = useState<VideoViewState>(DEFAULT_VIDEO_VIEW)
@@ -251,6 +278,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
   /** 无原生亮度能力时的兜底压暗层 */
   const [scrim, setScrim] = useState(0)
   const immersive = fullscreen || fallbackFullscreen
+  const resourceOptions = resources?.length ? resources : []
 
   const brightnessControl = useMemo(() => createBrightnessControl(setScrim), [])
   const volumeControl = useMemo(
@@ -342,6 +370,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     const isDash = format === 'dash' || /\.mpd(\?|$)/i.test(url)
     let cancelled = false
     let progressiveBridgeAttempted = false
+    let directRetryAttempted = false
     const failPlayback = (message: string) => {
       if (cancelled) return
       setFatal(message)
@@ -375,6 +404,30 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     }
     const onFatalMedia = () => {
       if (cancelled) return
+      if (
+        Capacitor.isNativePlatform()
+        && !isHls
+        && !isDash
+        && progressiveBridgeAttempted
+        && !directRetryAttempted
+      ) {
+        directRetryAttempted = true
+        setWaiting(true)
+        void clearNativeMediaPlayback({
+          url,
+          sourcePage,
+          format: 'progressive',
+          extraUrls,
+        }).then(() => {
+          if (cancelled) return
+          setFatal(null)
+          video.src = url
+          video.load()
+        }).catch(() => {
+          if (!cancelled) failPlayback('瑙嗛婧愭殏鏃舵棤娉曟挱鏀?')
+        })
+        return
+      }
       if (
         Capacitor.isNativePlatform()
         && !isHls
@@ -1221,7 +1274,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
               event.stopPropagation()
               revealControls()
             }}
-            className={`pointer-events-none absolute inset-x-0 top-0 z-[3] flex items-start gap-2 bg-gradient-to-b from-black/75 via-black/30 to-transparent pb-8 pl-[max(0.625rem,var(--sal,0px))] pr-[max(0.625rem,var(--sar,0px))] transition-opacity duration-200 ${
+            className={`pointer-events-none absolute inset-x-0 top-0 z-[6] flex items-start gap-2 bg-gradient-to-b from-black/75 via-black/30 to-transparent pb-8 pl-[max(0.625rem,var(--sal,0px))] pr-[max(0.625rem,var(--sar,0px))] transition-opacity duration-200 ${
               immersive ? 'pt-[max(0.5rem,var(--sat,0px))]' : 'pt-2'
             } ${showChrome ? 'opacity-100' : 'opacity-0'}`}
           >
@@ -1260,6 +1313,67 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
             >
               <RefreshCcw size={17} strokeWidth={1.7} />
             </button>
+          </div>
+        )}
+
+        {resourceOptions.length > 0 && !immersive && (
+          <button
+            type="button"
+            data-no-page-tap=""
+            aria-label={`选择视频资源，共 ${resourceOptions.length} 个`}
+            aria-expanded={resourceMenuOpen}
+            title={`视频资源（${resourceOptions.length}）`}
+            onClick={() => {
+              setResourceMenuOpen((open) => !open)
+              revealControls()
+            }}
+            className="fixed z-[60] flex h-11 items-center gap-1.5 rounded-full border border-paper/20 bg-ink-raised/95 px-3 text-paper shadow-[0_8px_28px_rgba(0,0,0,0.28)] backdrop-blur-md transition-transform active:scale-95"
+            style={{
+              bottom: 'max(calc(var(--sab, 0px) + 76px), 76px)',
+              right: 'max(calc(var(--sar, 0px) + 1rem), 1rem)',
+            }}
+          >
+            <ListVideo size={17} strokeWidth={1.7} />
+            <span className="font-mono text-[11px]">{resourceOptions.length}</span>
+          </button>
+        )}
+
+        {resourceMenuOpen && resourceOptions.length > 0 && !immersive && (
+          <div
+            className="fixed z-[61] max-h-[min(60vh,280px)] w-[min(88vw,330px)] overflow-y-auto rounded-xl border border-paper/20 bg-ink-raised/95 p-1.5 shadow-xl backdrop-blur-md"
+            style={{
+              bottom: 'max(calc(var(--sab, 0px) + 128px), 128px)',
+              right: 'max(calc(var(--sar, 0px) + 1rem), 1rem)',
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="px-2.5 py-1.5 text-[10px] tracking-wide text-paper/55">已嗅探到 {resourceOptions.length} 个资源</div>
+            {resourceOptions.map((resource, index) => {
+              const label = resource.type === 'hls' ? 'HLS' : resource.type === 'dash' ? 'DASH' : 'MP4'
+              const detail = resource.videoTracks.find((track) => track.width || track.height)
+              return (
+                <button
+                  key={`${resource.id || resource.url}:${index}`}
+                  type="button"
+                  onClick={() => {
+                    onSelectResource?.(resource)
+                    setResourceMenuOpen(false)
+                    revealControls()
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-paper transition-colors hover:bg-paper/10 active:bg-paper/15"
+                >
+                  <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-paper/10 font-mono text-[10px]">{index + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1 text-[11px]">
+                      <span>{label}</span>
+                      {resource.isAd && <span className="rounded bg-cinnabar/20 px-1 text-[9px] text-cinnabar-soft">广告</span>}
+                      {detail && <span className="text-paper/50">{detail.width || '?'}×{detail.height || '?'}</span>}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[10px] text-paper/50">{resource.url}</span>
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
 

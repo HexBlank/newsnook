@@ -81,15 +81,6 @@ const pageUrl = 'https://news.example/articles/42'
     true,
     '显式请求头必须由原生桥接补齐',
   )
-  assert.equal(
-    shouldBridgeNativePlayback({
-      url: 'https://cdn.example/video.mp4',
-      sourcePage: pageUrl,
-      format: 'progressive',
-    }),
-    true,
-    'cross-origin media must use the native bridge to preserve the source-page Referer',
-  )
 }
 
 {
@@ -229,6 +220,19 @@ const pageUrl = 'https://news.example/articles/42'
   const descriptor = buildMediaDescriptor(observations)
   assert.equal(descriptor?.url, muxedUrl, '完整音视频资源应优先于更高清的无声自适应轨道')
   assert.equal(descriptor?.hasAudio, true)
+}
+
+{
+  const adUrl = 'https://s1.kwai.net/bs2/ad-i18n-dsp/preroll.mp4'
+  const contentUrl = 'https://la.btc620.com/mp43/879782.mp4?st=signed&e=1800000000'
+  const descriptor = buildMediaDescriptor([
+    { url: adUrl, pageUrl, source: 'dom', mimeType: 'video/mp4', hasAudio: true, hasVideo: true },
+    { url: contentUrl, pageUrl, source: 'dom', mimeType: 'video/mp4', hasAudio: true, hasVideo: true },
+  ])
+  assert.equal(descriptor?.url, contentUrl, '广告预热视频不得覆盖正文视频')
+  assert.equal(descriptor?.resources?.length, 2, '播放器应保留正文和广告两个可选资源')
+  assert.equal(descriptor?.resources?.[0]?.isAd, false)
+  assert.equal(descriptor?.resources?.[1]?.isAd, true)
 }
 
 {

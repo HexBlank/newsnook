@@ -85,8 +85,6 @@ export async function prepareNativeMediaPlayback(options: {
     currentProxyRuntime(),
   )
   const intercept = shouldBridgeNativePlayback({
-    url: options.url,
-    sourcePage: options.sourcePage,
     format: options.format,
     headers: options.headers,
     forceBridge: options.forceBridge,
@@ -105,6 +103,28 @@ export async function prepareNativeMediaPlayback(options: {
     ...(transport.kind === 'native-tunnel' ? { proxy: transport.tunnel } : {}),
   })
   return intercept
+}
+
+/** Remove the temporary OkHttp interception context so WebView can retry a
+ * progressive resource with its own native media stack. This is used only as
+ * a bounded recovery path when an intercepted 206 response cannot be decoded.
+ */
+export async function clearNativeMediaPlayback(options: {
+  url: string
+  sourcePage?: string
+  format?: string
+  origins?: string[]
+  extraUrls?: string[]
+}): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  const seeds = collectPlaybackOrigins(options)
+  if (!seeds.length) return
+  await Promise.all(seeds.map((seed) => NativeMediaSniffer.preparePlayback({
+    url: seed,
+    intercept: false,
+    sourcePage: options.sourcePage,
+    format: options.format,
+  })))
 }
 
 const NativeMediaSniffer = registerPlugin<NativeMediaSnifferPlugin>('MediaSniffer')

@@ -90,4 +90,25 @@ function videoFrom(html: string): Element {
   assert.deepEqual(result?.requestHeaders, { Referer: 'https://news.example/story' })
 }
 
+{
+  const result = describeInlineVideo(
+    videoFrom('<video src="https://cdn.example/content.mp4" data-media-resources=\'{"bad":true}\'></video>'),
+    '文章标题',
+  )
+  assert.equal(result?.resources, undefined, '无效资源列表不得进入播放器')
+}
+
+{
+  const resources = [
+    { id: 'content', type: 'progressive', url: 'https://cdn.example/content.mp4', pageUrl: 'https://news.example/story', score: 1, videoTracks: [], audioTracks: [], subtitles: [], drm: false, drmKeySystems: [] },
+    { id: 'ad', type: 'progressive', url: 'https://ads.example/preroll.mp4', pageUrl: 'https://news.example/story', score: 2, videoTracks: [], audioTracks: [], subtitles: [], drm: false, drmKeySystems: [], isAd: true },
+  ]
+  const result = describeInlineVideo(
+    videoFrom(`<video src="${resources[0].url}" data-media-resources='${JSON.stringify(resources)}'></video>`),
+    '文章标题',
+  )
+  assert.equal(result?.resources?.length, 2)
+  assert.equal(result?.resources?.[1]?.isAd, true)
+}
+
 console.log('inline-video.test.ts: ok')

@@ -22,6 +22,24 @@ const PLAYBACK_RANGE_QUERY_KEY = /^(?:range|bytes|rn|rbuf|begin|end|alr)$/i
 const MIME_QUERY_KEY = /^(?:mime|mime-type|mimetype|content-type|content_type|type)$/i
 const FORMAT_QUERY_KEY = /^(?:format|fmt|container|ext)$/i
 
+// Keep this deliberately narrow: an ad candidate should lose to the actual
+// content, but must remain available in the resource picker when it is the
+// only source the page exposes.  These markers cover VAST/preroll URLs and
+// the common ad-CDN path conventions without treating every short `ad` token
+// as an advertisement.
+const AD_MEDIA_MARKER = /(?:^|[._\-/])(?:ad|ads|advert|advertising|adserver|adbreak|preroll|midroll|postroll|vast|doubleclick|commercial)(?:[._\-/]|$)/i
+const AD_QUERY_MARKER = /(?:^|[?&_=])(?:ad|ads|advert|advertising|adserver|adbreak|preroll|midroll|postroll|vast|commercial)(?:[._\-/]|$|[&=])/i
+
+export function isLikelyAdMediaUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return AD_MEDIA_MARKER.test(`${url.hostname}${url.pathname}`)
+      || AD_QUERY_MARKER.test(url.search)
+  } catch {
+    return AD_MEDIA_MARKER.test(value) || AD_QUERY_MARKER.test(value)
+  }
+}
+
 export function normalizedMime(value?: string): string {
   return value?.split(';', 1)[0]?.trim().toLowerCase() || ''
 }
