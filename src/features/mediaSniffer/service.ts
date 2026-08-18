@@ -103,7 +103,13 @@ export async function discoverMediaDescriptor(options: {
   timeoutMs?: number
   referrer?: string
   signal?: AbortSignal
-  observeNative?: (url: string, timeoutMs: number, referrer?: string) => Promise<MediaObservation[]>
+  onDescriptor?: (descriptor: MediaDescriptor) => void
+  observeNative?: (
+    url: string,
+    timeoutMs: number,
+    referrer?: string,
+    onObservation?: (observation: MediaObservation) => void,
+  ) => Promise<MediaObservation[]>
 }): Promise<MediaDescriptor | null> {
   const staticObservations = options.html
     ? observeMediaInHtml(options.html, options.pageUrl)
@@ -112,6 +118,23 @@ export async function discoverMediaDescriptor(options: {
       : observeMediaInPayload(options.payload, options.pageUrl)
 
   const runtimeObservations: MediaObservation[] = []
+  let lastEmittedSignature = ''
+  const emitAvailableDescriptor = () => {
+    if (!options.onDescriptor) return
+    const descriptor = buildMediaDescriptor(
+      mergeObservationSources(staticObservations, runtimeObservations),
+    )
+    if (!descriptor || descriptor.resources?.[0]?.isAd) return
+    const signature = descriptorSignature(descriptor)
+    if (signature === lastEmittedSignature) return
+    lastEmittedSignature = signature
+    try {
+      options.onDescriptor(descriptor)
+    } catch {
+      // A UI subscriber must not cancel the underlying discovery lifecycle.
+    }
+  }
+  emitAvailableDescriptor()
   const observe = options.observeNative ?? (Capacitor.isNativePlatform() ? observeMediaInNativePage : undefined)
   if (options.runtime !== false && observe) {
     const embeddedPages = options.html ? embeddedPageUrlsInHtml(options.html, options.pageUrl) : []
@@ -123,15 +146,44 @@ export async function discoverMediaDescriptor(options: {
         probeTarget,
         targetTimeoutMs,
         target === options.pageUrl ? options.referrer : options.pageUrl,
+        (observation) => {
+          runtimeObservations.push(observation)
+          emitAvailableDescriptor()
+        },
       ).catch(() => [])
       runtimeObservations.push(...observations)
+      emitAvailableDescriptor()
     }
   }
 
   const observations = mergeObservationSources(staticObservations, runtimeObservations)
   if (!observations.length) return null
   const manifests = await manifestBodies(observations, options.signal)
-  return buildMediaDescriptor(observations, manifests)
+  const descriptor = buildMediaDescriptor(observations, manifests)
+  if (descriptor && options.onDescriptor) {
+    const signature = descriptorSignature(descriptor)
+    if (signature !== lastEmittedSignature) {
+      try {
+        options.onDescriptor(descriptor)
+        lastEmittedSignature = signature
+      } catch {
+        // Keep the final descriptor available to the Promise caller.
+      }
+    }
+  }
+  return descriptor
+}
+
+function descriptorSignature(descriptor: MediaDescriptor): string {
+  return JSON.stringify([
+    descriptor.type,
+    descriptor.url,
+    descriptor.drm,
+    descriptor.videoTracks.map((track) => track.url || ''),
+    descriptor.audioTracks.map((track) => track.url || ''),
+    descriptor.subtitles.map((track) => track.url || ''),
+    descriptor.resources?.map((resource) => [resource.type, resource.url, resource.drm]) ?? [],
+  ])
 }
 
 export function mediaDescriptorHtml(

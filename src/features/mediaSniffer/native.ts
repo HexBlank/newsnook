@@ -1,4 +1,4 @@
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 
 import { getRuntimeProxyPrefs } from '../../lib/http'
 import { currentProxyRuntime } from '../proxy/runtime'
@@ -9,10 +9,14 @@ import { shouldBridgeNativePlayback } from './playback'
 import type { MediaObservation } from './types'
 
 interface NativeMediaSnifferPlugin {
-  sniff(options: { url: string; timeoutMs: number; referrer?: string }): Promise<{
+  sniff(options: { url: string; timeoutMs: number; referrer?: string; sessionId: string }): Promise<{
     observations: MediaObservation[]
     pageUrl?: string
   }>
+  addListener(
+    eventName: 'mediaObservation',
+    listener: (event: { sessionId?: string; observation?: MediaObservation }) => void,
+  ): Promise<PluginListenerHandle>
   preparePlayback(options: {
     url: string
     intercept: boolean
@@ -142,9 +146,47 @@ export async function observeMediaInNativePage(
   url: string,
   timeoutMs = 6000,
   referrer?: string,
+  onObservation?: (observation: MediaObservation) => void,
 ): Promise<MediaObservation[]> {
   if (!Capacitor.isNativePlatform()) return []
-  const result = await NativeMediaSniffer.sniff({ url, timeoutMs, referrer })
-  const observations = Array.isArray(result.observations) ? result.observations : []
-  return observationsWithoutSessionNonce(observations)
+  const sessionId = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `media-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const streamed: MediaObservation[] = []
+  let listener: PluginListenerHandle | undefined
+  try {
+    try {
+      listener = await NativeMediaSniffer.addListener('mediaObservation', (event) => {
+        if (event.sessionId !== sessionId || !event.observation) return
+        const [observation] = observationsWithoutSessionNonce([event.observation])
+        streamed.push(observation)
+        onObservation?.(observation)
+      })
+    } catch {
+      // Older installed native shells may not expose the incremental event;
+      // the final sniff result remains a compatible fallback.
+    }
+    const result = await NativeMediaSniffer.sniff({ url, timeoutMs, referrer, sessionId })
+    const final = Array.isArray(result.observations)
+      ? observationsWithoutSessionNonce(result.observations)
+      : []
+    const seen = new Set(final.map(observationIdentity))
+    for (const observation of streamed) {
+      if (seen.has(observationIdentity(observation))) continue
+      final.push(observation)
+    }
+    return final
+  } finally {
+    await listener?.remove().catch(() => undefined)
+  }
+}
+
+function observationIdentity(observation: MediaObservation): string {
+  return [
+    observation.source,
+    observation.url || '',
+    observation.mimeType || '',
+    observation.mediaKind || '',
+    observation.drmKeySystem || '',
+  ].join('|')
 }

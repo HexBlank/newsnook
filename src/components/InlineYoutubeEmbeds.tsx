@@ -62,6 +62,11 @@ function YoutubeEmbedPlayer({
       referrer: sourcePage,
       runtime: true,
       timeoutMs: 9_000,
+      onDescriptor: (descriptor) => {
+        if (sniffRun.current !== run || !isCustomPlayable(descriptor)) return
+        setMedia(descriptor)
+        setPhase('custom')
+      },
     }).then((descriptor) => {
       if (sniffRun.current !== run) return
       if (isCustomPlayable(descriptor)) {

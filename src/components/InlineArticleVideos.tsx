@@ -1,5 +1,6 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { RefreshCw } from 'lucide-react'
 
 import { describeInlineVideo, type InlineVideoDescriptor } from '../lib/inlineVideos'
 import type { MediaResourceDescriptor } from '../features/mediaSniffer/types'
@@ -78,21 +79,75 @@ export function InlineArticleVideos({
 
   return mounted.map(({ host, original: _original, ...video }, index) =>
     createPortal(
-      <InkVideoPlayer
-        src={video.src}
-        poster={video.poster}
-        title={video.title}
-        format={video.format}
-        sourcePage={video.sourcePage || sourcePage}
-        requestHeaders={video.requestHeaders}
-        extraUrls={video.extraUrls}
-        resources={video.resources as MediaResourceDescriptor[] | undefined}
-        onRefreshSource={onRefreshSource}
-        deferLoad={deferLoad}
-        onUnlocked={() => onUnlocked?.(video.src)}
-      />,
+      video.pending && !video.src ? (
+        <VideoSniffPlaceholder
+          state={video.pending}
+          poster={video.poster}
+          onRetry={onRefreshSource}
+        />
+      ) : (
+        <InkVideoPlayer
+          src={video.src}
+          poster={video.poster}
+          title={video.title}
+          format={video.format}
+          sourcePage={video.sourcePage || sourcePage}
+          requestHeaders={video.requestHeaders}
+          extraUrls={video.extraUrls}
+          resources={video.resources as MediaResourceDescriptor[] | undefined}
+          onRefreshSource={onRefreshSource}
+          deferLoad={deferLoad}
+          onUnlocked={() => onUnlocked?.(video.src)}
+        />
+      ),
       host,
       `${index}:${video.src}`,
     ),
+  )
+}
+
+export function VideoSniffPlaceholder({
+  state,
+  poster,
+  onRetry,
+}: {
+  state: 'sniffing' | 'failed'
+  poster?: string
+  onRetry?: () => void
+}) {
+  const failed = state === 'failed'
+  return (
+    <div
+      className={`reader-video-sniff-placeholder${poster ? ' has-poster' : ''}${failed ? ' is-failed' : ''}`}
+      role={failed ? 'alert' : 'status'}
+      aria-live="polite"
+    >
+      {poster ? (
+        <img
+          className="reader-video-sniff-poster"
+          src={poster}
+          alt=""
+          loading="eager"
+          decoding="async"
+          referrerPolicy="no-referrer"
+        />
+      ) : null}
+      {failed ? (
+        <div className="reader-video-sniff-failed-stack">
+          <p className="reader-video-sniff-failed-text">暂未嗅探到可播放视频</p>
+          {onRetry && (
+            <button type="button" className="reader-video-sniff-retry" onClick={onRetry}>
+              <RefreshCw size={13} strokeWidth={1.8} />
+              重新嗅探
+            </button>
+          )}
+        </div>
+      ) : (
+        <span className="reader-video-sniff-pill">
+          <span className="reader-video-sniff-dot" />
+          嗅探中
+        </span>
+      )}
+    </div>
   )
 }

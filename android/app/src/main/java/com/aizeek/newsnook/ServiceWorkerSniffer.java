@@ -12,6 +12,10 @@ import java.util.Collections;
 import org.json.JSONArray;
 
 final class ServiceWorkerSniffer {
+    interface ObservationListener {
+        void onObservation(org.json.JSONObject observation);
+    }
+
     private static final Object LOCK = new Object();
     private static final CopyOnWriteArrayList<Session> SESSIONS = new CopyOnWriteArrayList<>();
     private static final ServiceWorkerClient PASSTHROUGH = new ServiceWorkerClient() {
@@ -25,12 +29,15 @@ final class ServiceWorkerSniffer {
         public WebResourceResponse shouldInterceptRequest(WebResourceRequest request) {
             for (Session session : SESSIONS) {
                 if (!session.belongsTo(request)) continue;
-                MediaSnifferPlugin.recordNetworkEventForServiceWorker(
+                org.json.JSONObject observation = MediaSnifferPlugin.recordNetworkEventForServiceWorker(
                     session.events,
                     session.pageUrl.get(),
                     request,
                     session.lastHighValueAt
                 );
+                if (observation != null && session.listener != null) {
+                    session.listener.onObservation(observation);
+                }
             }
             return null;
         }
@@ -40,11 +47,18 @@ final class ServiceWorkerSniffer {
         final JSONArray events;
         final AtomicReference<String> pageUrl;
         final AtomicLong lastHighValueAt;
+        final ObservationListener listener;
 
-        Session(JSONArray events, AtomicReference<String> pageUrl, AtomicLong lastHighValueAt) {
+        Session(
+            JSONArray events,
+            AtomicReference<String> pageUrl,
+            AtomicLong lastHighValueAt,
+            ObservationListener listener
+        ) {
             this.events = events;
             this.pageUrl = pageUrl;
             this.lastHighValueAt = lastHighValueAt;
+            this.listener = listener;
         }
 
         boolean belongsTo(WebResourceRequest request) {
@@ -112,11 +126,16 @@ final class ServiceWorkerSniffer {
         }
     }
 
-    static void install(JSONArray events, AtomicReference<String> pageUrl, AtomicLong lastHighValueAt) {
+    static void install(
+        JSONArray events,
+        AtomicReference<String> pageUrl,
+        AtomicLong lastHighValueAt,
+        ObservationListener listener
+    ) {
         try {
             ServiceWorkerController controller = ServiceWorkerController.getInstance();
             synchronized (LOCK) {
-                SESSIONS.add(new Session(events, pageUrl, lastHighValueAt));
+                SESSIONS.add(new Session(events, pageUrl, lastHighValueAt, listener));
                 controller.setServiceWorkerClient(FANOUT);
             }
         } catch (RuntimeException ignored) {

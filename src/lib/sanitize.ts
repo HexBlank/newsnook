@@ -203,6 +203,7 @@ export function sanitizeArticleHtml(html: string): string {
       'data-media-extra-urls',
       'data-media-origins',
       'data-media-resources',
+      'data-media-pending',
       'data-source-page',
     ],
     FORBID_TAGS: ['style', 'script', 'form', 'input', 'button'],

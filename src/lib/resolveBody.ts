@@ -409,7 +409,10 @@ async function extractWithReadability(
   }
 }
 
-function buildVideoBody(article: Article): ResolvedBody {
+function buildVideoBody(
+  article: Article,
+  pending: 'sniffing' | 'failed' = 'sniffing',
+): ResolvedBody {
   const paragraphs = (article.summary || article.title)
     .split(/\n+/)
     .map((line) => line.trim())
@@ -417,10 +420,21 @@ function buildVideoBody(article: Article): ResolvedBody {
     .map((line) => `<p>${escapeHtml(line)}</p>`)
     .join('')
 
-  // 播放器由 ReaderScreen 的 InkVideoPlayer 负责，这里只出说明文案
-  const html = `${paragraphs}<p>本条为视频报道，可在上方播放器内直接观看。</p>`
+  if (article.videoUrl) {
+    return {
+      contentHtml: sanitizeArticleHtml(paragraphs),
+      bodySource: 'video',
+    }
+  }
+
+  const attrs = [
+    `data-media-pending="${pending}"`,
+    `title="${escapeHtml(article.title)}"`,
+    'playsinline',
+  ]
+  if (article.image) attrs.push(`poster="${escapeHtml(article.image)}"`)
   return {
-    contentHtml: sanitizeArticleHtml(html),
+    contentHtml: sanitizeArticleHtml(`<video ${attrs.join(' ')}></video>${paragraphs}`),
     bodySource: 'video',
   }
 }
@@ -757,6 +771,33 @@ function withArticleAudio(
   }
 }
 
+/** 测试导出：视频稿在嗅探前/失败时都必须保留 video 占位节点。 */
+export function buildVideoBodyForTest(
+  article: Article,
+  pending: 'sniffing' | 'failed' = 'sniffing',
+): ResolvedBody {
+  return buildVideoBody(article, pending)
+}
+
+function stripVideoDiscoveryPlaceholder(html: string): string {
+  return html
+    .replace(/<video\b[^>]*\bdata-media-pending\b[^>]*>\s*<\/video>/gi, '')
+    .replace(/<div\b[^>]*data-newsnook-video-placeholder=["']true["'][^>]*>[\s\S]*?<\/div>/gi, '')
+}
+
+function withVideoDiscoveryFailed(resolved: ResolvedBody): ResolvedBody {
+  if (!/data-media-pending=["']sniffing["']/i.test(resolved.contentHtml)) return resolved
+  return {
+    ...resolved,
+    contentHtml: sanitizeArticleHtml(
+      resolved.contentHtml.replace(
+        /data-media-pending=["']sniffing["']/gi,
+        'data-media-pending="failed"',
+      ),
+    ),
+  }
+}
+
 function applyMediaDescriptor(
   resolved: ResolvedBody,
   descriptor: Awaited<ReturnType<typeof discoverMediaDescriptor>>,
@@ -770,7 +811,7 @@ function applyMediaDescriptor(
       mediaDescriptorHtml(descriptor, {
         title,
         poster,
-        contentHtml: resolved.contentHtml,
+        contentHtml: stripVideoDiscoveryPlaceholder(resolved.contentHtml),
       }),
     ),
   }
@@ -784,13 +825,18 @@ function scheduleMediaDiscovery(
   onMediaResolved: MediaResolvedHandler | undefined,
 ): void {
   if (!onMediaResolved) return
-  void discoverMediaDescriptor(options)
+  const publish = (descriptor: Awaited<ReturnType<typeof discoverMediaDescriptor>>) => {
+    const enriched = descriptor
+      ? applyMediaDescriptor(resolved, descriptor, title, poster)
+      : withVideoDiscoveryFailed(resolved)
+    if (enriched) onMediaResolved(enriched)
+  }
+  void discoverMediaDescriptor({ ...options, onDescriptor: publish })
     .then((descriptor) => {
-      const enriched = applyMediaDescriptor(resolved, descriptor, title, poster)
-      if (enriched) onMediaResolved(enriched)
+      publish(descriptor)
     })
     .catch(() => {
-      // 媒体嗅探失败不应影响已经展示的正文。
+      onMediaResolved(withVideoDiscoveryFailed(resolved))
     })
 }
 
@@ -859,7 +905,8 @@ export async function resolveArticleBody(
   if (huxiu) return huxiu
 
   if (article.contentType === 'video') {
-    if (article.videoUrl || !article.originUrl) return buildVideoBody(article)
+    if (article.videoUrl) return buildVideoBody(article)
+    if (!article.originUrl) return buildVideoBody(article, 'failed')
 
     if (onMediaResolved) {
       const base = buildVideoBody(article)
@@ -883,7 +930,7 @@ export async function resolveArticleBody(
           )
         })
         .catch(() => {
-          // 视频摘要已经可以阅读；页面或媒体探测失败时保留摘要播放器。
+          onMediaResolved(withVideoDiscoveryFailed(base))
         })
       return base
     }
@@ -899,7 +946,7 @@ export async function resolveArticleBody(
       timeoutMs: 6000,
       signal,
     }).catch(() => null)
-    if (!descriptor) return buildVideoBody(article)
+    if (!descriptor) return buildVideoBody(article, 'failed')
     const content = article.summary
       ? `<p>${escapeHtml(article.summary)}</p>`
       : ''

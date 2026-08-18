@@ -9,6 +9,7 @@ export interface InlineVideoDescriptor {
   requestHeaders?: Record<string, string>
   extraUrls?: string[]
   resources?: MediaResourceDescriptor[]
+  pending?: 'sniffing' | 'failed'
 }
 
 const VIDEO_SOURCE_ATTRS = [
@@ -107,7 +108,9 @@ export function describeInlineVideo(
     .map((source) => firstAttribute(source, VIDEO_SOURCE_ATTRS))
     .find(Boolean)
   const src = resolveMediaUrl(directSource || nestedSource || '', baseUrl)
-  if (!src) return null
+  const pendingAttr = video.getAttribute('data-media-pending')?.trim()
+  const pending = pendingAttr === 'sniffing' || pendingAttr === 'failed' ? pendingAttr : undefined
+  if (!src && !pending) return null
 
   const poster = resolveMediaUrl(
     firstAttribute(video, VIDEO_POSTER_ATTRS),
@@ -138,5 +141,6 @@ export function describeInlineVideo(
     ...(requestHeaders ? { requestHeaders } : {}),
     ...(extraUrls ? { extraUrls } : {}),
     ...(resources ? { resources } : {}),
+    ...(pending ? { pending } : {}),
   }
 }

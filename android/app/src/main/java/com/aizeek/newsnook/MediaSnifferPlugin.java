@@ -37,6 +37,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
@@ -61,6 +64,10 @@ import org.json.JSONTokener;
  */
 @CapacitorPlugin(name = "MediaSniffer")
 public class MediaSnifferPlugin extends Plugin {
+
+    private interface ObservationEmitter {
+        void emit(JSONObject observation);
+    }
 
     private static final int MIN_TIMEOUT_MS = 1500;
     private static final int MAX_TIMEOUT_MS = 12000;
@@ -319,8 +326,11 @@ public class MediaSnifferPlugin extends Plugin {
         int timeoutMs = Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, requestedTimeout));
         String referrer = call.getString("referrer");
         if (!isAllowedPageUrl(referrer)) referrer = null;
+        String sessionId = call.getString("sessionId");
+        if (sessionId == null || sessionId.trim().isEmpty()) sessionId = UUID.randomUUID().toString();
         String finalReferrer = referrer;
-        getActivity().runOnUiThread(() -> startSniff(call, url, timeoutMs, finalReferrer));
+        String finalSessionId = sessionId;
+        getActivity().runOnUiThread(() -> startSniff(call, url, timeoutMs, finalReferrer, finalSessionId));
     }
 
     @PluginMethod
@@ -598,7 +608,13 @@ public class MediaSnifferPlugin extends Plugin {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private void startSniff(PluginCall call, String initialUrl, int timeoutMs, String referrer) {
+    private void startSniff(
+        PluginCall call,
+        String initialUrl,
+        int timeoutMs,
+        String referrer,
+        String sessionId
+    ) {
         FrameLayout root = getActivity().findViewById(android.R.id.content);
         if (root == null) {
             call.reject("无法创建页面观察器");
@@ -626,11 +642,21 @@ public class MediaSnifferPlugin extends Plugin {
         AtomicLong nativeLastHighValueAt = new AtomicLong(0L);
         String sessionNonce = UUID.randomUUID().toString();
         String probeScript = buildProbeScript(sessionNonce);
+        LiveProbeQueue liveProbes = new LiveProbeQueue(
+            createProbeClient(settings.getUserAgentString()),
+            nativeLastHighValueAt,
+            event -> emitMediaObservation(sessionId, event)
+        );
         // Header capture is TTL-bound and shared by the discovery lifecycle.
         // Never clear it when another iframe/page sniff may still be active;
         // doing so loses credentials for already discovered CDN tracks.
         ScriptHandler scriptHandler = installDocumentStartProbe(webView, probeScript);
-        ServiceWorkerSniffer.install(networkEvents, pageUrl, nativeLastHighValueAt);
+        ServiceWorkerSniffer.install(
+            networkEvents,
+            pageUrl,
+            nativeLastHighValueAt,
+            event -> handleNetworkObservation(event, liveProbes, sessionId)
+        );
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -647,7 +673,8 @@ public class MediaSnifferPlugin extends Plugin {
 
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                recordNetworkEvent(networkEvents, pageUrl.get(), request, nativeLastHighValueAt);
+                JSONObject event = recordNetworkEvent(networkEvents, pageUrl.get(), request, nativeLastHighValueAt);
+                handleNetworkObservation(event, liveProbes, sessionId);
                 return null;
             }
         });
@@ -662,7 +689,7 @@ public class MediaSnifferPlugin extends Plugin {
             if (finished.get()) return;
             long now = System.currentTimeMillis();
             if (now - startMs >= timeoutMs) {
-                finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce);
+                finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce, liveProbes);
                 return;
             }
             webView.evaluateJavascript(
@@ -672,11 +699,11 @@ public class MediaSnifferPlugin extends Plugin {
                     long lastHigh = Math.max(parseJsMillis(value), nativeLastHighValueAt.get());
                     long innerNow = System.currentTimeMillis();
                     if (innerNow - startMs >= timeoutMs) {
-                        finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce);
+                        finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce, liveProbes);
                         return;
                     }
                     if (innerNow - startMs >= MIN_TIMEOUT_MS && lastHigh > 0 && innerNow - lastHigh >= QUIET_MS) {
-                        finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce);
+                        finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce, liveProbes);
                         return;
                     }
                     webView.postDelayed(pollHolder[0], POLL_INTERVAL_MS);
@@ -685,7 +712,7 @@ public class MediaSnifferPlugin extends Plugin {
         };
         webView.postDelayed(pollHolder[0], POLL_INTERVAL_MS);
         webView.postDelayed(
-            () -> finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce),
+            () -> finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce, liveProbes),
             timeoutMs
         );
 
@@ -698,20 +725,77 @@ public class MediaSnifferPlugin extends Plugin {
         }
     }
 
+    private void emitMediaObservation(String sessionId, JSONObject observation) {
+        if (observation == null || sessionId == null || sessionId.isEmpty()) return;
+        JSONObject snapshot;
+        try {
+            snapshot = new JSONObject(observation.toString());
+        } catch (JSONException ignored) {
+            return;
+        }
+        Runnable emit = () -> {
+            JSObject payload = new JSObject();
+            payload.put("sessionId", sessionId);
+            payload.put("observation", snapshot);
+            notifyListeners("mediaObservation", payload);
+        };
+        android.app.Activity activity = getActivity();
+        if (activity != null) activity.runOnUiThread(emit);
+        else emit.run();
+    }
+
+    private void handleNetworkObservation(
+        JSONObject event,
+        LiveProbeQueue liveProbes,
+        String sessionId
+    ) {
+        if (event == null) return;
+        if (isImmediatelyPlayable(event)) {
+            emitMediaObservation(sessionId, event);
+        } else {
+            JSONObject nested = nestedPlayableObservation(event);
+            if (nested != null) emitMediaObservation(sessionId, nested);
+            liveProbes.offer(event);
+        }
+    }
+
+    private static JSONObject nestedPlayableObservation(JSONObject event) {
+        String wrapperUrl = event.optString("url", "");
+        try {
+            Uri wrapper = Uri.parse(wrapperUrl);
+            for (String key : wrapper.getQueryParameterNames()) {
+                if (!key.matches("(?i)(url|src|source|file|video|video_url|playurl|play_url|media|media_url)")) continue;
+                String nestedUrl = wrapper.getQueryParameter(key);
+                if (!isAllowedPageUrl(nestedUrl)) continue;
+                String mime = inferredMimeType(nestedUrl);
+                if (mime == null) continue;
+                JSONObject nested = new JSONObject(event.toString());
+                nested.put("url", nestedUrl);
+                nested.put("mimeType", mime);
+                if (mime.startsWith("audio/")) nested.put("mediaKind", "audio");
+                else if (mime.startsWith("video/")) nested.put("mediaKind", "video");
+                return nested;
+            }
+        } catch (JSONException | RuntimeException ignored) {
+            // The original request remains available for normal runtime probing.
+        }
+        return null;
+    }
+
     private ScriptHandler installDocumentStartProbe(WebView webView, String probeScript) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return null;
         return WebViewCompat.addDocumentStartJavaScript(webView, probeScript, Collections.singleton("*"));
     }
 
-    static void recordNetworkEventForServiceWorker(JSONArray events, String pageUrl, WebResourceRequest request, AtomicLong lastHighValueAt) {
-        recordNetworkEvent(events, pageUrl, request, true, lastHighValueAt);
+    static JSONObject recordNetworkEventForServiceWorker(JSONArray events, String pageUrl, WebResourceRequest request, AtomicLong lastHighValueAt) {
+        return recordNetworkEvent(events, pageUrl, request, true, lastHighValueAt);
     }
 
-    private static void recordNetworkEvent(JSONArray events, String pageUrl, WebResourceRequest request, AtomicLong lastHighValueAt) {
-        recordNetworkEvent(events, pageUrl, request, false, lastHighValueAt);
+    private static JSONObject recordNetworkEvent(JSONArray events, String pageUrl, WebResourceRequest request, AtomicLong lastHighValueAt) {
+        return recordNetworkEvent(events, pageUrl, request, false, lastHighValueAt);
     }
 
-    private static void recordNetworkEvent(
+    private static JSONObject recordNetworkEvent(
         JSONArray events,
         String pageUrl,
         WebResourceRequest request,
@@ -722,7 +806,7 @@ public class MediaSnifferPlugin extends Plugin {
         Map<String, String> requestHeaders = request.getRequestHeaders();
         if (requestHeaders == null) requestHeaders = Collections.emptyMap();
         OriginHeaderStore.note(url, requestHeaders);
-        if (isSkippableStaticAsset(url)) return;
+        if (isSkippableStaticAsset(url)) return null;
         synchronized (events) {
             JSONObject event = new JSONObject();
             try {
@@ -753,8 +837,96 @@ public class MediaSnifferPlugin extends Plugin {
                     lastHighValueAt.set(System.currentTimeMillis());
                 }
                 appendPrioritized(events, event);
+                return event;
             } catch (JSONException ignored) {
                 // 单条异常不影响页面继续加载。
+                return null;
+            }
+        }
+    }
+
+    private static boolean isImmediatelyPlayable(JSONObject event) {
+        if (event == null) return false;
+        String mime = event.optString("mimeType", "").toLowerCase(Locale.ROOT);
+        return mime.startsWith("video/")
+            || mime.startsWith("audio/")
+            || mime.contains("mpegurl")
+            || mime.contains("dash+xml");
+    }
+
+    /**
+     * Classifies extensionless requests as they arrive. This is intentionally
+     * independent per URL: a slow endpoint cannot delay an obvious m3u8/mp4
+     * hit, and the final result only waits for a small bounded drain.
+     */
+    private static final class LiveProbeQueue {
+        private static final long DRAIN_MS = 650L;
+
+        private final OkHttpClient client;
+        private final AtomicLong lastHighValueAt;
+        private final ObservationEmitter emitter;
+        private final ExecutorService executor = Executors.newFixedThreadPool(4);
+        private final Set<String> seen = ConcurrentHashMap.newKeySet();
+        private final AtomicInteger scheduled = new AtomicInteger(0);
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+
+        LiveProbeQueue(
+            OkHttpClient client,
+            AtomicLong lastHighValueAt,
+            ObservationEmitter emitter
+        ) {
+            this.client = client;
+            this.lastHighValueAt = lastHighValueAt;
+            this.emitter = emitter;
+        }
+
+        void offer(JSONObject event) {
+            if (closed.get() || event == null || scheduled.get() >= MediaProbe.MAX_PER_SESSION) return;
+            String method = event.optString("method", "GET");
+            String url = event.optString("url", "");
+            if (!"GET".equalsIgnoreCase(method)
+                || !isAllowedPageUrl(url)
+                || hasMediaExtension(url)
+                || !seen.add(url)) return;
+            int count = scheduled.incrementAndGet();
+            if (count > MediaProbe.MAX_PER_SESSION) {
+                scheduled.decrementAndGet();
+                return;
+            }
+            try {
+                executor.execute(() -> {
+                    try {
+                        String pageUrl = event.optString("pageUrl", "");
+                        Map<String, String> captured = OriginHeaderStore.headersFor(url, pageUrl);
+                        MediaProbe.Result result = MediaProbe.classify(client, url, captured);
+                        if (result == null || result.mimeType == null || result.mimeType.isEmpty()) return;
+                        synchronized (event) {
+                            event.put("mimeType", result.mimeType);
+                            if (result.mimeType.startsWith("audio/")) event.put("mediaKind", "audio");
+                            else if (result.mimeType.startsWith("video/")) event.put("mediaKind", "video");
+                        }
+                        lastHighValueAt.set(System.currentTimeMillis());
+                        emitter.emit(event);
+                    } catch (JSONException | RuntimeException ignored) {
+                        // One URL must not block or cancel the other request tasks.
+                    }
+                });
+            } catch (RuntimeException rejected) {
+                seen.remove(url);
+                scheduled.decrementAndGet();
+            }
+        }
+
+        void closeAndAwait() {
+            if (!closed.compareAndSet(false, true)) return;
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(DRAIN_MS, TimeUnit.MILLISECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException interrupted) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
             }
         }
     }
@@ -847,21 +1019,20 @@ public class MediaSnifferPlugin extends Plugin {
         JSONArray networkEvents,
         String pageUrl,
         AtomicBoolean finished,
-        String sessionNonce
+        String sessionNonce,
+        LiveProbeQueue liveProbes
     ) {
         if (!finished.compareAndSet(false, true)) return;
         webView.evaluateJavascript(
             "window.__newsnookCollectMedia ? JSON.stringify(window.__newsnookCollectMedia()) : '[]'",
             value -> {
-                JSONArray networkCopy = copyEvents(networkEvents);
-                String userAgent = webView.getSettings().getUserAgentString();
                 cleanup(webView, root, scriptHandler, networkEvents);
                 new Thread(() -> {
-                    try {
-                        probeUnknownNetworkEvents(networkCopy, userAgent);
-                    } catch (RuntimeException ignored) {
-                        // Probe 失败时仍返回已有网络/JS 观察。
-                    }
+                    // Unknown resources are classified while the page is loading,
+                    // like youtoo's per-request VideoTask. Give in-flight probes a
+                    // short bounded drain instead of starting a second 15 s batch.
+                    liveProbes.closeAndAwait();
+                    JSONArray networkCopy = copyEvents(networkEvents);
                     appendEvaluatedEvents(networkCopy, value);
                     JSObject result = new JSObject();
                     result.put("pageUrl", pageUrl);
@@ -938,52 +1109,6 @@ public class MediaSnifferPlugin extends Plugin {
             for (int index = 0; index < events.length(); index += 1) target.put(events.get(index));
         } catch (JSONException | ClassCastException ignored) {
             // 网络观察结果仍可用。
-        }
-    }
-
-    private static void probeUnknownNetworkEvents(JSONArray events, String userAgent) {
-        List<JSONObject> targets = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
-        for (int index = 0; index < events.length() && targets.size() < MediaProbe.MAX_PER_SESSION; index += 1) {
-            JSONObject event = events.optJSONObject(index);
-            if (event == null) continue;
-            String url = event.optString("url", "");
-            if (!isAllowedPageUrl(url) || !MediaProbe.isSafeExternalUrl(url) || hasMediaExtension(url)) continue;
-            String mime = event.optString("mimeType", "").trim();
-            if (!mime.isEmpty()) continue;
-            if (!seen.add(url)) continue;
-            targets.add(event);
-        }
-        if (targets.isEmpty()) return;
-
-        OkHttpClient client = createProbeClient(userAgent);
-        int poolSize = Math.min(4, targets.size());
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(poolSize);
-        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(targets.size());
-        for (JSONObject event : targets) {
-            String url = event.optString("url", "");
-            pool.execute(() -> {
-                try {
-                    String pageUrl = event.optString("pageUrl", "");
-                    Map<String, String> captured = OriginHeaderStore.headersFor(url, pageUrl);
-                    MediaProbe.Result result = MediaProbe.classify(client, url, captured);
-                    if (result == null || result.mimeType == null || result.mimeType.isEmpty()) return;
-                    synchronized (event) {
-                        event.put("mimeType", result.mimeType);
-                    }
-                } catch (JSONException | RuntimeException ignored) {
-                    // 单条 Probe 失败不影响其余观察。
-                } finally {
-                    latch.countDown();
-                }
-            });
-        }
-        try {
-            latch.await(15, TimeUnit.SECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        } finally {
-            pool.shutdownNow();
         }
     }
 

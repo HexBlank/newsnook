@@ -9,7 +9,7 @@ import { InkAudioPlayer } from '../components/InkAudioPlayer'
 import { InkImage } from '../components/InkImage'
 import { InkVideoPlayer } from '../components/InkVideoPlayer'
 import { InlineArticleAudio } from '../components/InlineArticleAudio'
-import { InlineArticleVideos } from '../components/InlineArticleVideos'
+import { InlineArticleVideos, VideoSniffPlaceholder } from '../components/InlineArticleVideos'
 import { InlineYoutubeEmbeds } from '../components/InlineYoutubeEmbeds'
 import { loadCachedBody, saveCachedBody } from '../lib/bodyCache'
 import { addVolumePageTurnListener, setVolumePageTurnEnabled } from '../lib/volumePageTurn'
@@ -325,7 +325,7 @@ export function ReaderScreen({
     setError(null)
 
     // 正文内容是静态的，命中缓存直接出，断网也能重读；重新抽取时才绕过
-    if (retryToken === 0) {
+    if (retryToken === 0 && article.contentType !== 'video') {
       const cached = loadCachedBody(article.id)
       if (cached) {
         setHtml(cached.html)
@@ -348,7 +348,6 @@ export function ReaderScreen({
     setBodySource(null)
     setResolvedOriginUrl(undefined)
     setFromCache(false)
-
     resolveArticleBody(
       retryToken > 0 && article.videoUrl
         ? { ...article, videoUrl: undefined }
@@ -399,6 +398,21 @@ export function ReaderScreen({
   }, [article.id, loadState, reduced])
 
   const displayedHtml = showTranslation && translated ? translated.html : html
+  useEffect(() => {
+    if (
+      loadState !== 'ready' ||
+      article.contentType !== 'video' ||
+      article.videoUrl ||
+      !/data-media-pending=["']sniffing["']/i.test(html)
+    ) return
+    const timer = setTimeout(() => {
+      setHtml((current) => current.replace(
+        /data-media-pending=["']sniffing["']/gi,
+        'data-media-pending="failed"',
+      ))
+    }, 15_000)
+    return () => clearTimeout(timer)
+  }, [article.contentType, article.videoUrl, html, loadState])
   const coverUrl = articleCoverUrl(article.image)
   const autoLoadMedia = shouldAutoLoadMedia({
     wifiOnlyAutoLoadMedia: Boolean(wifiOnlyAutoLoadMedia),
@@ -996,6 +1010,12 @@ export function ReaderScreen({
                     einkMode ? undefined : (src) => setLightbox({ src, alt: article.title })
                   }
                 />
+              </div>
+            )}
+
+            {article.contentType === 'video' && !article.videoUrl && loadState === 'loading' && (
+              <div data-reader-block className="page-x mt-5">
+                <VideoSniffPlaceholder state="sniffing" poster={article.image} />
               </div>
             )}
 

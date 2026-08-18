@@ -11,6 +11,8 @@ import {
   parseDashManifest,
   parseHlsManifest,
   mediaFormatFor,
+  mergeObservationSources,
+  nestedRequestUrls,
 } from '../src/features/mediaSniffer/core'
 import { logicalMediaUrl } from '../src/features/mediaSniffer/classifier'
 import {
@@ -58,6 +60,43 @@ const pageUrl = 'https://news.example/articles/42'
     'https://video.example/player/42?token=signed',
     '未知站点不得擅自改写签名播放器 URL',
   )
+}
+
+{
+  const nested = 'https://cdn.example/master.m3u8?token=keep'
+  const wrapper = `https://player.example/proxy?url=${encodeURIComponent(nested)}`
+  assert.deepEqual(nestedRequestUrls(wrapper), [nested])
+  assert.equal(
+    buildMediaDescriptor(mergeObservationSources([{
+      url: wrapper,
+      pageUrl,
+      source: 'network',
+    }]))?.url,
+    nested,
+    '网络请求包装的 url= 媒体地址应像 youtoo 一样拆出并参与候选判定',
+  )
+}
+
+{
+  let emitted: string | undefined
+  const observation: MediaObservation = {
+    url: 'https://cdn.example/live.m3u8',
+    pageUrl,
+    source: 'network',
+    mimeType: 'application/vnd.apple.mpegurl',
+  }
+  const descriptor = await discoverMediaDescriptor({
+    pageUrl,
+    runtime: true,
+    onDescriptor: (value) => { emitted = value.url },
+    observeNative: async (_url, _timeout, _referrer, onObservation) => {
+      onObservation?.(observation)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return [observation]
+    },
+  })
+  assert.equal(emitted, observation.url, '原生单条可靠命中应在最终 sniff Promise 前增量发布')
+  assert.equal(descriptor?.url, observation.url)
 }
 
 {

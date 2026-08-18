@@ -688,6 +688,105 @@
   background: #000;
 }
 
+/* 视频稿在嗅探完成前也保留真实播放器的空间，避免正文突然上移。 */
+.reader-video-sniff-placeholder,
+.reader-prose [data-media-pending] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 210px;
+  aspect-ratio: 16 / 9;
+  margin: 0.8em 0 1.2em;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #0c0d10;
+  color: rgb(255 255 255 / 78%);
+}
+
+.reader-video-sniff-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  object-fit: cover;
+  filter: brightness(0.72);
+}
+
+/* ── 嗅探中：角落浮动药丸 ── */
+.reader-video-sniff-pill {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 52%);
+  backdrop-filter: blur(6px);
+  color: rgb(255 255 255 / 80%);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+.reader-video-sniff-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e8b98a;
+  animation: reader-video-sniff-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes reader-video-sniff-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.75); }
+}
+
+/* ── 失败态：居中简洁提示 ── */
+.reader-video-sniff-failed-stack {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.reader-video-sniff-failed-text {
+  margin: 0;
+  color: rgb(255 255 255 / 55%);
+  font-size: 0.82rem;
+}
+
+.reader-video-sniff-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid rgb(232 185 138 / 42%);
+  border-radius: 999px;
+  background: rgb(232 185 138 / 8%);
+  color: #e8b98a;
+  font-size: 0.72rem;
+}
+
+.reader-video-sniff-retry:active {
+  background: rgb(232 185 138 / 18%);
+}
+
+/* has-poster 时失败态也加一层轻纱保证文字可读 */
+.reader-video-sniff-placeholder.has-poster.is-failed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 50%);
+}
+
 /* 原站 YouTube embed：不二次封装，仅做响应式占位 */
 .reader-prose iframe[src*='youtube.com/embed'],
 .reader-prose iframe[src*='youtube-nocookie.com/embed'] {

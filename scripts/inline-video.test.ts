@@ -79,6 +79,39 @@ function videoFrom(html: string): Element {
 {
   const result = describeInlineVideo(
     videoFrom(
+      '<video data-media-pending="sniffing" poster="https://cdn.example/cover.jpg" title="现场"></video>',
+    ),
+    '文章标题',
+  )
+  assert.deepEqual(result, {
+    src: '',
+    poster: 'https://cdn.example/cover.jpg',
+    title: '现场',
+    pending: 'sniffing',
+  })
+}
+
+{
+  const result = describeInlineVideo(
+    videoFrom('<video data-media-pending="failed" title="视频报道"></video>'),
+    '文章标题',
+  )
+  assert.equal(result?.pending, 'failed')
+  assert.equal(result?.src, '')
+  assert.equal(result?.title, '视频报道')
+}
+
+{
+  const html = sanitizeArticleHtml(
+    '<video data-media-pending="sniffing" poster="https://cdn.example/cover.jpg" title="现场" playsinline></video><p>摘要</p>',
+  )
+  assert.match(html, /data-media-pending="sniffing"/)
+  assert.match(html, /poster="https:\/\/cdn\.example\/cover\.jpg"/)
+}
+
+{
+  const result = describeInlineVideo(
+    videoFrom(
       sanitizeArticleHtml(
         '<video src="https://cdn.example/live.m3u8" data-media-format="hls" data-source-page="https://news.example/story" data-media-headers="{&quot;Referer&quot;:&quot;https://news.example/story&quot;}"></video>',
       ),

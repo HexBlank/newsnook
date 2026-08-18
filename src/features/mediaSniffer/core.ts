@@ -528,7 +528,49 @@ export function bestPosterUrlInPayload(payload: unknown, pageUrl: string): strin
 export function mergeObservationSources(
   ...groups: MediaObservation[][]
 ): MediaObservation[] {
-  return groups.flat()
+  const merged = groups.flat()
+  const expanded: MediaObservation[] = []
+  for (const observation of merged) {
+    expanded.push(observation)
+    if (!observation.url || observation.source === 'static' || observation.source === 'dom') continue
+    for (const nestedUrl of nestedRequestUrls(observation.url)) {
+      expanded.push({
+        ...observation,
+        url: nestedUrl,
+        mimeType: undefined,
+        mediaKind: undefined,
+      })
+    }
+  }
+  return expanded
+}
+
+/** Some player endpoints wrap the real signed media URL in `url=`/`src=`.
+ * Treat that inner URL as a sibling observation, matching the request-task
+ * expansion used by youtoo without changing the original playback URL. */
+export function nestedRequestUrls(value: string): string[] {
+  try {
+    const wrapper = new URL(value)
+    const result: string[] = []
+    const seen = new Set<string>()
+    for (const [key, candidate] of wrapper.searchParams) {
+      if (!/^(?:url|src|source|file|video|video_url|playurl|play_url|media|media_url)$/i.test(key)) continue
+      let decoded = candidate.trim()
+      for (let pass = 0; pass < 2 && !/^https?:\/\//i.test(decoded); pass += 1) {
+        try {
+          decoded = decodeURIComponent(decoded)
+        } catch {
+          break
+        }
+      }
+      if (!/^https?:\/\//i.test(decoded) || decoded === value || seen.has(decoded)) continue
+      seen.add(decoded)
+      result.push(decoded)
+    }
+    return result
+  } catch {
+    return []
+  }
 }
 
 export type { MediaObservationSource }

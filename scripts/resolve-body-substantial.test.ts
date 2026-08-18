@@ -2,12 +2,29 @@ import assert from 'node:assert/strict'
 
 import {
   CRAWLER_FALLBACK_UAS,
+  buildVideoBodyForTest,
   isBlockedPublisherHtml,
   isPartialFeedTeaser,
   isScrapeNoticeBody,
   isSubstantialHtml,
   preferPublisherFetchUrl,
 } from '../src/lib/resolveBody'
+import type { Article } from '../src/lib/types'
+
+const videoArticle: Article = {
+  id: 'video-1',
+  title: '现场直击',
+  summary: '记者在发布会现场记录。',
+  image: 'https://cdn.example/cover.jpg',
+  publishedAt: 1,
+  hasRealDate: true,
+  sourceId: 'demo',
+  sourceName: '示例',
+  sourceLabel: '示例',
+  sourceGroup: 'cn',
+  originUrl: 'https://news.example/video/1',
+  contentType: 'video',
+}
 
 assert.equal(
   isBlockedPublisherHtml('<html><title>Simple Page</title><body>akamai</body></html>'),
@@ -131,5 +148,28 @@ assert.ok(
     CRAWLER_FALLBACK_UAS.some((ua) => ua.includes('Discordbot')),
   'UA 阶梯需覆盖 facebook（ESPN/Yahoo）与 Discordbot（Reuters）',
 )
+
+{
+  const sniffing = buildVideoBodyForTest(videoArticle)
+  assert.match(sniffing.contentHtml, /<video\b[^>]*data-media-pending="sniffing"/)
+  assert.match(sniffing.contentHtml, /poster="https:\/\/cdn\.example\/cover\.jpg"/)
+  assert.match(sniffing.contentHtml, /记者在发布会现场记录/)
+  assert.doesNotMatch(
+    sniffing.contentHtml,
+    /本条为视频报道/,
+    '视频稿应保留播放器占位，而不是改成说明文案',
+  )
+  const failed = buildVideoBodyForTest(videoArticle, 'failed')
+  assert.match(failed.contentHtml, /data-media-pending="failed"/)
+  const withUrl = buildVideoBodyForTest({
+    ...videoArticle,
+    videoUrl: 'https://cdn.example/full.mp4',
+  })
+  assert.doesNotMatch(
+    withUrl.contentHtml,
+    /<video\b/,
+    '已有直链时由阅读器上方播放器承接，正文不再插占位 video',
+  )
+}
 
 console.log('resolve-body substantial tests passed')
