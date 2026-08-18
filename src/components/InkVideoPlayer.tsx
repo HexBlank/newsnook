@@ -50,7 +50,11 @@ import {
   type VideoRotation,
 } from '../lib/videoGestures'
 import { Capacitor } from '@capacitor/core'
-import { clearNativeMediaPlayback, prepareNativeMediaPlayback } from '../features/mediaSniffer/native'
+import {
+  clearNativeMediaPlayback,
+  nativeStreamProxyUrl,
+  prepareNativeMediaPlayback,
+} from '../features/mediaSniffer/native'
 import type { MediaResourceDescriptor } from '../features/mediaSniffer/types'
 
 interface Props {
@@ -395,6 +399,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     const isDash = format === 'dash' || /\.mpd(\?|$)/i.test(url)
     let cancelled = false
     let progressiveBridgeAttempted = false
+    let progressiveProxyUrl: string | null = null
     let directRetryAttempted = false
     const failPlayback = (message: string) => {
       if (cancelled) return
@@ -427,6 +432,11 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       setWaiting(false)
       setReady(true)
     }
+    const loadProgressiveSource = () => {
+      video.src = progressiveProxyUrl || url
+      video.load()
+    }
+
     const onFatalMedia = () => {
       if (cancelled) return
       if (
@@ -446,8 +456,8 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         }).then(() => {
           if (cancelled) return
           setFatal(null)
-          video.src = url
-          video.load()
+          progressiveProxyUrl = null
+          loadProgressiveSource()
         }).catch(() => {
           if (!cancelled) failPlayback('瑙嗛婧愭殏鏃舵棤娉曟挱鏀?')
         })
@@ -468,11 +478,15 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
           headers: requestHeaders,
           extraUrls,
           forceBridge: true,
-        }).then(() => {
+        }).then(async () => {
           if (cancelled) return
           setFatal(null)
-          video.src = url
-          video.load()
+          progressiveProxyUrl = await nativeStreamProxyUrl(
+            url,
+            `retry-${Date.now().toString(36)}`,
+          )
+          if (cancelled) return
+          loadProgressiveSource()
         }).catch(() => {
           if (!cancelled) failPlayback('视频源暂时无法播放')
         })
@@ -555,24 +569,42 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     video.addEventListener('ratechange', onRateChange)
 
     void (async () => {
+      const effectiveHeaders: Record<string, string> = { ...requestHeaders }
+      if (sourcePage && !Object.keys(effectiveHeaders).some((key) => key.toLowerCase() === 'referer')) {
+        try {
+          if (new URL(url).origin !== new URL(sourcePage).origin) {
+            effectiveHeaders['Referer'] = sourcePage
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       progressiveBridgeAttempted = await prepareNativeMediaPlayback({
         url,
         sourcePage,
         format: isDash ? 'dash' : isHls ? 'hls' : 'progressive',
-        headers: requestHeaders,
+        headers: effectiveHeaders,
         extraUrls,
         forceBridge: !isHls && !isDash && needsMediaHotlinkBypass(url),
       })
       if (cancelled) return
-      const requestContext = sourcePage || requestHeaders
-        ? { sourcePage, headers: requestHeaders }
+      const requestContext = sourcePage || Object.keys(effectiveHeaders).length > 0
+        ? { sourcePage, headers: effectiveHeaders }
         : undefined
-      const bypass = needsMediaHotlinkBypass(url) || Boolean(isHls && sourcePage && Capacitor.isNativePlatform())
+      const bypass = needsMediaHotlinkBypass(url) || Boolean(isHls && sourcePage && !Capacitor.isNativePlatform())
       // 防盗链 CDN：即使系统原生支持 HLS，也走 hls.js + 自定义 loader，避免 WebView 带 localhost Origin 被 403
       const useNativeHls = !bypass && Boolean(video.canPlayType('application/vnd.apple.mpegurl'))
       const HlsClass =
         isHls && !useNativeHls ? (await import('hls.js')).default : null
       if (cancelled) return
+      if (!isDash && !isHls && progressiveBridgeAttempted) {
+        progressiveProxyUrl = await nativeStreamProxyUrl(
+          url,
+          `play-${Date.now().toString(36)}`,
+        )
+        if (cancelled) return
+      }
 
       if (isDash) {
         const module = await import('dashjs')
@@ -610,13 +642,13 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         }
       } else if (bypass) {
         if (Capacitor.isNativePlatform()) {
-          // Main WebView 的流式请求桥接会补齐 Referer/Cookie/代理，避免整段视频进内存。
-          video.src = url
+          // Android progressive 统一改走 localhost 代理，把 Referer/Cookie 留在原生 OkHttp 侧。
+          loadProgressiveSource()
         } else {
           video.src = browserMediaProxyUrl(url)
         }
       } else {
-        video.src = url
+        loadProgressiveSource()
       }
     })().catch(() => {
       failPlayback('视频流加载失败')

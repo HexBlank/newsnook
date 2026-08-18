@@ -6,7 +6,6 @@ interface NativePlaybackBridgeOptions {
 }
 
 /**
- * Progressive media should stay on WebView's native network stack whenever possible.
  * Intercepted WebResourceResponse streams are reserved for requests that actually
  * need rewritten headers, a user proxy, or DASH segment scoping.
  */
@@ -16,6 +15,6 @@ export function shouldBridgeNativePlayback({
   forceBridge,
   usesNativeTunnel,
 }: NativePlaybackBridgeOptions): boolean {
-  if (forceBridge || usesNativeTunnel || format === 'dash') return true
+  if (forceBridge || usesNativeTunnel || format === 'dash' || format === 'hls') return true
   return Object.values(headers ?? {}).some((value) => value.trim().length > 0)
 }

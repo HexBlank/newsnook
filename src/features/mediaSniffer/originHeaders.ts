@@ -57,7 +57,12 @@ export function playbackHeadersForTarget(input: {
     if (referer) result.referer = referer
     if (origin) result.origin = origin
   } else if (pageOrigin) {
-    result.referer = pageOrigin.endsWith('/') ? pageOrigin : `${pageOrigin}/`
+    const referer = header(captured, 'referer')
+    if (referer) {
+      result.referer = referer
+    } else {
+      result.referer = pageOrigin.endsWith('/') ? pageOrigin : `${pageOrigin}/`
+    }
   }
   return result
 }

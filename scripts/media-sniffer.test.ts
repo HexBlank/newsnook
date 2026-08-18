@@ -116,6 +116,11 @@ const pageUrl = 'https://news.example/articles/42'
     'DASH 清单与分片需要共享原生播放会话',
   )
   assert.equal(
+    shouldBridgeNativePlayback({ format: 'hls' }),
+    true,
+    'HLS 分片与密钥需要共享原生播放会话以保持 Cookie/Referer',
+  )
+  assert.equal(
     shouldBridgeNativePlayback({ format: 'progressive', headers: { Referer: pageUrl } }),
     true,
     '显式请求头必须由原生桥接补齐',
@@ -198,7 +203,16 @@ const pageUrl = 'https://news.example/articles/42'
   })
   assert.equal(cross.cookie, undefined)
   assert.equal(cross.authorization, undefined)
-  assert.equal(cross.referer, 'https://news.example/')
+  assert.equal(cross.referer, pageUrl, '跨域 CDN 有捕获到的真实 Referer 时应保留，而非回退到站点根路径')
+  const crossNoCapturedReferer = playbackHeadersForTarget({
+    targetUrl: `${videoOrigin}/seg.ts`,
+    pageUrl,
+    capturedByOrigin: {
+      'https://news.example': captured['https://news.example'],
+      [videoOrigin]: { 'user-agent': 'NewsNook' },
+    },
+  })
+  assert.equal(crossNoCapturedReferer.referer, 'https://news.example/', '跨域 CDN 未捕获 Referer 时回退到页面 origin')
   assert.equal(originOf('https://v1.cdn.example:443/a'), 'https://v1.cdn.example')
   const ranged = playbackHeadersForTarget({
     targetUrl: 'https://news.example/play.m3u8',

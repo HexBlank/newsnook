@@ -32,6 +32,7 @@ interface NativeMediaSnifferPlugin {
       password?: string
     }
   }): Promise<void>
+  getStreamProxyPort(): Promise<{ port: number }>
 }
 
 export function isOpaquePlaybackUrl(url: string): boolean {
@@ -107,6 +108,26 @@ export async function prepareNativeMediaPlayback(options: {
     ...(transport.kind === 'native-tunnel' ? { proxy: transport.tunnel } : {}),
   })
   return intercept
+}
+
+let cachedStreamProxyPort: number | null = null
+
+export async function getNativeStreamProxyPort(): Promise<number | null> {
+  if (!Capacitor.isNativePlatform()) return null
+  if (cachedStreamProxyPort != null) return cachedStreamProxyPort
+  const result = await NativeMediaSniffer.getStreamProxyPort()
+  const port = Number(result?.port)
+  if (!Number.isFinite(port) || port <= 0) return null
+  cachedStreamProxyPort = port
+  return port
+}
+
+export async function nativeStreamProxyUrl(url: string, session?: string): Promise<string | null> {
+  const port = await getNativeStreamProxyPort()
+  if (!port) return null
+  const params = new URLSearchParams({ url })
+  if (session) params.set('session', session)
+  return `http://127.0.0.1:${port}/stream?${params.toString()}`
 }
 
 /** Remove the temporary OkHttp interception context so WebView can retry a

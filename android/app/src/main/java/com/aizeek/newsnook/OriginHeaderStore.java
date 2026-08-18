@@ -85,7 +85,12 @@ final class OriginHeaderStore {
             if (origin == null) origin = pageOrigin;
             if (origin != null && !origin.isEmpty()) result.put("origin", origin);
         } else if (pageOrigin != null) {
-            result.put("referer", pageOrigin.endsWith("/") ? pageOrigin : pageOrigin + "/");
+            String referer = header(captured, "referer");
+            if (referer != null && !referer.isEmpty()) {
+                result.put("referer", referer);
+            } else {
+                result.put("referer", pageOrigin.endsWith("/") ? pageOrigin : pageOrigin + "/");
+            }
         }
         String cookie = cookies == null ? null : cookies.cookieFor(targetUrl);
         if (cookie != null && !cookie.isEmpty()) {

@@ -386,6 +386,17 @@ public class MediaSnifferPlugin extends Plugin {
         call.resolve();
     }
 
+    @PluginMethod
+    public void getStreamProxyPort(PluginCall call) {
+        try {
+            JSObject result = new JSObject();
+            result.put("port", LocalStreamProxy.getInstance().getPort());
+            call.resolve(result);
+        } catch (IOException error) {
+            call.reject("无法启动本地视频代理", error);
+        }
+    }
+
     static void clearPlaybackContexts() {
         PLAYBACK_CONTEXTS.clear();
     }
