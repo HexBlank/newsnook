@@ -318,6 +318,18 @@ video/1080.m3u8`
 }
 
 {
+  const encoded = 'JTY4JTc0JTc0JTcwJTczJTNBJTJGJTJGJTYzJTY0JTZFJTMxJTM2JTJFJTMxJTMxJTc5JTc1JTZFJTJFJTczJTcwJTYxJTYzJTY1JTJGJTQ3JTQxJTU2JTMxJTJGJTMzJTMzJTM3JTMzJTM0JTM4JTJGJTMzJTMzJTM3JTMzJTM0JTM4JTJFJTZEJTMzJTc1JTM4'
+  const html = `<script>var player_aaaa={"encrypt":2,"vod_data":{"vod_name":"fixture"},"url":"${encoded}","from":"dplayer"}</script>`
+  const descriptor = buildMediaDescriptor(observeMediaInHtml(html, pageUrl))
+  assert.equal(descriptor?.type, 'hls')
+  assert.equal(
+    descriptor?.url,
+    'https://cdn16.11yun.space/GAV1/337348/337348.m3u8',
+    'MacCMS player_aaaa 的二次编码播放地址应在静态嗅探阶段解开',
+  )
+}
+
+{
   const descriptor = buildMediaDescriptor([
     { url: 'https://cdn.example/play?id=42', pageUrl, source: 'xhr', mimeType: 'video/mp4', statusCode: 206 },
     { pageUrl, source: 'mse', drmKeySystem: 'com.widevine.alpha' },

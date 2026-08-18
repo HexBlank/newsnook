@@ -41,6 +41,12 @@ export interface ResolvedBody {
   resolvedOriginUrl?: string
 }
 
+/**
+ * 媒体地址探测完成后的增量更新。
+ * 正文抽取不应等待播放器嗅探；阅读器可以先展示正文，再接收这次更新。
+ */
+export type MediaResolvedHandler = (resolved: ResolvedBody) => void
+
 /** 正文抓取使用的 UA：优先自定义/额外源表，找不到则 undefined（走 http 默认 UA） */
 export function pageUserAgentForArticle(
   article: Article,
@@ -751,6 +757,43 @@ function withArticleAudio(
   }
 }
 
+function applyMediaDescriptor(
+  resolved: ResolvedBody,
+  descriptor: Awaited<ReturnType<typeof discoverMediaDescriptor>>,
+  title: string,
+  poster?: string,
+): ResolvedBody | null {
+  if (!descriptor) return null
+  return {
+    ...resolved,
+    contentHtml: sanitizeArticleHtml(
+      mediaDescriptorHtml(descriptor, {
+        title,
+        poster,
+        contentHtml: resolved.contentHtml,
+      }),
+    ),
+  }
+}
+
+function scheduleMediaDiscovery(
+  options: Parameters<typeof discoverMediaDescriptor>[0],
+  resolved: ResolvedBody,
+  title: string,
+  poster: string | undefined,
+  onMediaResolved: MediaResolvedHandler | undefined,
+): void {
+  if (!onMediaResolved) return
+  void discoverMediaDescriptor(options)
+    .then((descriptor) => {
+      const enriched = applyMediaDescriptor(resolved, descriptor, title, poster)
+      if (enriched) onMediaResolved(enriched)
+    })
+    .catch(() => {
+      // 媒体嗅探失败不应影响已经展示的正文。
+    })
+}
+
 /**
  * 保证详情页拿到可渲染全文。
  * 优先级：视频稿 → Feed 充足全文 → 网易正文接口 → 原文 HTML + Readability。
@@ -759,6 +802,7 @@ export async function resolveArticleBody(
   article: Article,
   signal?: AbortSignal,
   extraSources?: NewsSource[],
+  onMediaResolved?: MediaResolvedHandler,
 ): Promise<ResolvedBody> {
   if (
     article.contentType !== 'video' &&
@@ -774,21 +818,30 @@ export async function resolveArticleBody(
       (frame) => !/youtube(?:-nocookie)?\.com\/embed\//i.test(frame),
     )
     if (hasNonYoutubeEmbed && article.originUrl) {
-      const descriptor = await discoverMediaDescriptor({
+      const mediaOptions = {
         pageUrl: article.originUrl,
         html: article.contentHtml,
         runtime: true,
         timeoutMs: 6000,
         signal,
-      }).catch(() => null)
-      if (descriptor) {
-        contentHtml = sanitizeArticleHtml(
-          mediaDescriptorHtml(descriptor, {
-            title: article.title,
-            poster: article.image,
-            contentHtml,
-          }),
+      } as const
+      if (onMediaResolved) {
+        scheduleMediaDiscovery(
+          mediaOptions,
+          { contentHtml, bodySource: 'feed' },
+          article.title,
+          article.image,
+          (resolved) => onMediaResolved(withArticleAudio(resolved, article)),
         )
+      } else {
+        const descriptor = await discoverMediaDescriptor(mediaOptions).catch(() => null)
+        const enriched = applyMediaDescriptor(
+          { contentHtml, bodySource: 'feed' },
+          descriptor,
+          article.title,
+          article.image,
+        )
+        if (enriched) contentHtml = enriched.contentHtml
       }
     }
     return withArticleAudio(
@@ -807,6 +860,34 @@ export async function resolveArticleBody(
 
   if (article.contentType === 'video') {
     if (article.videoUrl || !article.originUrl) return buildVideoBody(article)
+
+    if (onMediaResolved) {
+      const base = buildVideoBody(article)
+      void fetchAbsoluteText(article.originUrl, {
+        signal,
+        userAgent: pageUserAgentForArticle(article, extraSources),
+      })
+        .then((pageHtml) => {
+          scheduleMediaDiscovery(
+            {
+              pageUrl: article.originUrl,
+              html: pageHtml,
+              runtime: true,
+              timeoutMs: 6000,
+              signal,
+            },
+            base,
+            article.title,
+            article.image,
+            onMediaResolved,
+          )
+        })
+        .catch(() => {
+          // 视频摘要已经可以阅读；页面或媒体探测失败时保留摘要播放器。
+        })
+      return base
+    }
+
     const pageHtml = await fetchAbsoluteText(article.originUrl, {
       signal,
       userAgent: pageUserAgentForArticle(article, extraSources),
@@ -913,30 +994,34 @@ export async function resolveArticleBody(
       throw new Error('原文字符集解析失败')
     }
     let extracted = await extractWithReadability(pageHtml, pageUrl)
+    let mediaBase: ResolvedBody | undefined
+    let mediaOptions: Parameters<typeof discoverMediaDescriptor>[0] | undefined
     if (hasBrokenTextEncoding(extracted.contentHtml)) {
       throw new Error('正文字符集解析失败')
     }
     if (!/<video\b/i.test(extracted.contentHtml)) {
       const mayContainMedia = isLikelyVideoPageUrl(pageUrl) || /<(?:video|source|iframe)\b|VideoObject|\.m3u8(?:[?"'])|\.mpd(?:[?"'])|\.mp4(?:[?"'])/i.test(pageHtml)
       if (mayContainMedia) {
-        const descriptor = await discoverMediaDescriptor({
+        const options = {
           pageUrl,
           html: pageHtml,
           runtime: true,
           timeoutMs: 4500,
           signal,
-        }).catch(() => null)
-        if (descriptor) {
-          extracted = {
-            ...extracted,
-            contentHtml: sanitizeArticleHtml(
-              mediaDescriptorHtml(descriptor, {
-                title: extracted.title || article.title,
-                poster: extracted.image || article.image,
-                contentHtml: extracted.contentHtml,
-              }),
-            ),
-          }
+        } as const
+        if (onMediaResolved) {
+          const base = withArticleAudio({ ...extracted, resolvedOriginUrl }, article, pageHtml)
+          mediaBase = base
+          mediaOptions = options
+        } else {
+          const descriptor = await discoverMediaDescriptor(options).catch(() => null)
+          const enriched = applyMediaDescriptor(
+            extracted,
+            descriptor,
+            extracted.title || article.title,
+            extracted.image || article.image,
+          )
+          if (enriched) extracted = enriched
         }
       }
     }
@@ -946,7 +1031,17 @@ export async function resolveArticleBody(
     if (isScrapeNoticeBody(extracted.contentHtml)) {
       throw new Error('原站仅返回反爬声明')
     }
-    return withArticleAudio({ ...extracted, resolvedOriginUrl }, article, pageHtml)
+    const resolved = mediaBase || withArticleAudio({ ...extracted, resolvedOriginUrl }, article, pageHtml)
+    if (mediaBase && mediaOptions) {
+      scheduleMediaDiscovery(
+        mediaOptions,
+        resolved,
+        extracted.title || article.title,
+        extracted.image || article.image,
+        onMediaResolved,
+      )
+    }
+    return resolved
   }
 
   for (const pageUrl of candidates) {

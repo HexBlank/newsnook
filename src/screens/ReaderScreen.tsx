@@ -355,6 +355,18 @@ export function ReaderScreen({
         : article,
       controller.signal,
       customSources,
+      (resolved) => {
+        if (controller.signal.aborted) return
+        // 正文与媒体嗅探分开：先显示抽取结果，播放器地址稍后增量补上。
+        setHtml(resolved.contentHtml)
+        if (resolved.bodySource !== 'video') {
+          const cached = saveCachedBody(article, {
+            html: resolved.contentHtml,
+            bodySource: resolved.bodySource,
+          })
+          if (cached) onCacheChange()
+        }
+      },
     )
       .then((resolved) => {
         if (controller.signal.aborted) return
