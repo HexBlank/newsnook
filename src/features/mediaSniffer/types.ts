@@ -82,6 +82,8 @@ export interface MediaAsset {
   audios: MediaAssetTrack[]
   subtitles: MediaAssetTrack[]
   syntheticMpd?: string
+  /** URL/path signals indicate a preroll or other advertising media. */
+  isAd?: boolean
 }
 
 export interface MediaTrack {
@@ -112,7 +114,7 @@ export interface MediaCandidate {
   requestHeaders?: Record<string, string>
 }
 
-export interface MediaDescriptor {
+export interface MediaResourceDescriptor {
   type: PlayableMediaFormat
   url: string
   pageUrl: string
@@ -129,4 +131,13 @@ export interface MediaDescriptor {
   relatedUrls?: string[]
   /** Exact origins used by the asset's tracks and manifest. */
   origins?: string[]
+  /** Stable graph id used by the resource picker. */
+  id?: string
+  /** True when the URL has strong advertising/preroll markers. */
+  isAd?: boolean
+}
+
+export interface MediaDescriptor extends MediaResourceDescriptor {
+  /** All playable candidates discovered on the page, including the selected one. */
+  resources?: MediaResourceDescriptor[]
 }

@@ -163,5 +163,8 @@ export function mediaDescriptorHtml(
   if (descriptor.origins?.length) {
     attrs.push(`data-media-origins="${escapeHtml(JSON.stringify(descriptor.origins))}"`)
   }
+  if (descriptor.resources?.length) {
+    attrs.push(`data-media-resources="${escapeHtml(JSON.stringify(descriptor.resources))}"`)
+  }
   return `<video ${attrs.join(' ')}></video>${content}`
 }

@@ -2,6 +2,7 @@ import { useEffect, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
 import { describeInlineVideo, type InlineVideoDescriptor } from '../lib/inlineVideos'
+import type { MediaResourceDescriptor } from '../features/mediaSniffer/types'
 import { InkVideoPlayer } from './InkVideoPlayer'
 
 interface Props {
@@ -85,6 +86,7 @@ export function InlineArticleVideos({
         sourcePage={video.sourcePage || sourcePage}
         requestHeaders={video.requestHeaders}
         extraUrls={video.extraUrls}
+        resources={video.resources as MediaResourceDescriptor[] | undefined}
         onRefreshSource={onRefreshSource}
         deferLoad={deferLoad}
         onUnlocked={() => onUnlocked?.(video.src)}

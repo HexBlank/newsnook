@@ -246,7 +246,26 @@ export function buildMediaDescriptor(
   const playable = selectPlayableAsset(assets)
   const chosen = playable ?? assets.find((item) => item.drm) ?? null
   if (!chosen) return null
-  return descriptorFromAsset(chosen)
+  const primary = descriptorFromAsset(chosen)
+  if (!primary) return null
+
+  // Keep every playable candidate so the UI can recover from a bad primary
+  // choice (for example a site that exposes both a preroll and the article
+  // video). The selected content is always first; ad-marked candidates stay
+  // visible but are never preferred by selectPlayableAsset.
+  const resources = assets
+    .map((asset) => descriptorFromAsset(asset))
+    .filter((resource): resource is NonNullable<typeof resource> => Boolean(resource))
+    .sort((left, right) => {
+      if (left.id === primary.id) return -1
+      if (right.id === primary.id) return 1
+      return Number(Boolean(left.isAd)) - Number(Boolean(right.isAd)) || right.score - left.score
+    })
+
+  return {
+    ...primary,
+    resources,
+  }
 }
 
 function resolvedUrl(value: string, pageUrl: string): string | undefined {

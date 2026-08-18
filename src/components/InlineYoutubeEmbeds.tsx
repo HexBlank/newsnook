@@ -118,6 +118,7 @@ function YoutubeEmbedPlayer({
         sourcePage={media.pageUrl || sourcePage || src}
         requestHeaders={media.requestHeaders}
         extraUrls={extraUrls}
+        resources={media.resources}
         onPlaybackError={handlePlaybackError}
         onRefreshSource={startLoading}
         onUnlocked={onUnlocked}

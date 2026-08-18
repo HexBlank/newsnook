@@ -2,6 +2,7 @@ import { parseMediaApiBody } from './apiParser'
 import {
   isByteRangeResource,
   isHttpUrl,
+  isLikelyAdMediaUrl,
   logicalMediaUrl,
   MANIFEST_MIMES,
   mediaFingerprint,
@@ -14,7 +15,7 @@ import { originOf } from './originHeaders'
 import type {
   MediaAsset,
   MediaAssetTrack,
-  MediaDescriptor,
+  MediaResourceDescriptor,
   MediaFormat,
   MediaObservation,
   MediaTrack,
@@ -364,6 +365,7 @@ function emptyAsset(id: string, pageUrl: string): GraphAsset {
     descriptorAudioTracks: [],
     descriptorSubtitles: [],
     observationTimestamps: [],
+    isAd: false,
   }
 }
 
@@ -429,6 +431,7 @@ export function buildMediaGraph(
     for (const member of members) {
       const { observation, url, format } = member
       score = Math.max(score, observationScore(observation, format))
+      if (isLikelyAdMediaUrl(url)) asset.isAd = true
       if (observation.timestamp) asset.observationTimestamps.push(observation.timestamp)
       if (observation.hasAudio !== undefined) asset.hasAudio = observation.hasAudio
       if (observation.hasVideo !== undefined) asset.hasVideo = observation.hasVideo
@@ -494,14 +497,16 @@ export function selectPlayableAsset(assets: MediaAsset[]): MediaAsset | null {
   const ranked = assets
     .map((asset) => ({ asset, rank: deliveryRank(asset as GraphAsset) }))
     .filter((item): item is { asset: MediaAsset; rank: number } => item.rank !== null)
-    .sort((left, right) => right.rank - left.rank || right.asset.score - left.asset.score)
+    .sort((left, right) => Number(Boolean(left.asset.isAd)) - Number(Boolean(right.asset.isAd))
+      || right.rank - left.rank
+      || right.asset.score - left.asset.score)
   return ranked[0]?.asset ?? null
 }
 
 export function descriptorFromAsset(
   asset: MediaAsset,
   blobUrlForMpd: (xml: string) => string = defaultBlobUrl,
-): MediaDescriptor | null {
+): MediaResourceDescriptor | null {
   const graphAsset = asset as GraphAsset
   if (isAudioOnly(graphAsset)) return null
 
@@ -516,6 +521,7 @@ export function descriptorFromAsset(
     : toDescriptorTracks(asset.subtitles, 'subtitle')
 
   const base = {
+    id: asset.id,
     pageUrl: asset.pageUrl,
     score: asset.score,
     mimeType: graphAsset.mimeType,
@@ -544,6 +550,7 @@ export function descriptorFromAsset(
       ...graphAsset.descriptorAudioTracks.map((track) => track.url),
       ...graphAsset.descriptorSubtitles.map((track) => track.url),
     ].map((value) => value ? originOf(value) : undefined).filter((value): value is string => Boolean(value)))),
+    isAd: Boolean(asset.isAd),
   }
 
   if (asset.manifest) {
