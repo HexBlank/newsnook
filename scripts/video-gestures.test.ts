@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import {
   AXIS_LOCK_PX,
@@ -87,5 +89,25 @@ assert.deepEqual(
 const zoomedPan = clampVideoPan(500, -500, rotatedSurface, landscapeVideo, 2)
 assert.ok(Math.abs(zoomedPan.x - 311.111) < 0.01)
 assert.equal(zoomedPan.y, -200)
+
+{
+  const css = readFileSync(join(process.cwd(), 'src/index.css'), 'utf8')
+  assert.match(
+    css,
+    /\.ink-video-abs-center\s*\{[^}]*transform:\s*translate\(-50%,\s*-50%\)/,
+    '播放键居中必须用经典 transform；Android 12 WebView (Chrome 91) 没有 CSS translate 属性',
+  )
+  const player = readFileSync(
+    join(process.cwd(), 'src/components/InkVideoPlayer.tsx'),
+    'utf8',
+  )
+  const playButton = player.slice(player.indexOf('aria-label="播放"'))
+  assert.match(playButton.slice(0, 900), /ink-video-abs-center/)
+  assert.doesNotMatch(
+    playButton.slice(0, 900),
+    /-translate-x-1\/2/,
+    '播放键不得依赖 Tailwind v4 的 -translate-*（会编译成 translate 属性）',
+  )
+}
 
 console.log('video-gestures: ok')

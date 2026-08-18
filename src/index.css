@@ -688,6 +688,21 @@
   background: #000;
 }
 
+/*
+ * Tailwind v4 的 -translate-* 编译成独立 CSS translate 属性（Chrome 104+）。
+ * Pixel 6 Pro AVD / Android 12 WebView 仍是 Chrome 91，该属性会被忽略，
+ * left/top: 50% 只会把元素左上角放到正中，播放键看起来偏右。
+ */
+.ink-video-abs-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.ink-video-abs-center:active {
+  transform: translate(-50%, -50%) scale(0.95);
+}
+
 /* 视频稿在嗅探完成前也保留真实播放器的空间，避免正文突然上移。 */
 .reader-video-sniff-placeholder,
 .reader-prose [data-media-pending] {
