@@ -35,3 +35,4 @@ artifacts/
 
 # Git worktrees (local isolation)
 .worktrees/
+youtoo/
