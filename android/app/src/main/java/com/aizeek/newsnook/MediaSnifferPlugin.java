@@ -821,6 +821,18 @@ public class MediaSnifferPlugin extends Plugin {
                     if (normalized.matches("m4a|aac|mp3|ogg|opus")) return "audio/" + normalized;
                 }
             }
+            String path = uri.getPath();
+            if (path != null) {
+                String lower = path.toLowerCase(Locale.ROOT);
+                if (lower.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
+                if (lower.endsWith(".mpd")) return "application/dash+xml";
+                if (lower.endsWith(".mp4") || lower.endsWith(".m4v") || lower.endsWith(".mov")) return "video/mp4";
+                if (lower.endsWith(".webm")) return "video/webm";
+                if (lower.endsWith(".m4a")) return "audio/mp4";
+                if (lower.endsWith(".mp3")) return "audio/mpeg";
+                if (lower.endsWith(".aac")) return "audio/aac";
+                if (lower.endsWith(".ogg") || lower.endsWith(".opus")) return "audio/ogg";
+            }
         } catch (RuntimeException ignored) {
             // Extension matching remains available for malformed URLs.
         }

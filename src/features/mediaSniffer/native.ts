@@ -85,6 +85,8 @@ export async function prepareNativeMediaPlayback(options: {
     currentProxyRuntime(),
   )
   const intercept = shouldBridgeNativePlayback({
+    url: options.url,
+    sourcePage: options.sourcePage,
     format: options.format,
     headers: options.headers,
     forceBridge: options.forceBridge,
