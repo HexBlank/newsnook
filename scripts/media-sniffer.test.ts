@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 
 import { parseMediaApiBody } from '../src/features/mediaSniffer/apiParser'
@@ -697,6 +699,23 @@ video/1080.m3u8`
       extraUrls: ['https://upos.example/video.m4s'],
     }),
     ['https://news.example', 'https://upos.example'],
+  )
+}
+
+{
+  const proxySource = readFileSync(
+    join(process.cwd(), 'android/app/src/main/java/com/aizeek/newsnook/LocalStreamProxy.java'),
+    'utf8',
+  )
+  assert.match(
+    proxySource,
+    /URLDecoder\.decode\(\s*value\s*,\s*"UTF-8"\s*\)/,
+    'LocalStreamProxy 必须用 URLDecoder.decode(String, String)；decode(String, Charset) 在 API 33 才有，Android 12 会 NoSuchMethodError 崩进程',
+  )
+  assert.doesNotMatch(
+    proxySource,
+    /URLDecoder\.decode\([^;]*StandardCharsets/,
+    '不得把 Charset 传给 URLDecoder.decode，core-oj 在 minSdk 24 设备上没有该重载',
   )
 }
 

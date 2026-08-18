@@ -3,12 +3,15 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_PREFERENCES,
   addCustomCategory,
+  addCustomSource,
   allRegisteredCategories,
   deleteCustomCategory,
+  describeSources,
   isCategoryVisible,
   normalizePreferences,
   orderedCategories,
   resetCategoryLayout,
+  resolveCategory,
   updateCustomCategory,
   visibleCategories,
 } from '../src/sources/preferences'
@@ -80,5 +83,22 @@ assert.equal(deletedPrefs.customCategories?.length, 0)
 assert.ok(!orderedCategories(deletedPrefs).some((c) => c.id === newCategoryId))
 assert.ok(!deletedPrefs.categoryOrder.includes(newCategoryId))
 assert.ok(!deletedPrefs.hiddenCategoryIds.includes(newCategoryId))
+
+// 8. 自建信源挂到自建分类：摘要必须能解析 label，不能误显示「未选择信源」
+const { nextPrefs: prefsWithRss, newSourceId: customRssId } = addCustomSource(DEFAULT_PREFERENCES, {
+  name: '91porn.com',
+  label: '91',
+  url: 'https://91porn.com/index.php',
+})
+const { nextPrefs: prefsRssCategory, newCategoryId: rssCategoryId } = addCustomCategory(prefsWithRss, {
+  label: '123214',
+  short: '1232',
+  sourceIds: [customRssId],
+})
+assert.equal(describeSources([customRssId]), '未选择信源')
+assert.equal(describeSources([customRssId], prefsRssCategory.customSources), '91')
+const rssResolved = resolveCategory(rssCategoryId, prefsRssCategory)
+assert.deepEqual(rssResolved.sourceIds, [customRssId])
+assert.equal(rssResolved.caption, '91')
 
 console.log('custom category lifecycle: all tests passed successfully!')

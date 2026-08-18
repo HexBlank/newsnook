@@ -3,8 +3,31 @@ import { StatusBar, Style } from '@capacitor/status-bar'
 
 import { type ResolvedTheme } from './theme'
 
+type NativeChromeBridge = {
+  setFullScreen?: (fullScreen: boolean) => void
+}
+
 function isSplashBoot(): boolean {
   return typeof document !== 'undefined' && document.documentElement.dataset.boot === 'splash'
+}
+
+function nativeChromeBridge(): NativeChromeBridge | undefined {
+  if (typeof window !== 'undefined') {
+    return (window as any).NewsNookNative as NativeChromeBridge | undefined
+  }
+  return (globalThis as any).NewsNookNative as NativeChromeBridge | undefined
+}
+
+/**
+ * 隐藏/恢复系统状态栏与导航栏。
+ * Android WebView 边到边 + overlays 时，HTML requestFullscreen 只会让状态栏变透明浮层，必须走原生藏栏。
+ * JavascriptInterface 不一定是 typeof === 'function'，只做真值判断。
+ */
+export function setNativeFullScreen(fullScreen: boolean): void {
+  const bridge = nativeChromeBridge()
+  if (bridge?.setFullScreen) {
+    bridge.setFullScreen(fullScreen)
+  }
 }
 
 /**

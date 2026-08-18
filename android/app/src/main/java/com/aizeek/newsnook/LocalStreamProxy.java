@@ -6,6 +6,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -86,7 +87,14 @@ final class LocalStreamProxy implements Closeable {
                     closeQuietly(socket);
                     continue;
                 }
-                workers.execute(() -> handle(socket));
+                workers.execute(() -> {
+                    try {
+                        handle(socket);
+                    } catch (Throwable ignored) {
+                        // Errors (e.g. NoSuchMethodError on old API) must not kill the process.
+                        closeQuietly(socket);
+                    }
+                });
             } catch (SocketException closed) {
                 return;
             } catch (IOException ignored) {
@@ -265,7 +273,12 @@ final class LocalStreamProxy implements Closeable {
     }
 
     private static String decodeComponent(String value) {
-        return URLDecoder.decode(value, StandardCharsets.UTF_8);
+        try {
+            // decode(String, Charset) is API 33+; Pixel / Android 12 still needs the String overload.
+            return URLDecoder.decode(value, "UTF-8");
+        } catch (UnsupportedEncodingException impossible) {
+            return value;
+        }
     }
 
     private static String encodeComponent(String value) {

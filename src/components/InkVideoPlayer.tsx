@@ -25,6 +25,7 @@ import {
   createHotlinkHlsLoader,
   needsMediaHotlinkBypass,
 } from '../lib/mediaFetch'
+import { setNativeFullScreen } from '../lib/nativeChrome'
 import { getVideoStatusMessage } from '../lib/videoStatus'
 import {
   createBrightnessControl,
@@ -740,6 +741,12 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       updateVideoView({ ...currentView, ...pan })
     }
   }, [mediaSize, updateVideoView, viewport])
+
+  useEffect(() => {
+    if (!immersive) return
+    setNativeFullScreen(true)
+    return () => setNativeFullScreen(false)
+  }, [immersive])
 
   /** 进入全屏时对齐当前系统档位，退出时把亮度还给系统。 */
   useEffect(() => {

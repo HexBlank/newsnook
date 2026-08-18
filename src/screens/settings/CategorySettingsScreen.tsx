@@ -572,7 +572,7 @@ export function CategorySettingsScreen({
           const followsChannels = category.id === FOLLOWS_ENABLED_SOURCES
           const summary = followsChannels
             ? `跟随频道 · ${enabledCount} 源`
-            : describeSources(category.sourceIds ?? [])
+            : describeSources(category.sourceIds ?? [], prefs.customSources)
           const customized = hasSourceOverride(category.id, prefs)
           const isDragging = draggingId === category.id
           const isHolding = holdingId === category.id

@@ -9,7 +9,7 @@ import {
   FOLLOWS_ENABLED_SOURCES,
   type Preferences,
 } from './preferences'
-import { SOURCES } from './registry'
+import { isCustomSourceId, SOURCES } from './registry'
 
 export const MIGRATE_LAYOUT_PRESET_ID = 'user-migrated-layout'
 export const USER_DEFAULT_LAYOUT_ID = 'user-default-layout'
@@ -55,6 +55,16 @@ function uniqueValid(ids: unknown, known: Set<string>): string[] {
   return [...new Set(valid)]
 }
 
+/** 自建源 id 不在内置注册表里，快照仍需保留，否则分类卡片会变成「未选择信源」 */
+function uniqueValidSourceIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return []
+  const valid = ids.filter(
+    (id): id is string =>
+      typeof id === 'string' && (KNOWN_SOURCE_IDS.has(id) || isCustomSourceId(id)),
+  )
+  return [...new Set(valid)]
+}
+
 function normalizeCustomCategories(raw: unknown): NewsCategory[] {
   if (!Array.isArray(raw)) return []
   const result: NewsCategory[] = []
@@ -65,7 +75,7 @@ function normalizeCustomCategories(raw: unknown): NewsCategory[] {
     const rawLabel = typeof record.label === 'string' ? record.label.trim() : ''
     const rawShort = typeof record.short === 'string' ? record.short.trim() : ''
     if (!rawId || !rawLabel) continue
-    const sourceIds = uniqueValid(record.sourceIds, KNOWN_SOURCE_IDS)
+    const sourceIds = uniqueValidSourceIds(record.sourceIds)
     if (!sourceIds.length) continue
     result.push({
       id: rawId,
@@ -90,7 +100,7 @@ export function normalizeSnapshot(raw: unknown): LayoutSnapshot {
   const categorySources: Record<CategoryId, string[]> = {}
   Object.entries(input.categorySources ?? {}).forEach(([categoryId, sourceIds]) => {
     if (!allCategoryIds.has(categoryId) || categoryId === FOLLOWS_ENABLED_SOURCES) return
-    const valid = uniqueValid(sourceIds, KNOWN_SOURCE_IDS)
+    const valid = uniqueValidSourceIds(sourceIds)
     if (valid.length) categorySources[categoryId] = valid
   })
 
@@ -100,7 +110,7 @@ export function normalizeSnapshot(raw: unknown): LayoutSnapshot {
     hiddenCategoryIds: hidden.length >= allCategoryIds.size ? hidden.slice(1) : hidden,
     categorySources,
     customCategories,
-    enabledSourceIds: uniqueValid(input.enabledSourceIds, KNOWN_SOURCE_IDS),
+    enabledSourceIds: uniqueValidSourceIds(input.enabledSourceIds),
   }
 }
 

@@ -5,7 +5,14 @@
 import assert from 'node:assert/strict'
 
 import { CATEGORIES } from '../src/sources/categories'
-import { DEFAULT_PREFERENCES, visibleCategories } from '../src/sources/preferences'
+import {
+  DEFAULT_PREFERENCES,
+  addCustomCategory,
+  addCustomSource,
+  categorySourceIds,
+  resolveCategory,
+  visibleCategories,
+} from '../src/sources/preferences'
 import {
   BUILTIN_DEFAULT_ID,
   BUILTIN_PRESETS,
@@ -49,6 +56,47 @@ assert.ok(!snap.hiddenCategoryIds.includes('ghost-cat'))
 assert.deepEqual(snap.categorySources.tech, ['ithome'])
 assert.equal(snap.customCategories[0].sourceIds?.[0], 'ithome')
 assert.deepEqual(snap.enabledSourceIds, ['ithome'])
+
+const { nextPrefs: prefsWithCustomRss, newSourceId: customRssId } = addCustomSource(
+  DEFAULT_PREFERENCES,
+  {
+    name: '91porn.com',
+    label: '91',
+    url: 'https://91porn.com/index.php',
+  },
+)
+const { nextPrefs: prefsCustomLayout, newCategoryId: customCatId } = addCustomCategory(
+  prefsWithCustomRss,
+  { label: '123214', short: '1232', sourceIds: [customRssId] },
+)
+const customSnap = snapshotFromRuntime(prefsCustomLayout, [customRssId, 'ithome'])
+const savedCustomCat = customSnap.customCategories.find((category) => category.id === customCatId)
+assert.ok(savedCustomCat, 'snapshot must keep custom category that only has custom sources')
+assert.deepEqual(savedCustomCat.sourceIds, [customRssId])
+assert.ok(customSnap.enabledSourceIds.includes(customRssId))
+assert.ok(customSnap.categoryOrder.includes(customCatId))
+
+const restoredPrefs = applySnapshotToPrefs(prefsCustomLayout, customSnap)
+assert.deepEqual(categorySourceIds(customCatId, restoredPrefs), [customRssId])
+assert.equal(resolveCategory(customCatId, restoredPrefs).caption, '91')
+
+const ghostCustomSnap = normalizeSnapshot({
+  customCategories: [
+    {
+      id: 'custom_only_rss',
+      label: '仅自建',
+      short: '自建',
+      caption: 'x',
+      isCustom: true,
+      sourceIds: [customRssId, 'missing'],
+    },
+  ],
+  enabledSourceIds: [customRssId, 'missing'],
+  categorySources: { tech: ['ithome', customRssId] },
+})
+assert.deepEqual(ghostCustomSnap.customCategories[0].sourceIds, [customRssId])
+assert.deepEqual(ghostCustomSnap.enabledSourceIds, [customRssId])
+assert.deepEqual(ghostCustomSnap.categorySources.tech, ['ithome', customRssId])
 
 const prefs = {
   ...DEFAULT_PREFERENCES,
