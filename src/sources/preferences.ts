@@ -621,7 +621,7 @@ export function deleteCustomCategory(prefs: Preferences, categoryId: CategoryId)
   }
 }
 
-/** 添加单个自定义 RSS 信源 */
+/** 添加单个自定义 RSS / 视频站信源 */
 export function addCustomSource(
   prefs: Preferences,
   draft: {
@@ -630,6 +630,8 @@ export function addCustomSource(
     label?: string
     siteUrl?: string
     group?: SourceGroup
+    kind?: NewsSource['kind']
+    webVideoProfile?: string
   },
   targetCategoryId?: CategoryId,
 ): { nextPrefs: Preferences; newSourceId: string } {
@@ -647,9 +649,10 @@ export function addCustomSource(
     name,
     label,
     group,
-    kind: 'feed',
+    kind: draft.kind ?? 'feed',
     url,
     siteUrl: draft.siteUrl?.trim() || undefined,
+    webVideoProfile: draft.webVideoProfile,
     enabled: true,
     isCustom: true,
     createdAt: Date.now(),
@@ -701,7 +704,9 @@ export function addCustomSource(
 export function updateCustomSource(
   prefs: Preferences,
   sourceId: string,
-  patch: Partial<Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'group'>>,
+  patch: Partial<
+    Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'group' | 'kind' | 'webVideoProfile'>
+  >,
 ): Preferences {
   const list = prefs.customSources ?? []
   const index = list.findIndex((s) => s.id === sourceId)
@@ -713,6 +718,9 @@ export function updateCustomSource(
   const url = patch.url !== undefined ? (patch.url.trim() || current.url) : current.url
   const siteUrl = patch.siteUrl !== undefined ? (patch.siteUrl.trim() || undefined) : current.siteUrl
   const group = patch.group ?? current.group
+  const kind = patch.kind ?? current.kind
+  const webVideoProfile =
+    patch.webVideoProfile !== undefined ? patch.webVideoProfile : current.webVideoProfile
 
   const updated: NewsSource = {
     ...current,
@@ -721,6 +729,8 @@ export function updateCustomSource(
     url,
     siteUrl,
     group,
+    kind,
+    webVideoProfile,
   }
 
   const nextList = [...list]

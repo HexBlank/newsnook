@@ -5,6 +5,8 @@
  * 网易频道 ID 与可用性以 docs/news-sources.md 为准；空列表频道不注册。
  */
 
+import { getWebVideoProfile } from '../features/webVideo/registry'
+import { buildCatalogPageUrl, catalogUsesOffsetPaging } from '../features/catalogEngine/pagination'
 import { md5Hex, sha1Hex } from '../lib/hash'
 
 export type SourceGroup = 'cn' | 'intl' | 'tech' | 'ai' | 'special' | 'custom'
@@ -27,6 +29,7 @@ export type SourceKind =
   | 'eastmoney-news'
   | 'wscn-live'
   | 'paulgraham'
+  | 'web-video'
 
 export interface NewsSource {
   id: string
@@ -50,6 +53,8 @@ export interface NewsSource {
   enabled: boolean
   /** 是否为用户自建自定义源 */
   isCustom?: boolean
+  /** web-video 模板 id，如 91porn */
+  webVideoProfile?: string
   /** 自建时间戳 */
   createdAt?: number
 }
@@ -780,10 +785,19 @@ export function offsetPageRequest(source: NewsSource, page: number): OffsetPageR
     return { url }
   }
 
+  if (source.kind === 'web-video') {
+    return {
+      url: buildCatalogPageUrl(source.url, safePage, source.webVideoProfile),
+    }
+  }
+
   return { url: source.url, requestForm: source.requestForm }
 }
 
 export function maxOffsetPages(source: NewsSource): number {
+  if (source.kind === 'web-video' && source.webVideoProfile) {
+    return getWebVideoProfile(source.webVideoProfile)?.maxOffsetPages ?? 20
+  }
   return OFFSET_MAX_PAGES[source.kind] ?? 1
 }
 
@@ -800,6 +814,10 @@ export function pagingStrategyOf(source: NewsSource): PagingStrategy {
   if (source.kind === 'eastmoney-news') return 'upstream-offset'
   if (source.kind === 'eastmoney-kx') return 'upstream-offset'
   if (source.kind === 'zhihu') return 'upstream-cursor'
+  if (source.kind === 'web-video') {
+    if (catalogUsesOffsetPaging(source.url, source.webVideoProfile)) return 'upstream-offset'
+    return 'client-catalog'
+  }
   return 'client-catalog'
 }
 

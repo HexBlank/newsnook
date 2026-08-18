@@ -30,6 +30,8 @@ import {
   type OpmlParseResult,
 } from '../../lib/opml'
 import { parseSourcePayload } from '../../lib/parseFeed'
+import { extractCatalog } from '../../features/catalogEngine/engine'
+import { getWebVideoProfile, matchWebVideoProfile } from '../../features/webVideo/registry'
 import type { CategoryId, NewsCategory } from '../../sources/categories'
 import {
   allRegisteredCategories,
@@ -40,12 +42,21 @@ import type { NewsSource } from '../../sources/registry'
 interface Props {
   prefs: Preferences
   onAddCustomSource: (
-    source: { name: string; label: string; url: string; siteUrl?: string },
+    source: {
+      name: string
+      label: string
+      url: string
+      siteUrl?: string
+      kind?: NewsSource['kind']
+      webVideoProfile?: string
+    },
     targetCategoryId?: CategoryId,
   ) => void
   onUpdateCustomSource: (
     sourceId: string,
-    patch: Partial<Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl'>>,
+    patch: Partial<
+      Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'kind' | 'webVideoProfile'>
+    >,
   ) => void
   onDeleteCustomSource: (sourceId: string) => void
   onBatchImport: (sources: NewsSource[], categories?: NewsCategory[]) => void
@@ -74,6 +85,11 @@ export function CustomSourcesScreen({
   const [probing, setProbing] = useState(false)
   const [probeError, setProbeError] = useState<string | null>(null)
   const [probeDiscoveredFeeds, setProbeDiscoveredFeeds] = useState<{ title: string; url: string }[]>([])
+  const [probeWebVideoProfile, setProbeWebVideoProfile] = useState<{
+    id?: string
+    name: string
+    extractor?: string
+  } | null>(null)
 
   // OPML 导入状态
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -137,6 +153,7 @@ export function CustomSourcesScreen({
     setCategoryPickerOpen(false)
     setProbeError(null)
     setProbeDiscoveredFeeds([])
+    setProbeWebVideoProfile(null)
     setEditingSourceId(null)
     setShowAddModal(false)
   }
@@ -168,6 +185,16 @@ export function CustomSourcesScreen({
     setInputSiteUrl(source.siteUrl ?? '')
     setProbeError(null)
     setProbeDiscoveredFeeds([])
+    setProbeWebVideoProfile(
+      source.kind === 'web-video'
+        ? {
+            id: source.webVideoProfile,
+            name: source.webVideoProfile
+              ? (getWebVideoProfile(source.webVideoProfile)?.name ?? source.webVideoProfile)
+              : source.name,
+          }
+        : null,
+    )
     setShowAddModal(true)
   }
 
@@ -179,6 +206,7 @@ export function CustomSourcesScreen({
     setProbing(true)
     setProbeError(null)
     setProbeDiscoveredFeeds([])
+    setProbeWebVideoProfile(null)
 
     try {
       const normalizedUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`
@@ -222,6 +250,50 @@ export function CustomSourcesScreen({
         // 不是直接的 XML feed，尝试从 HTML 中寻找 link rel="alternate"
       }
 
+      // 通用目录引擎：JSON-LD → 站点模板 → 启发式卡片
+      const catalog = extractCatalog(text, normalizedUrl)
+      if (catalog.items.length > 0) {
+        const profileName = catalog.profileId
+          ? (getWebVideoProfile(catalog.profileId)?.name ?? catalog.profileId)
+          : (() => {
+              try {
+                return new URL(normalizedUrl).hostname
+              } catch {
+                return '视频站'
+              }
+            })()
+        const extractorLabel =
+          catalog.extractor === 'json-ld'
+            ? 'JSON-LD'
+            : catalog.extractor === 'profile'
+              ? '站点模板'
+              : catalog.extractor === 'heuristic-cards'
+                ? '通用卡片'
+                : '通用'
+
+        setProbeWebVideoProfile({
+          id: catalog.profileId,
+          name: profileName,
+          extractor: extractorLabel,
+        })
+        if (!inputName) {
+          setInputName(profileName)
+          setInputLabel(profileName.slice(0, 4))
+        }
+        if (!inputSiteUrl) {
+          try {
+            const parsed = new URL(normalizedUrl)
+            setInputSiteUrl(`${parsed.protocol}//${parsed.host}/`)
+          } catch {
+            // keep empty
+          }
+        }
+        setInputUrl(normalizedUrl)
+        return
+      }
+
+      const webProfile = matchWebVideoProfile(normalizedUrl)
+
       // 尝试从网页 HTML 中探测 RSS 地址
       const discovered = discoverFeedsFromHtml(text, normalizedUrl)
       if (discovered.length > 0) {
@@ -235,7 +307,11 @@ export function CustomSourcesScreen({
           setInputSiteUrl(normalizedUrl)
         }
       } else {
-        setProbeError('未能在此地址中检测到标准的 RSS / Atom 订阅源，请确认 URL 是否正确。')
+        setProbeError(
+          webProfile
+            ? `已识别为视频站「${webProfile.name}」，但当前页面未解析到视频列表。可尝试首页、分类页或搜索结果页 URL。`
+            : '未能在此地址中检测到 RSS / Atom 订阅源或可解析的视频/文章列表，请确认 URL 是否正确。',
+        )
       }
     } catch (err) {
       setProbeError(err instanceof Error ? err.message : '网络请求失败，无法连接到该地址')
@@ -264,6 +340,12 @@ export function CustomSourcesScreen({
         name,
         label,
         siteUrl,
+        ...(probeWebVideoProfile
+          ? {
+              kind: 'web-video' as const,
+              ...(probeWebVideoProfile.id ? { webVideoProfile: probeWebVideoProfile.id } : {}),
+            }
+          : {}),
       })
     } else {
       const targetCatId =
@@ -274,6 +356,12 @@ export function CustomSourcesScreen({
           label,
           url,
           siteUrl,
+          ...(probeWebVideoProfile
+            ? {
+                kind: 'web-video' as const,
+                ...(probeWebVideoProfile.id ? { webVideoProfile: probeWebVideoProfile.id } : {}),
+              }
+            : {}),
         },
         targetCatId,
       )
@@ -527,7 +615,7 @@ export function CustomSourcesScreen({
                       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openEditModal(source)}>
                         <div className="flex items-center gap-2">
                           <span className="rounded-md border border-cinnabar/30 bg-cinnabar/10 px-1.5 py-0.5 font-mono text-[9.5px] font-medium text-cinnabar-soft">
-                            {source.label || '自定义'}
+                            {source.kind === 'web-video' ? '视频' : source.label || '自定义'}
                           </span>
                           <span className="truncate text-[14.5px] font-medium text-paper">
                             {source.name}
@@ -585,7 +673,7 @@ export function CustomSourcesScreen({
           >
             <div className="flex items-center justify-between border-b border-haze pb-4">
               <h2 className="font-display text-[18px] font-medium text-paper">
-                {editingSourceId ? '编辑自定义订阅' : '添加 RSS 订阅源'}
+                {editingSourceId ? '编辑自定义订阅' : '添加订阅源'}
               </h2>
               <button
                 type="button"
@@ -600,7 +688,7 @@ export function CustomSourcesScreen({
               {/* URL 输入框与探测按钮 */}
               <div>
                 <label htmlFor={urlInputId} className="block text-[13px] font-medium text-paper">
-                  Feed 链接或博客主页网址
+                  Feed 链接、视频站列表页或博客主页
                 </label>
                 <div className="mt-1.5 flex gap-2">
                   <input
@@ -628,6 +716,15 @@ export function CustomSourcesScreen({
                     <AlertCircle size={12} />
                     {probeError}
                   </p>
+                )}
+
+                {probeWebVideoProfile && (
+                  <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2.5">
+                    <span className="block font-mono text-[10px] text-emerald-300">
+                      已识别为视频目录（{probeWebVideoProfile.extractor ?? '通用'}）。列表走 App 排版，点进条目后在
+                      Android 上嗅探播放。
+                    </span>
+                  </div>
                 )}
 
                 {probeDiscoveredFeeds.length > 0 && (
