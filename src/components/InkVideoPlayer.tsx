@@ -51,7 +51,6 @@ import {
 } from '../lib/videoGestures'
 import { Capacitor } from '@capacitor/core'
 import {
-  clearNativeMediaPlayback,
   nativeStreamProxyUrl,
   prepareNativeMediaPlayback,
 } from '../features/mediaSniffer/native'
@@ -176,7 +175,7 @@ function formatTime(seconds: number): string {
  * - 内嵌：单击切换控件、双击左右各 ±10s、长按临时 2.5 倍速。
  * - 全屏：下半屏（拇指区）横滑调进度、左下竖滑调亮度、右下竖滑调音量，
  *   双击专职播放 / 暂停；上半屏与内嵌一致。
- * - 通用：双指缩放，放大后单指平移；顶部按钮旋转 / 还原画面。
+ * - 通用：双指缩放与双指拖动画面；放大后单指手势仍可调进度 / 亮度 / 音量；顶部按钮旋转 / 还原画面。
  */
 export function InkVideoPlayer({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, resources, deferLoad, onUnlocked, onRefreshSource, onPlaybackError }: Props) {
   const [allowed, setAllowed] = useState(!deferLoad)
@@ -401,10 +400,37 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     let progressiveBridgeAttempted = false
     let progressiveProxyUrl: string | null = null
     let directRetryAttempted = false
+    let progressiveRecoveryInFlight = false
+    let progressiveRecoveryTimer: ReturnType<typeof window.setTimeout> | undefined
+    const effectiveHeaders: Record<string, string> = { ...requestHeaders }
+    if (sourcePage && !Object.keys(effectiveHeaders).some((key) => key.toLowerCase() === 'referer')) {
+      try {
+        if (new URL(url).origin !== new URL(sourcePage).origin) {
+          effectiveHeaders.Referer = sourcePage
+        }
+      } catch {
+        // ignore
+      }
+    }
     const failPlayback = (message: string) => {
       if (cancelled) return
       setFatal(message)
       onPlaybackError?.()
+    }
+    const armProgressiveRecovery = () => {
+      progressiveRecoveryInFlight = true
+      if (progressiveRecoveryTimer !== undefined) window.clearTimeout(progressiveRecoveryTimer)
+      progressiveRecoveryTimer = window.setTimeout(() => {
+        progressiveRecoveryInFlight = false
+        progressiveRecoveryTimer = undefined
+      }, 2000)
+    }
+    const settleProgressiveRecovery = () => {
+      progressiveRecoveryInFlight = false
+      if (progressiveRecoveryTimer !== undefined) {
+        window.clearTimeout(progressiveRecoveryTimer)
+        progressiveRecoveryTimer = undefined
+      }
     }
 
     setReady(false)
@@ -429,6 +455,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         gestureRef.current.boosted ? BOOST_RATE : rateRef.current,
       )
       syncBoostIndicator(video)
+      settleProgressiveRecovery()
       setWaiting(false)
       setReady(true)
     }
@@ -438,7 +465,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     }
 
     const onFatalMedia = () => {
-      if (cancelled) return
+      if (cancelled || progressiveRecoveryInFlight) return
       if (
         Capacitor.isNativePlatform()
         && !isHls
@@ -448,15 +475,23 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       ) {
         directRetryAttempted = true
         setWaiting(true)
-        void clearNativeMediaPlayback({
+        armProgressiveRecovery()
+        void prepareNativeMediaPlayback({
           url,
           sourcePage,
           format: 'progressive',
+          headers: effectiveHeaders,
           extraUrls,
-        }).then(() => {
+          forceBridge: true,
+        }).then(async () => {
           if (cancelled) return
+          settleProgressiveRecovery()
           setFatal(null)
-          progressiveProxyUrl = null
+          progressiveProxyUrl = await nativeStreamProxyUrl(
+            url,
+            `recover-${Date.now().toString(36)}`,
+          )
+          if (cancelled) return
           loadProgressiveSource()
         }).catch(() => {
           if (!cancelled) failPlayback('瑙嗛婧愭殏鏃舵棤娉曟挱鏀?')
@@ -471,15 +506,17 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       ) {
         progressiveBridgeAttempted = true
         setWaiting(true)
+        armProgressiveRecovery()
         void prepareNativeMediaPlayback({
           url,
           sourcePage,
           format: 'progressive',
-          headers: requestHeaders,
+          headers: effectiveHeaders,
           extraUrls,
           forceBridge: true,
         }).then(async () => {
           if (cancelled) return
+          settleProgressiveRecovery()
           setFatal(null)
           progressiveProxyUrl = await nativeStreamProxyUrl(
             url,
@@ -545,6 +582,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       setWaiting(false)
     }
     const onPlaying = () => {
+      settleProgressiveRecovery()
       setWaiting(false)
       setSeeking(false)
     }
@@ -569,17 +607,6 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     video.addEventListener('ratechange', onRateChange)
 
     void (async () => {
-      const effectiveHeaders: Record<string, string> = { ...requestHeaders }
-      if (sourcePage && !Object.keys(effectiveHeaders).some((key) => key.toLowerCase() === 'referer')) {
-        try {
-          if (new URL(url).origin !== new URL(sourcePage).origin) {
-            effectiveHeaders['Referer'] = sourcePage
-          }
-        } catch {
-          // ignore
-        }
-      }
-
       progressiveBridgeAttempted = await prepareNativeMediaPlayback({
         url,
         sourcePage,
@@ -656,6 +683,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
 
     return () => {
       cancelled = true
+      settleProgressiveRecovery()
       clearHideTimer()
       video.removeEventListener('loadstart', onLoadStart)
       video.removeEventListener('canplay', markReady)
@@ -1150,22 +1178,6 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       gesture.moved = true
       clearGestureTimers()
     }
-    if (videoViewRef.current.scale > 1 && gesture.moved) {
-      const pan = clampVideoPan(
-        gesture.fromView.x + dx,
-        gesture.fromView.y + dy,
-        gesture.surface,
-        mediaSize,
-        gesture.fromView.scale,
-      )
-      const next = { ...gesture.fromView, ...pan }
-      updateVideoView(next)
-      setViewInteracting(true)
-      setControlsVisible(false)
-      clearHideTimer()
-      showViewHud(next)
-      return
-    }
     if (!gesture.thumb) return
 
     if (gesture.axis === 'none') lockGesture(gesture, dx, dy)
@@ -1178,24 +1190,36 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     activePointersRef.current.delete(event.pointerId)
     clearGestureTimers()
     if (multiTouchRef.current) {
-      if (activePointersRef.current.size < 2) pinchRef.current = null
-      if (activePointersRef.current.size === 0) {
+      if (activePointersRef.current.size < 2) {
+        pinchRef.current = null
         multiTouchRef.current = false
         setViewInteracting(false)
+      }
+      if (activePointersRef.current.size === 0) {
         fadeHud()
         revealControls()
+      } else {
+        const [remaining] = activePointersRef.current.values()
+        if (remaining) {
+          const surface = videoSurfaceForRotation(viewport, videoViewRef.current.rotation)
+          gestureRef.current = {
+            ...IDLE_GESTURE,
+            x: remaining.x,
+            y: remaining.y,
+            localX: remaining.x,
+            at: Date.now(),
+            thumb: immersive && isThumbZone(remaining.y, surface.height),
+            surface,
+            fromView: videoViewRef.current,
+          }
+          if (gestureRef.current.thumb) syncLevels(gestureRef.current)
+        }
       }
       return
     }
     const gesture = gestureRef.current
     if (gesture.boosted) {
       endBoost()
-      return
-    }
-    if (videoViewRef.current.scale > 1 && gesture.moved) {
-      setViewInteracting(false)
-      fadeHud()
-      revealControls()
       return
     }
     if (gesture.axis !== 'none') {
@@ -1697,7 +1721,7 @@ function GestureHudOverlay({ hud, duration }: { hud: GestureHud; duration: numbe
           )}
         </div>
         <span className="text-[10px] leading-none text-paper/55">
-          双指缩放 · 单指拖动画面
+          双指缩放/移动 · 单指亮度/音量/进度
         </span>
       </HudShell>
     )

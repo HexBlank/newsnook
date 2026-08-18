@@ -823,6 +823,7 @@ function scheduleMediaDiscovery(
   title: string,
   poster: string | undefined,
   onMediaResolved: MediaResolvedHandler | undefined,
+  incremental = true,
 ): void {
   if (!onMediaResolved) return
   const publish = (descriptor: Awaited<ReturnType<typeof discoverMediaDescriptor>>) => {
@@ -831,9 +832,14 @@ function scheduleMediaDiscovery(
       : withVideoDiscoveryFailed(resolved)
     if (enriched) onMediaResolved(enriched)
   }
-  void discoverMediaDescriptor({ ...options, onDescriptor: publish })
+  // A direct video article starts from a pending placeholder. Do not publish
+  // the first static candidate before runtime sniffing has captured the
+  // session headers: replacing the HTML tears down the player, and the
+  // header-less attempt is exactly what causes the error/flicker/retry path.
+  const discoveryOptions = incremental ? { ...options, onDescriptor: publish } : options
+  void discoverMediaDescriptor(discoveryOptions)
     .then((descriptor) => {
-      publish(descriptor)
+      if (!incremental) publish(descriptor)
     })
     .catch(() => {
       onMediaResolved(withVideoDiscoveryFailed(resolved))
@@ -922,12 +928,13 @@ export async function resolveArticleBody(
               runtime: true,
               timeoutMs: 6000,
               signal,
-            },
-            base,
-            article.title,
-            article.image,
-            onMediaResolved,
-          )
+          },
+          base,
+          article.title,
+          article.image,
+          onMediaResolved,
+          false,
+        )
         })
         .catch(() => {
           onMediaResolved(withVideoDiscoveryFailed(base))

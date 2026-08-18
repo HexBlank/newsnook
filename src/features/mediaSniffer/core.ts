@@ -358,7 +358,15 @@ function addStructuredPayloadObservation(
 function walkPayload(value: unknown, pageUrl: string, observations: MediaObservation[], seen: Set<object>, depth: number): void {
   if (depth > 12 || observations.length >= 512) return
   if (typeof value === 'string') {
-    addStaticObservation(observations, value, pageUrl)
+    // A raw HTML/JSON string is a container, not a media URL. Treating the
+    // whole string as an observation turns the document into an encoded URL
+    // (for example `https://page/%3C!DOCTYPE...`) and can win candidate
+    // selection before the real video source is seen. Keep direct media URL
+    // payloads working, but only admit container strings through URL matches.
+    const directValue = value.trim()
+    if (isHttpUrl(directValue) && mediaFormatFor(directValue) !== 'unknown') {
+      addStaticObservation(observations, directValue, pageUrl)
+    }
     for (const match of value.matchAll(/https?:\\?\/\\?\/[^\s"'<>]+/gi)) {
       addStaticObservation(observations, match[0].replace(/\\\//g, '/'), pageUrl)
     }

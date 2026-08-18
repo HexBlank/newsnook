@@ -78,6 +78,20 @@ const pageUrl = 'https://news.example/articles/42'
 }
 
 {
+  const htmlPayload = '<!DOCTYPE html><html><body><video src="https://ccm.91p52.com/358999.mp4?st=signed"></video></body></html>'
+  const observations = observeMediaInPayload(htmlPayload, 'https://91porn.com/view_video.php?viewkey=42')
+  assert.ok(
+    observations.some((item) => item.url === 'https://ccm.91p52.com/358999.mp4?st=signed'),
+    'HTML 字符串中的真实媒体链接仍应被发现',
+  )
+  assert.equal(
+    observations.some((item) => item.url?.includes('%3C!DOCTYPE')),
+    false,
+    '整段 HTML 不得被编码成伪 URL 资源',
+  )
+}
+
+{
   let emitted: string | undefined
   const observation: MediaObservation = {
     url: 'https://cdn.example/live.m3u8',
@@ -97,6 +111,34 @@ const pageUrl = 'https://news.example/articles/42'
   })
   assert.equal(emitted, observation.url, '原生单条可靠命中应在最终 sniff Promise 前增量发布')
   assert.equal(descriptor?.url, observation.url)
+}
+
+{
+  const emittedHeaders: Array<Record<string, string> | undefined> = []
+  const descriptor = await discoverMediaDescriptor({
+    pageUrl,
+    html: '<video src="https://cdn.example/video.mp4"></video>',
+    runtime: true,
+    onDescriptor: (value) => { emittedHeaders.push(value.requestHeaders) },
+    observeNative: async (_url, _timeout, _referrer, onObservation) => {
+      const observation: MediaObservation = {
+        url: 'https://cdn.example/video.mp4',
+        pageUrl,
+        source: 'network',
+        mimeType: 'video/mp4',
+        requestHeaders: {
+          Referer: pageUrl,
+          'User-Agent': 'NewsNook',
+        },
+      }
+      onObservation?.(observation)
+      return [observation]
+    },
+  })
+  assert.equal(emittedHeaders.length, 2, '同 URL 在运行时补齐请求头后应被视为新 descriptor')
+  assert.equal(emittedHeaders[0], undefined)
+  assert.equal(emittedHeaders[1]?.Referer, pageUrl)
+  assert.equal(descriptor?.requestHeaders?.Referer, pageUrl)
 }
 
 {

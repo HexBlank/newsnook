@@ -141,15 +141,10 @@ export async function clearNativeMediaPlayback(options: {
   origins?: string[]
   extraUrls?: string[]
 }): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
-  const seeds = collectPlaybackOrigins(options)
-  if (!seeds.length) return
-  await Promise.all(seeds.map((seed) => NativeMediaSniffer.preparePlayback({
-    url: seed,
-    intercept: false,
-    sourcePage: options.sourcePage,
-    format: options.format,
-  })))
+  // Keep the native playback context alive during a progressive retry. It
+  // contains the captured Referer/Cookie; clearing it turns the fallback into
+  // a hotlink request and guarantees another failure.
+  void options
 }
 
 const NativeMediaSniffer = registerPlugin<NativeMediaSnifferPlugin>('MediaSniffer')

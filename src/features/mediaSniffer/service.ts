@@ -175,14 +175,24 @@ export async function discoverMediaDescriptor(options: {
 }
 
 function descriptorSignature(descriptor: MediaDescriptor): string {
+  const headerSignature = (headers?: Record<string, string>) =>
+    Object.entries(headers ?? {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => [key, value])
   return JSON.stringify([
     descriptor.type,
     descriptor.url,
     descriptor.drm,
+    headerSignature(descriptor.requestHeaders),
     descriptor.videoTracks.map((track) => track.url || ''),
     descriptor.audioTracks.map((track) => track.url || ''),
     descriptor.subtitles.map((track) => track.url || ''),
-    descriptor.resources?.map((resource) => [resource.type, resource.url, resource.drm]) ?? [],
+    descriptor.resources?.map((resource) => [
+      resource.type,
+      resource.url,
+      resource.drm,
+      headerSignature(resource.requestHeaders),
+    ]) ?? [],
   ])
 }
 
