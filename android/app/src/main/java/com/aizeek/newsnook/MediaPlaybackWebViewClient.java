@@ -8,6 +8,7 @@ import com.getcapacitor.BridgeWebViewClient;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Locale;
 import okhttp3.MediaType;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -51,12 +52,18 @@ final class MediaPlaybackWebViewClient extends BridgeWebViewClient {
             String mimeType = contentType == null
                 ? "application/octet-stream"
                 : contentType.type() + "/" + contentType.subtype();
+            String inferredMime = inferredMediaMimeType(url);
+            if (isGenericBinaryMime(mimeType) && inferredMime != null) mimeType = inferredMime;
             String encoding = contentType == null || contentType.charset() == null
                 ? null
                 : contentType.charset().name();
             Map<String, String> headers = new HashMap<>();
             for (String name : response.headers().names()) {
                 headers.put(name, response.header(name, ""));
+            }
+            String contentTypeHeader = findHeaderName(headers, "content-type");
+            if (inferredMime != null && isGenericBinaryMime(contentTypeHeader == null ? null : headers.get(contentTypeHeader))) {
+                headers.put(contentTypeHeader == null ? "Content-Type" : contentTypeHeader, inferredMime);
             }
             String reason = response.message();
             if (reason == null || reason.isEmpty()) reason = "HTTP " + response.code();
@@ -72,5 +79,40 @@ final class MediaPlaybackWebViewClient extends BridgeWebViewClient {
             if (response != null) response.close();
             return null;
         }
+    }
+
+    private static boolean isGenericBinaryMime(String value) {
+        if (value == null || value.isEmpty()) return true;
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("application/octet-stream")
+            || normalized.startsWith("binary/octet-stream")
+            || normalized.startsWith("application/download")
+            || normalized.startsWith("application/force-download");
+    }
+
+    private static String findHeaderName(Map<String, String> headers, String target) {
+        for (String name : headers.keySet()) {
+            if (target.equalsIgnoreCase(name)) return name;
+        }
+        return null;
+    }
+
+    private static String inferredMediaMimeType(String value) {
+        try {
+            String path = android.net.Uri.parse(value).getPath();
+            if (path == null) return null;
+            String lower = path.toLowerCase(Locale.ROOT);
+            if (lower.endsWith(".mp4") || lower.endsWith(".m4v") || lower.endsWith(".mov")) return "video/mp4";
+            if (lower.endsWith(".webm")) return "video/webm";
+            if (lower.endsWith(".m4a")) return "audio/mp4";
+            if (lower.endsWith(".mp3")) return "audio/mpeg";
+            if (lower.endsWith(".aac")) return "audio/aac";
+            if (lower.endsWith(".ogg") || lower.endsWith(".opus")) return "audio/ogg";
+            if (lower.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
+            if (lower.endsWith(".mpd")) return "application/dash+xml";
+        } catch (RuntimeException ignored) {
+            // Keep the upstream MIME when the URL is malformed.
+        }
+        return null;
     }
 }

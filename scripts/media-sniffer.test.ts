@@ -81,6 +81,15 @@ const pageUrl = 'https://news.example/articles/42'
     true,
     '显式请求头必须由原生桥接补齐',
   )
+  assert.equal(
+    shouldBridgeNativePlayback({
+      url: 'https://cdn.example/video.mp4',
+      sourcePage: pageUrl,
+      format: 'progressive',
+    }),
+    true,
+    'cross-origin media must use the native bridge to preserve the source-page Referer',
+  )
 }
 
 {
