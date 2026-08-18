@@ -4,7 +4,7 @@ import {
   bestMediaUrlInPayload,
   bestPosterUrlInPayload,
 } from '../features/mediaSniffer/core'
-import { parseWebVideoCatalog } from '../features/webVideo/parse'
+import { catalogHtmlToArticles } from '../features/catalogEngine/toArticles'
 import { collectAudioSrc, isAudioMediaUrl } from './articleAudio'
 import { cleanSummaryText } from './cleanSummary'
 import type { NewsSource, SourceKind } from '../sources/registry'
@@ -1422,8 +1422,8 @@ function parsePaulGraham(source: NewsSource, payload: string, fetchedAt: number)
   return articles
 }
 
-function parseWebVideo(source: NewsSource, payload: string, fetchedAt: number): Article[] {
-  return parseWebVideoCatalog(source, payload, fetchedAt)
+function parseWebCatalog(source: NewsSource, payload: string, fetchedAt: number): Article[] {
+  return catalogHtmlToArticles(source, payload, fetchedAt)
 }
 
 type SourceParser = (source: NewsSource, payload: string, fetchedAt: number) => Article[]
@@ -1450,7 +1450,7 @@ const PARSERS: Record<SourceKind, SourceParser> = {
   'eastmoney-news': parseEastmoneyNews,
   'wscn-live': parseWscnLive,
   paulgraham: parsePaulGraham,
-  'web-video': parseWebVideo,
+  'web-catalog': parseWebCatalog,
 }
 
 export function parseSourcePayload(source: NewsSource, payload: string): Article[] {

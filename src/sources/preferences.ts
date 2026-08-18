@@ -21,6 +21,7 @@ import {
   SOURCES,
   findSource,
   makeCustomSourceId,
+  normalizeSourceKind,
   type NewsSource,
   type SourceGroup,
 } from './registry'
@@ -209,7 +210,7 @@ export function normalizePreferences(raw: unknown): Preferences {
         name: rawName,
         label: rawLabel || rawName.slice(0, 4),
         group: rawGroup,
-        kind: 'feed',
+        kind: normalizeSourceKind(typeof item.kind === 'string' ? item.kind : undefined),
         url: rawUrl,
         siteUrl: rawSiteUrl,
         enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
@@ -621,7 +622,7 @@ export function deleteCustomCategory(prefs: Preferences, categoryId: CategoryId)
   }
 }
 
-/** 添加单个自定义 RSS / 视频站信源 */
+/** 添加单个自定义 RSS / 网页目录信源 */
 export function addCustomSource(
   prefs: Preferences,
   draft: {
@@ -631,7 +632,6 @@ export function addCustomSource(
     siteUrl?: string
     group?: SourceGroup
     kind?: NewsSource['kind']
-    webVideoProfile?: string
   },
   targetCategoryId?: CategoryId,
 ): { nextPrefs: Preferences; newSourceId: string } {
@@ -652,7 +652,6 @@ export function addCustomSource(
     kind: draft.kind ?? 'feed',
     url,
     siteUrl: draft.siteUrl?.trim() || undefined,
-    webVideoProfile: draft.webVideoProfile,
     enabled: true,
     isCustom: true,
     createdAt: Date.now(),
@@ -704,9 +703,7 @@ export function addCustomSource(
 export function updateCustomSource(
   prefs: Preferences,
   sourceId: string,
-  patch: Partial<
-    Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'group' | 'kind' | 'webVideoProfile'>
-  >,
+  patch: Partial<Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'group' | 'kind'>>,
 ): Preferences {
   const list = prefs.customSources ?? []
   const index = list.findIndex((s) => s.id === sourceId)
@@ -718,9 +715,7 @@ export function updateCustomSource(
   const url = patch.url !== undefined ? (patch.url.trim() || current.url) : current.url
   const siteUrl = patch.siteUrl !== undefined ? (patch.siteUrl.trim() || undefined) : current.siteUrl
   const group = patch.group ?? current.group
-  const kind = patch.kind ?? current.kind
-  const webVideoProfile =
-    patch.webVideoProfile !== undefined ? patch.webVideoProfile : current.webVideoProfile
+  const kind = patch.kind !== undefined ? normalizeSourceKind(patch.kind) : current.kind
 
   const updated: NewsSource = {
     ...current,
@@ -730,7 +725,6 @@ export function updateCustomSource(
     siteUrl,
     group,
     kind,
-    webVideoProfile,
   }
 
   const nextList = [...list]

@@ -1,72 +1,43 @@
-import { matchWebVideoProfile } from '../webVideo/registry'
 import { extractHeuristicCardCatalog } from './extractors/heuristicCards'
 import { extractJsonLdCatalog } from './extractors/jsonLd'
-import { extractProfileCatalog } from './extractors/profile'
 import type { CatalogExtractOptions, CatalogExtractionResult } from './types'
 
-const MIN_HEURISTIC_ITEMS = 3
+const DEFAULT_MIN_ITEMS = 3
 
 /**
- * 分层目录引擎（社区最佳实践合成）：
- * 1. JSON-LD ItemList / VideoObject（yt-dlp GenericIE 结构化层）
- * 2. 站点模板 bridge（RSS-Bridge / NewPipe 式 per-site）
- * 3. 启发式卡片（无 XPath 编辑器的通用回退）
+ * 目录解析引擎（Feed Reflow）。
  *
- * 详情播放不在此引擎内；仍由 mediaSniffer 在 Android 上处理。
+ * 输入：OkHttp / CapacitorHttp 拿到的 HTML（与用户浏览器所见同源）。
+ * 输出：CatalogItem[]，再映射为 Article[] 走现有信息流。
  */
 export function extractCatalog(
   html: string,
   pageUrl: string,
   options: CatalogExtractOptions = {},
 ): CatalogExtractionResult {
-  const minItems = options.minItems ?? MIN_HEURISTIC_ITEMS
-  const profileId = options.profileId ?? matchWebVideoProfile(pageUrl)?.id
+  const minItems = options.minItems ?? DEFAULT_MIN_ITEMS
 
   const jsonLdItems = extractJsonLdCatalog(html, pageUrl)
   if (jsonLdItems.length >= minItems) {
-    return {
-      items: jsonLdItems,
-      extractor: 'json-ld',
-      profileId,
-      confidence: 'high',
-    }
-  }
-
-  if (profileId) {
-    const profileItems = extractProfileCatalog(html, pageUrl, profileId)
-    if (profileItems.length >= 1) {
-      return {
-        items: profileItems,
-        extractor: 'profile',
-        profileId,
-        confidence: 'high',
-      }
-    }
+    return { items: jsonLdItems, extractor: 'json-ld', confidence: 'high' }
   }
 
   const heuristicItems = extractHeuristicCardCatalog(html, pageUrl)
   if (heuristicItems.length >= minItems) {
-    return {
-      items: heuristicItems,
-      extractor: 'heuristic-cards',
-      profileId,
-      confidence: 'medium',
-    }
+    return { items: heuristicItems, extractor: 'heuristic-cards', confidence: 'medium' }
+  }
+
+  if (jsonLdItems.length >= 2) {
+    return { items: jsonLdItems, extractor: 'json-ld', confidence: 'low' }
+  }
+
+  if (heuristicItems.length >= 2) {
+    return { items: heuristicItems, extractor: 'heuristic-cards', confidence: 'low' }
   }
 
   if (jsonLdItems.length > 0) {
-    return {
-      items: jsonLdItems,
-      extractor: 'json-ld',
-      profileId,
-      confidence: 'low',
-    }
+    return { items: jsonLdItems, extractor: 'json-ld', confidence: 'low' }
   }
 
-  return {
-    items: [],
-    extractor: null,
-    profileId,
-    confidence: 'low',
-  }
+  return { items: [], extractor: null, confidence: 'low' }
 }

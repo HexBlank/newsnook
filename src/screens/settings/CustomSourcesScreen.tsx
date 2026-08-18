@@ -31,7 +31,6 @@ import {
 } from '../../lib/opml'
 import { parseSourcePayload } from '../../lib/parseFeed'
 import { extractCatalog } from '../../features/catalogEngine/engine'
-import { getWebVideoProfile, matchWebVideoProfile } from '../../features/webVideo/registry'
 import type { CategoryId, NewsCategory } from '../../sources/categories'
 import {
   allRegisteredCategories,
@@ -48,15 +47,12 @@ interface Props {
       url: string
       siteUrl?: string
       kind?: NewsSource['kind']
-      webVideoProfile?: string
     },
     targetCategoryId?: CategoryId,
   ) => void
   onUpdateCustomSource: (
     sourceId: string,
-    patch: Partial<
-      Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'kind' | 'webVideoProfile'>
-    >,
+    patch: Partial<Pick<NewsSource, 'name' | 'label' | 'url' | 'siteUrl' | 'kind'>>,
   ) => void
   onDeleteCustomSource: (sourceId: string) => void
   onBatchImport: (sources: NewsSource[], categories?: NewsCategory[]) => void
@@ -85,8 +81,7 @@ export function CustomSourcesScreen({
   const [probing, setProbing] = useState(false)
   const [probeError, setProbeError] = useState<string | null>(null)
   const [probeDiscoveredFeeds, setProbeDiscoveredFeeds] = useState<{ title: string; url: string }[]>([])
-  const [probeWebVideoProfile, setProbeWebVideoProfile] = useState<{
-    id?: string
+  const [probeCatalogHit, setProbeCatalogHit] = useState<{
     name: string
     extractor?: string
   } | null>(null)
@@ -153,7 +148,7 @@ export function CustomSourcesScreen({
     setCategoryPickerOpen(false)
     setProbeError(null)
     setProbeDiscoveredFeeds([])
-    setProbeWebVideoProfile(null)
+    setProbeCatalogHit(null)
     setEditingSourceId(null)
     setShowAddModal(false)
   }
@@ -185,14 +180,9 @@ export function CustomSourcesScreen({
     setInputSiteUrl(source.siteUrl ?? '')
     setProbeError(null)
     setProbeDiscoveredFeeds([])
-    setProbeWebVideoProfile(
-      source.kind === 'web-video'
-        ? {
-            id: source.webVideoProfile,
-            name: source.webVideoProfile
-              ? (getWebVideoProfile(source.webVideoProfile)?.name ?? source.webVideoProfile)
-              : source.name,
-          }
+    setProbeCatalogHit(
+      source.kind === 'web-catalog'
+        ? { name: source.name, extractor: '目录' }
         : null,
     )
     setShowAddModal(true)
@@ -206,7 +196,7 @@ export function CustomSourcesScreen({
     setProbing(true)
     setProbeError(null)
     setProbeDiscoveredFeeds([])
-    setProbeWebVideoProfile(null)
+    setProbeCatalogHit(null)
 
     try {
       const normalizedUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`
@@ -250,35 +240,27 @@ export function CustomSourcesScreen({
         // 不是直接的 XML feed，尝试从 HTML 中寻找 link rel="alternate"
       }
 
-      // 通用目录引擎：JSON-LD → 站点模板 → 启发式卡片
+      // 通用目录引擎：JSON-LD → 启发式卡片
       const catalog = extractCatalog(text, normalizedUrl)
       if (catalog.items.length > 0) {
-        const profileName = catalog.profileId
-          ? (getWebVideoProfile(catalog.profileId)?.name ?? catalog.profileId)
-          : (() => {
-              try {
-                return new URL(normalizedUrl).hostname
-              } catch {
-                return '视频站'
-              }
-            })()
+        const displayName = (() => {
+          try {
+            return new URL(normalizedUrl).hostname
+          } catch {
+            return '网页目录'
+          }
+        })()
         const extractorLabel =
           catalog.extractor === 'json-ld'
             ? 'JSON-LD'
-            : catalog.extractor === 'profile'
-              ? '站点模板'
-              : catalog.extractor === 'heuristic-cards'
-                ? '通用卡片'
-                : '通用'
+            : catalog.extractor === 'heuristic-cards'
+              ? '通用卡片'
+              : '通用'
 
-        setProbeWebVideoProfile({
-          id: catalog.profileId,
-          name: profileName,
-          extractor: extractorLabel,
-        })
+        setProbeCatalogHit({ name: displayName, extractor: extractorLabel })
         if (!inputName) {
-          setInputName(profileName)
-          setInputLabel(profileName.slice(0, 4))
+          setInputName(displayName)
+          setInputLabel(displayName.slice(0, 4))
         }
         if (!inputSiteUrl) {
           try {
@@ -291,8 +273,6 @@ export function CustomSourcesScreen({
         setInputUrl(normalizedUrl)
         return
       }
-
-      const webProfile = matchWebVideoProfile(normalizedUrl)
 
       // 尝试从网页 HTML 中探测 RSS 地址
       const discovered = discoverFeedsFromHtml(text, normalizedUrl)
@@ -308,9 +288,7 @@ export function CustomSourcesScreen({
         }
       } else {
         setProbeError(
-          webProfile
-            ? `已识别为视频站「${webProfile.name}」，但当前页面未解析到视频列表。可尝试首页、分类页或搜索结果页 URL。`
-            : '未能在此地址中检测到 RSS / Atom 订阅源或可解析的视频/文章列表，请确认 URL 是否正确。',
+          '未能在此地址中检测到 RSS / Atom 订阅源或可解析的网页目录，请确认 URL 是否正确。',
         )
       }
     } catch (err) {
@@ -340,12 +318,7 @@ export function CustomSourcesScreen({
         name,
         label,
         siteUrl,
-        ...(probeWebVideoProfile
-          ? {
-              kind: 'web-video' as const,
-              ...(probeWebVideoProfile.id ? { webVideoProfile: probeWebVideoProfile.id } : {}),
-            }
-          : {}),
+        ...(probeCatalogHit ? { kind: 'web-catalog' as const } : {}),
       })
     } else {
       const targetCatId =
@@ -356,12 +329,7 @@ export function CustomSourcesScreen({
           label,
           url,
           siteUrl,
-          ...(probeWebVideoProfile
-            ? {
-                kind: 'web-video' as const,
-                ...(probeWebVideoProfile.id ? { webVideoProfile: probeWebVideoProfile.id } : {}),
-              }
-            : {}),
+          ...(probeCatalogHit ? { kind: 'web-catalog' as const } : {}),
         },
         targetCatId,
       )
@@ -615,7 +583,7 @@ export function CustomSourcesScreen({
                       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openEditModal(source)}>
                         <div className="flex items-center gap-2">
                           <span className="rounded-md border border-cinnabar/30 bg-cinnabar/10 px-1.5 py-0.5 font-mono text-[9.5px] font-medium text-cinnabar-soft">
-                            {source.kind === 'web-video' ? '视频' : source.label || '自定义'}
+                            {source.kind === 'web-catalog' ? '目录' : source.label || '自定义'}
                           </span>
                           <span className="truncate text-[14.5px] font-medium text-paper">
                             {source.name}
@@ -718,10 +686,10 @@ export function CustomSourcesScreen({
                   </p>
                 )}
 
-                {probeWebVideoProfile && (
+                {probeCatalogHit && (
                   <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                     <span className="block font-mono text-[10px] text-emerald-300">
-                      已识别为视频目录（{probeWebVideoProfile.extractor ?? '通用'}）。列表走 App 排版，点进条目后在
+                      已识别为网页目录（{probeCatalogHit.extractor ?? '通用'}）。将重排为 App 信息流；点进条目后在
                       Android 上嗅探播放。
                     </span>
                   </div>

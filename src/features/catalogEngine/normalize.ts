@@ -39,13 +39,30 @@ export function sameOrigin(url: string, pageUrl: string): boolean {
   }
 }
 
+/** 将具体 id 段归一化，用于识别列表页重复卡片链接 */
 export function pathPattern(url: string): string | undefined {
   try {
-    const { pathname } = new URL(url)
-    return pathname
+    const { pathname, searchParams } = new URL(url)
+    const normalizedSearch = [...searchParams.entries()]
+      .filter(([key]) => !/^(utm_|ref|fbclid|_)/i.test(key))
+      .map(([key, value]) => {
+        const v =
+          /^\d+$/.test(value) || /^[0-9a-f-]{8,}$/i.test(value)
+            ? ':id'
+            : value.length > 24
+              ? ':token'
+              : value
+        return `${key}=${v}`
+      })
+      .sort()
+      .join('&')
+
+    const normalizedPath = pathname
       .replace(/[0-9a-f]{8,}/gi, ':id')
       .replace(/\d+/g, ':n')
       .replace(/\/+$/, '') || '/'
+
+    return normalizedSearch ? `${normalizedPath}?${normalizedSearch}` : normalizedPath
   } catch {
     return undefined
   }
@@ -54,7 +71,19 @@ export function pathPattern(url: string): string | undefined {
 export function isLikelyNavTitle(title: string): boolean {
   const t = title.trim().toLowerCase()
   if (!t || t.length > 80) return false
-  return /^(home|index|login|sign in|register|about|contact|privacy|terms|next|prev|previous|more|menu|search|categories?|tags?)$/.test(
+  return /^(home|index|login|sign in|register|about|contact|privacy|terms|next|prev|previous|more|menu|search|categories?|tags?|share|download|upload)$/.test(
     t,
+  )
+}
+
+export function isUtilityPath(url: string): boolean {
+  return /\/(?:login|register|signup|signin|privacy|terms|about|contact|help|faq|dmca|cdn-cgi)(?:\/|$|\?)/i.test(
+    url,
+  )
+}
+
+export function looksLikeDetailUrl(url: string): boolean {
+  return /\/(?:video|watch|play|view|clip|episode|ep|v|media|archives|post|article|news|detail|item)s?(?:\/|$|[?#])/i.test(
+    url,
   )
 }

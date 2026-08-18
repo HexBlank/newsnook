@@ -1,6 +1,5 @@
-import { getWebVideoProfile } from '../webVideo/registry'
-
-const PAGE_PARAM_NAMES = ['page', 'p', 'pg', 'page_index', 'pageIndex'] as const
+const PAGE_PARAM_NAMES = ['page', 'p', 'pg', 'page_index', 'pageIndex', 'offset'] as const
+const DEFAULT_MAX_OFFSET_PAGES = 30
 
 /** 从 HTML 找 rel=next / 常见「下一页」链接 */
 export function detectNextPageUrl(html: string, pageUrl: string): string | undefined {
@@ -37,15 +36,8 @@ export function pageParamName(pageUrl: string): (typeof PAGE_PARAM_NAMES)[number
   }
 }
 
-/** 通用 ?page= 翻页；有 profile 时优先走模板 */
-export function buildCatalogPageUrl(
-  pageUrl: string,
-  page: number,
-  profileId?: string,
-): string {
-  const profile = getWebVideoProfile(profileId)
-  if (profile) return profile.buildPageUrl(pageUrl, page)
-
+/** 通用 ?page= / ?p= 翻页（0-based page index） */
+export function buildCatalogPageUrl(pageUrl: string, page: number): string {
   const url = new URL(pageUrl)
   const pageNum = page + 1
   const param = pageParamName(pageUrl) ?? 'page'
@@ -58,8 +50,10 @@ export function buildCatalogPageUrl(
   return url.href
 }
 
-export function catalogUsesOffsetPaging(pageUrl: string, profileId?: string): boolean {
-  const profile = getWebVideoProfile(profileId)
-  if (profile) return profile.pagingStrategy === 'upstream-offset'
+export function catalogUsesOffsetPaging(pageUrl: string): boolean {
   return Boolean(pageParamName(pageUrl))
+}
+
+export function catalogMaxOffsetPages(): number {
+  return DEFAULT_MAX_OFFSET_PAGES
 }
