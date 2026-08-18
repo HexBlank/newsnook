@@ -1,11 +1,12 @@
 import { LoaderCircle, Play, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
 import { discoverMediaDescriptor } from '../features/mediaSniffer/service'
 import type { MediaDescriptor } from '../features/mediaSniffer/types'
 import {
   describeYoutubeEmbed,
+  isYoutubeCustomPlayable,
   type YoutubeEmbedDescriptor,
 } from '../lib/youtubeEmbeds'
 import { InkVideoPlayer } from './InkVideoPlayer'
@@ -31,11 +32,7 @@ const SLOW_LOAD_MS = 10_000
 const READY_REVEAL_MS = 420
 
 function isCustomPlayable(descriptor: MediaDescriptor | null): descriptor is MediaDescriptor {
-  if (!descriptor || descriptor.drm) return false
-  // A structured player payload can explicitly identify a video-only adaptive
-  // representation. A lone representation would play silently, so keep the
-  // original embed unless a complete resource or manifest was discovered.
-  return descriptor.type !== 'progressive' || descriptor.hasAudio !== false
+  return isYoutubeCustomPlayable(descriptor)
 }
 
 function YoutubeEmbedPlayer({
@@ -92,6 +89,21 @@ function YoutubeEmbedPlayer({
     return () => window.clearTimeout(timer)
   }, [attempt, phase])
 
+  const extraUrls = useMemo(
+    () => media
+      ? [
+          ...media.videoTracks.map((track) => track.url),
+          ...media.audioTracks.map((track) => track.url),
+        ].filter((url): url is string => Boolean(url))
+      : undefined,
+    [media],
+  )
+
+  const handlePlaybackError = useCallback(() => {
+    setMedia(null)
+    setPhase('fallback-loading')
+  }, [])
+
   const markReady = () => {
     window.setTimeout(() => setPhase('fallback-ready'), READY_REVEAL_MS)
   }
@@ -105,6 +117,8 @@ function YoutubeEmbedPlayer({
         format={media.type}
         sourcePage={media.pageUrl || sourcePage || src}
         requestHeaders={media.requestHeaders}
+        extraUrls={extraUrls}
+        onPlaybackError={handlePlaybackError}
         onRefreshSource={startLoading}
         onUnlocked={onUnlocked}
       />

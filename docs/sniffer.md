@@ -1152,7 +1152,9 @@ resolveArticleBody
 - HLS / DASH Manifest 高于单文件；广告 MP4 与后期 HLS 并存时选出 HLS。DOM `currentSrc`、MSE、fetch/XHR、网络、Service Worker 与静态信号都进入同一观察池。
 - 不要求 URL 带文件扩展名：`mime` / `content-type` / `format` 等查询参数、Probe 得到的 Content-Type、以及结构化播放器 payload 中的 MIME、codec、音视频属性都会参与 Classifier。无扩展名的未知 URL 可由 Android `MediaProbe`（HEAD，必要时小 Range GET）补 MIME。
 - `.m4s` 按角色分类：video MIME（或无 MIME 的 `.m4s`）为 `video-track`，audio MIME 为 `audio-track`，不是一律当垃圾分片丢弃。成对的音视频轨可合成最小 MPD，以 `dash` 交给现有 dash.js。
+- API 明确声明的分离轨会保留 `initialization` / `index_range`，合成 MPD 输出 `SegmentBase`，避免 dash.js 丢失初始化段、索引段和 seek 能力。
 - URL 查询参数中的 `range` / `bytes` 经 `logicalMediaUrl` 剥离后聚合为同一条轨；带 byte-range 的响应不得作为 `MediaDescriptor.url` 交给播放器。
+- 真机 quiet window 可能只观察到 YouTube `googlevideo.com/videoplayback` 的单个分片；在 MIME 已确认且 CDN 已知的前提下允许将该单段提升为逻辑轨，同时仍保留 `expire` / `sig` 等播放授权参数。
 - 同一资源按指纹合并多个观察来源；只有内部去重指纹会忽略常见临时授权参数，`MediaDescriptor.url` 始终保留原始签名 URL。
 - 结构化播放器数据能够明确区分 muxed 音视频资源和 video-only 自适应轨；自定义播放器优先完整资源，不能把单独视频轨伪装成可完整播放的视频。
 - fetch/XHR 的小型 JSON/text 与页面 `__playinfo__` 由 ApiParser 抽出 playurl / DASH 轨。
@@ -1180,6 +1182,8 @@ resolveArticleBody
 - `InkVideoPlayer` 手势与内核未改。
 
 Android 播放前通过 `MediaSniffer.preparePlayback` 登记一个短生命周期会话，`MediaPlaybackWebViewClient` 仅在需要时流式补齐 Referer、Cookie、请求头或代理，不缓存、拼接或改写媒体字节。公开 progressive 视频优先留在 WebView 原生网络栈中，以保持 Range 请求和持续播放；显式请求头、用户隧道、DASH 或直连失败后的 progressive 重试才启用桥接。
+
+播放上下文按候选实例保留，不再由同一 origin 的后一次探测覆盖前一次；登记时快照对应 exact origin 的观察头，后续分片请求只使用自身 origin 的快照。网络观察池满载时按 manifest / 媒体 MIME / API body 优先级淘汰低价值静态噪声；Network、Service Worker 与 JS 高价值事件共同推动 quiet window。
 
 签名 URL 过期或服务端返回 401/403 时，播放器显示“重新探测”。该操作重新执行正文解析和原页探测，取得新的 `MediaDescriptor`；不会猜测、生成或逆向签名。
 

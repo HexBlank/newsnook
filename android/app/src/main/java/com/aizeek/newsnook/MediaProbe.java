@@ -4,6 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Map;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -19,8 +23,15 @@ final class MediaProbe {
     }
 
     static Result classify(OkHttpClient client, String url) {
+        return classify(client, url, java.util.Collections.emptyMap());
+    }
+
+    static Result classify(OkHttpClient client, String url, Map<String, String> headers) {
+        if (!isSafeExternalUrl(url)) return null;
         try {
-            Request head = new Request.Builder().url(url).head().build();
+            Request.Builder headBuilder = new Request.Builder().url(url).head();
+            addHeaders(headBuilder, headers);
+            Request head = headBuilder.build();
             try {
                 try (Response response = client.newCall(head).execute()) {
                     String mime = contentType(response);
@@ -29,11 +40,12 @@ final class MediaProbe {
             } catch (IOException ignored) {
                 // HEAD 失败或非媒体 MIME 时仍尝试 Range GET。
             }
-            Request get = new Request.Builder()
+            Request.Builder getBuilder = new Request.Builder()
                 .url(url)
                 .header("Range", "bytes=0-" + (MAX_BYTES - 1))
-                .get()
-                .build();
+                .get();
+            addHeaders(getBuilder, headers);
+            Request get = getBuilder.build();
             try (Response response = client.newCall(get).execute()) {
                 String mime = contentType(response);
                 byte[] prefix = readPrefix(response.body(), MAX_BYTES);
@@ -44,13 +56,74 @@ final class MediaProbe {
                 if (text.contains("<MPD") || text.contains("application/dash+xml")) {
                     return new Result("application/dash+xml");
                 }
-                if (indexOf(prefix, "ftyp") >= 0) return new Result("video/mp4");
+                String containerMime = classifyIsoBmff(prefix);
+                if (containerMime != null) return new Result(containerMime);
                 if (isMediaMime(mime)) return new Result(mime);
             }
         } catch (IOException | IllegalArgumentException ignored) {
             return null;
         }
         return null;
+    }
+
+    private static void addHeaders(Request.Builder builder, Map<String, String> headers) {
+        if (headers == null) return;
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            String name = entry.getKey();
+            String value = entry.getValue();
+            if (name == null || value == null || value.isEmpty()) continue;
+            if ("range".equalsIgnoreCase(name)) continue;
+            if ("cookie".equalsIgnoreCase(name) || "authorization".equalsIgnoreCase(name)
+                || "referer".equalsIgnoreCase(name) || "origin".equalsIgnoreCase(name)
+                || "user-agent".equalsIgnoreCase(name) || "accept".equalsIgnoreCase(name)
+                || "accept-language".equalsIgnoreCase(name)) {
+                builder.header(name, value);
+            }
+        }
+    }
+
+    /** ISO-BMFF identification: ftyp alone is not enough to claim video. */
+    private static String classifyIsoBmff(byte[] bytes) {
+        if (indexOf(bytes, "ftyp") < 0) return null;
+        boolean video = indexOf(bytes, "vide") >= 0;
+        boolean audio = indexOf(bytes, "soun") >= 0;
+        if (video) return "video/mp4";
+        if (audio) return "audio/mp4";
+        return null;
+    }
+
+    static boolean isSafeExternalUrl(String value) {
+        if (value == null || value.trim().isEmpty()) return false;
+        try {
+            URI uri = new URI(value);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) || host == null) return false;
+            String lower = host.toLowerCase(Locale.ROOT);
+            if (lower.equals("localhost") || lower.endsWith(".localhost") || lower.equals("metadata.google.internal")) return false;
+            for (InetAddress address : InetAddress.getAllByName(host)) {
+                if (isPrivateAddress(address)) return false;
+            }
+            return true;
+        } catch (URISyntaxException | IOException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isPrivateAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+            || address.isSiteLocalAddress() || address.isMulticastAddress()) return true;
+        byte[] bytes = address.getAddress();
+        if (bytes.length == 4) {
+            int first = bytes[0] & 0xff;
+            int second = bytes[1] & 0xff;
+            if (first == 100 && second >= 64 && second <= 127) return true; // CGNAT
+            if (first == 169 && second == 254) return true;
+        } else if (bytes.length == 16) {
+            int first = bytes[0] & 0xff;
+            if ((first & 0xfe) == 0xfc) return true; // IPv6 ULA
+        }
+        return false;
     }
 
     /** Reads at most {@code maxBytes} from the body. Closing the response aborts any remainder. */

@@ -123,6 +123,11 @@ const pageUrl = 'https://news.example/articles/42'
     logicalMediaUrl('https://cdn.example/videoplayback?id=42&mime=video%2Fmp4&range=0-524287'),
     'https://cdn.example/videoplayback?id=42&mime=video%2Fmp4',
   )
+  assert.equal(
+    logicalMediaUrl('https://cdn.example/videoplayback?id=42&mime=video%2Fmp4&range=0-524287&expire=1800000000&sig=keep'),
+    'https://cdn.example/videoplayback?id=42&mime=video%2Fmp4&expire=1800000000&sig=keep',
+    '逻辑轨只移除分片定位参数，必须保留 CDN 签名和过期上下文',
+  )
 }
 
 {
@@ -517,6 +522,33 @@ video/1080.m3u8`
   ])
   assert.equal(descriptor?.url, base)
   assert.equal(descriptor?.type, 'progressive')
+}
+
+{
+  const youtubeVideo = 'https://r1---sn.googlevideo.com/videoplayback?id=v&itag=137&mime=video%2Fmp4&rn=1&rbuf=0&range=0-524287&expire=1800000000&sig=keep-video'
+  const youtubeAudio = 'https://r1---sn.googlevideo.com/videoplayback?id=a&itag=140&mime=audio%2Fmp4&rn=2&rbuf=0&range=0-524287&expire=1800000000&sig=keep-audio'
+  const assets = buildMediaGraph([
+    { url: youtubeVideo, pageUrl, source: 'network', mimeType: 'video/mp4' },
+    { url: youtubeVideo.replace('rn=1', 'rn=3').replace('range=0-524287', 'range=524288-1048575'), pageUrl, source: 'network', mimeType: 'video/mp4' },
+    { url: youtubeAudio, pageUrl, source: 'network', mimeType: 'audio/mp4' },
+    { url: youtubeAudio.replace('rn=2', 'rn=4').replace('range=0-524287', 'range=524288-1048575'), pageUrl, source: 'network', mimeType: 'audio/mp4' },
+  ])
+  assert.equal(assets.length, 1, 'YouTube 分段请求应按 transport 参数归并成一个音视频资产')
+  assert.equal(assets[0].videos.length, 1)
+  assert.equal(assets[0].audios.length, 1)
+  assert.match(assets[0].videos[0].url, /sig=keep-video/)
+}
+
+{
+  const youtubeVideo = 'https://r1---sn.googlevideo.com/videoplayback?id=v&itag=137&mime=video%2Fmp4&range=0-524287&expire=1800000000&sig=keep-video'
+  const youtubeAudio = 'https://r1---sn.googlevideo.com/videoplayback?id=a&itag=140&mime=audio%2Fmp4&range=0-524287&expire=1800000000&sig=keep-audio'
+  const descriptor = buildMediaDescriptor([
+    { url: youtubeVideo, pageUrl, source: 'network', mimeType: 'video/mp4' },
+    { url: youtubeAudio, pageUrl, source: 'network', mimeType: 'audio/mp4' },
+  ])
+  assert.equal(descriptor?.type, 'dash', '真机安静窗口可能每条自适应轨只看到一个 range 请求，也应形成可播放资产')
+  assert.match(descriptor?.relatedUrls?.join('|') || '', /expire=1800000000/)
+  assert.match(descriptor?.relatedUrls?.join('|') || '', /sig=keep-video/)
 }
 
 {

@@ -30,6 +30,7 @@ interface GraphAsset extends MediaAsset {
   descriptorVideoTracks: MediaTrack[]
   descriptorAudioTracks: MediaTrack[]
   descriptorSubtitles: MediaTrack[]
+  observationTimestamps: number[]
 }
 
 interface GroupedObservation {
@@ -47,9 +48,16 @@ function xmlEscape(value: string): string {
 }
 
 function requestContextFor(url: string, headers?: Record<string, string>): RequestContext {
+  const safeHeaders: Record<string, string> = {}
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    const lower = name.toLowerCase()
+    if (lower === 'cookie' || lower === 'authorization' || lower === 'range') continue
+    if (!['referer', 'origin', 'user-agent', 'accept', 'accept-language'].includes(lower)) continue
+    safeHeaders[name] = value
+  }
   return {
     origin: originOf(url) || '',
-    headers: headers ?? {},
+    headers: safeHeaders,
   }
 }
 
@@ -67,17 +75,25 @@ export function synthesizeDashMpd(video: MediaAssetTrack, audio: MediaAssetTrack
   const audioCodecs = audio.codecs ? ` codecs="${xmlEscape(audio.codecs)}"` : ''
   const width = video.width ? ` width="${video.width}"` : ''
   const height = video.height ? ` height="${video.height}"` : ''
+  const videoSegmentBase = video.indexRange || video.initializationRange
+    ? `\n        <SegmentBase${video.indexRange ? ` indexRange="${xmlEscape(video.indexRange)}"` : ''}>${video.initializationRange ? `\n          <Initialization range="${xmlEscape(video.initializationRange)}" />\n        ` : ''}</SegmentBase>`
+    : ''
+  const audioSegmentBase = audio.indexRange || audio.initializationRange
+    ? `\n        <SegmentBase${audio.indexRange ? ` indexRange="${xmlEscape(audio.indexRange)}"` : ''}>${audio.initializationRange ? `\n          <Initialization range="${xmlEscape(audio.initializationRange)}" />\n        ` : ''}</SegmentBase>`
+    : ''
   return `<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" type="static">
   <Period>
     <AdaptationSet contentType="video" mimeType="${videoMime}">
       <Representation bandwidth="${video.bitrate || 1}"${width}${height}${videoCodecs}>
         <BaseURL>${xmlEscape(video.url)}</BaseURL>
+        ${videoSegmentBase}
       </Representation>
     </AdaptationSet>
     <AdaptationSet contentType="audio" mimeType="${audioMime}">
       <Representation bandwidth="${audio.bitrate || 1}"${audioCodecs}>
         <BaseURL>${xmlEscape(audio.url)}</BaseURL>
+        ${audioSegmentBase}
       </Representation>
     </AdaptationSet>
   </Period>
@@ -90,13 +106,13 @@ export function admitObservation(
   networkUrls: Set<string>,
 ): boolean {
   if (observation.source === 'network' || observation.fromServiceWorker) return true
+  const url = observation.url
   if (observation.fromIframe) {
-    return Boolean(observation.url) && networkUrls.has(observation.url)
+    return Boolean(url && networkUrls.has(url))
   }
   if (observation.sessionNonce) {
     return observation.sessionNonce === sessionNonce
-      && Boolean(observation.url)
-      && networkUrls.has(observation.url)
+      && Boolean(url && networkUrls.has(url))
   }
   return true
 }
@@ -163,6 +179,10 @@ function mergeObservation(target: MediaObservation, incoming: MediaObservation):
     drmKeySystem: incoming.drmKeySystem || target.drmKeySystem,
     assetGroup: incoming.assetGroup || target.assetGroup,
     codecs: incoming.codecs || target.codecs,
+    quality: incoming.quality || target.quality,
+    mediaSessionId: incoming.mediaSessionId || target.mediaSessionId,
+    initializationRange: incoming.initializationRange || target.initializationRange,
+    indexRange: incoming.indexRange || target.indexRange,
   }
 }
 
@@ -181,7 +201,12 @@ function groupRangeObservations(observations: MediaObservation[]): GroupedObserv
   for (const members of groups.values()) {
     const rangeCount = members.filter((item) => item.url && isByteRangeResource(item.url)).length
     const hasComplete = members.some((item) => item.url && !isByteRangeResource(item.url))
-    const promoted = hasComplete || rangeCount >= 2
+    const apiDeclaredTrack = members.some((item) =>
+      Boolean(item.assetGroup)
+      || ((item.source === 'fetch' || item.source === 'xhr' || item.source === 'static')
+        && Boolean(item.mediaKind)),
+    )
+    const promoted = hasComplete || rangeCount >= 2 || apiDeclaredTrack || members.some(isSingleKnownTrackTransport)
     if (!promoted && rangeCount > 0) continue
 
     const representative = members.reduce((best, item) => {
@@ -198,11 +223,19 @@ function groupRangeObservations(observations: MediaObservation[]): GroupedObserv
       return observationScore(item, format) >= observationScore(best, bestFormat) ? item : best
     })
     const url = logicalMediaUrl(representative.url || '')
-    const format = mediaFormatFor(
+    let format = mediaFormatFor(
       url,
       representative.mimeType,
       representative.mediaKind ? { mediaKind: representative.mediaKind } : undefined,
     )
+    // Chunk transports such as YouTube's extensionless videoplayback URL are
+    // progressive-looking after range parameters are removed. Preserve the
+    // observed audio/video role so they can be paired into one asset.
+    const representativeKind = representative.mediaKind
+      || (normalizedMime(representative.mimeType).startsWith('video/') ? 'video' : undefined)
+      || (normalizedMime(representative.mimeType).startsWith('audio/') ? 'audio' : undefined)
+    if (rangeCount > 0 && representativeKind === 'video' && format === 'progressive') format = 'video-track'
+    if (rangeCount > 0 && representativeKind === 'audio' && format === 'progressive') format = 'audio-track'
     if (format === 'unknown' || format === 'blob' || format === 'segment') continue
     grouped.push({
       url,
@@ -227,7 +260,23 @@ function trackFrom(
     width: observation.width,
     height: observation.height,
     bitrate: observation.bitrate,
+    quality: observation.quality,
+    initializationRange: observation.initializationRange,
+    indexRange: observation.indexRange,
     requestContext: requestContextFor(url, observation.requestHeaders),
+  }
+}
+
+function isSingleKnownTrackTransport(observation: MediaObservation): boolean {
+  const mime = normalizedMime(observation.mimeType)
+  if (!mime.startsWith('video/') && !mime.startsWith('audio/')) return false
+  try {
+    const url = new URL(observation.url || '')
+    const host = url.hostname.toLowerCase()
+    return (host === 'googlevideo.com' || host.endsWith('.googlevideo.com'))
+      && /\/videoplayback$/i.test(url.pathname)
+  } catch {
+    return false
   }
 }
 
@@ -244,10 +293,40 @@ function bestTrack(tracks: MediaAssetTrack[]): MediaAssetTrack | undefined {
   })[0]
 }
 
-function assetGroupKey(item: GroupedObservation): string {
+function assetGroupKey(item: GroupedObservation, mseObservations: MediaObservation[]): string {
   if (item.observation.assetGroup) return item.observation.assetGroup
   if (item.format === 'hls' || item.format === 'dash') return `manifest:${mediaFingerprint(item.url)}`
-  if (item.format === 'video-track' || item.format === 'audio-track') return `tracks:${item.observation.pageUrl}`
+  if (item.format === 'video-track' || item.format === 'audio-track') {
+    const observation = item.observation
+    if (observation.mediaSessionId) return `session:${observation.mediaSessionId}`
+
+    // MSE emits one MIME event per SourceBuffer. Correlate nearby audio/video
+    // requests into the same player session, while keeping separate players
+    // on a page apart.
+    const timestamp = observation.timestamp
+    if (timestamp) {
+      const nearest = mseObservations
+        .filter((candidate) => candidate.mseMimeType && candidate.pageUrl === observation.pageUrl)
+        .map((candidate) => ({ candidate, distance: Math.abs((candidate.timestamp || 0) - timestamp) }))
+        .filter((item) => item.distance <= 10_000)
+        .sort((left, right) => left.distance - right.distance)[0]?.candidate
+      if (nearest) {
+        const sessionBucket = Math.floor((nearest.timestamp || timestamp) / 5_000)
+        return `mse:${observation.pageUrl}:${sessionBucket}`
+      }
+    }
+
+    // Without explicit API/session metadata, use the logical segment
+    // directory. This prevents an ad and the article's tracks from being
+    // cross-paired merely because they share a page URL.
+    try {
+      const parsed = new URL(item.url)
+      const path = parsed.pathname.replace(/\/[^/]*$/, '') || '/'
+      return `tracks:${observation.pageUrl}:${parsed.origin}${path}`
+    } catch {
+      return `track:${mediaFingerprint(item.url)}`
+    }
+  }
   return `file:${mediaFingerprint(item.url)}`
 }
 
@@ -284,6 +363,7 @@ function emptyAsset(id: string, pageUrl: string): GraphAsset {
     descriptorVideoTracks: [],
     descriptorAudioTracks: [],
     descriptorSubtitles: [],
+    observationTimestamps: [],
   }
 }
 
@@ -336,15 +416,11 @@ export function buildMediaGraph(
   const grouped = groupRangeObservations(admitted)
   const buckets = new Map<string, GroupedObservation[]>()
   for (const item of grouped) {
-    const key = assetGroupKey(item)
+    const key = assetGroupKey(item, expanded)
     const bucket = buckets.get(key)
     if (bucket) bucket.push(item)
     else buckets.set(key, [item])
   }
-
-  const pageDrm = Array.from(new Set(
-    expanded.map((item) => item.drmKeySystem).filter((item): item is string => Boolean(item)),
-  ))
 
   const assets: GraphAsset[] = []
   for (const [id, members] of buckets) {
@@ -353,6 +429,7 @@ export function buildMediaGraph(
     for (const member of members) {
       const { observation, url, format } = member
       score = Math.max(score, observationScore(observation, format))
+      if (observation.timestamp) asset.observationTimestamps.push(observation.timestamp)
       if (observation.hasAudio !== undefined) asset.hasAudio = observation.hasAudio
       if (observation.hasVideo !== undefined) asset.hasVideo = observation.hasVideo
       if (observation.mimeType) asset.mimeType = observation.mimeType
@@ -371,9 +448,6 @@ export function buildMediaGraph(
       }
     }
 
-    if (pageDrm.length) {
-      asset.drmKeySystems = Array.from(new Set([...asset.drmKeySystems, ...pageDrm]))
-    }
     asset.drm = asset.drm || asset.drmKeySystems.length > 0
 
     if (!asset.manifest && asset.videos.length > 0 && asset.audios.length > 0) {
@@ -385,6 +459,33 @@ export function buildMediaGraph(
     if (!asset.manifest && asset.videos.length === 0 && asset.audios.length === 0) continue
     asset.score = score
     assets.push(asset)
+  }
+  // A page-level EME signal is only safe to inherit when there is exactly one
+  // media asset. With multiple players, DRM must be carried by an explicit
+  // session/manifest observation and must never contaminate siblings.
+  if (assets.length === 1) {
+    const pageDrm = Array.from(new Set(
+      expanded.map((item) => item.drmKeySystem).filter((item): item is string => Boolean(item)),
+    ))
+    if (pageDrm.length) {
+      assets[0].drmKeySystems = Array.from(new Set([...assets[0].drmKeySystems, ...pageDrm]))
+      assets[0].drm = true
+    }
+  }
+  for (const signal of expanded) {
+    if (!signal.drmKeySystem) continue
+    const target = signal.mediaSessionId
+      ? assets.find((asset) => asset.id === `session:${signal.mediaSessionId}`)
+      : signal.timestamp
+        ? assets
+          .filter((asset) => asset.pageUrl === signal.pageUrl)
+          .map((asset) => ({ asset, distance: Math.min(...asset.observationTimestamps.map((time) => Math.abs(time - signal.timestamp!)), Infinity) }))
+          .filter((item) => item.distance <= 10_000)
+          .sort((left, right) => left.distance - right.distance)[0]?.asset
+        : undefined
+    if (!target) continue
+    if (!target.drmKeySystems.includes(signal.drmKeySystem)) target.drmKeySystems.push(signal.drmKeySystem)
+    target.drm = true
   }
   return assets
 }
@@ -425,6 +526,24 @@ export function descriptorFromAsset(
     drm: asset.drm,
     drmKeySystems: asset.drmKeySystems,
     requestHeaders: graphAsset.requestHeaders,
+    relatedUrls: Array.from(new Set([
+      asset.manifest?.url,
+      ...asset.videos.map((track) => track.url),
+      ...asset.audios.map((track) => track.url),
+      ...asset.subtitles.map((track) => track.url),
+      ...graphAsset.descriptorVideoTracks.map((track) => track.url),
+      ...graphAsset.descriptorAudioTracks.map((track) => track.url),
+      ...graphAsset.descriptorSubtitles.map((track) => track.url),
+    ].filter((value): value is string => Boolean(value)))),
+    origins: Array.from(new Set([
+      asset.manifest?.url,
+      ...asset.videos.map((track) => track.url),
+      ...asset.audios.map((track) => track.url),
+      ...asset.subtitles.map((track) => track.url),
+      ...graphAsset.descriptorVideoTracks.map((track) => track.url),
+      ...graphAsset.descriptorAudioTracks.map((track) => track.url),
+      ...graphAsset.descriptorSubtitles.map((track) => track.url),
+    ].map((value) => value ? originOf(value) : undefined).filter((value): value is string => Boolean(value)))),
   }
 
   if (asset.manifest) {

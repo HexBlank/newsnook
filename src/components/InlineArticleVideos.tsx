@@ -84,6 +84,7 @@ export function InlineArticleVideos({
         format={video.format}
         sourcePage={video.sourcePage || sourcePage}
         requestHeaders={video.requestHeaders}
+        extraUrls={video.extraUrls}
         onRefreshSource={onRefreshSource}
         deferLoad={deferLoad}
         onUnlocked={() => onUnlocked?.(video.src)}

@@ -26,18 +26,20 @@ function mediaRequestHeaders(url: string, context?: MediaFetchContext): Record<s
   }
   if (context?.sourcePage && !Object.keys(headers).some((key) => key.toLowerCase() === 'referer')) {
     headers.Referer = context.sourcePage
-  } else if (needsMediaHotlinkBypass(url)) {
-    headers.Referer = 'https://3g.163.com/'
+  } else if (!Object.keys(headers).some((key) => key.toLowerCase() === 'referer')) {
+    const fallback = hotlinkFallbackReferer(url)
+    if (fallback) headers.Referer = fallback
   }
   if (context?.range) headers.Range = context.range
   return headers
 }
 
-/** 网易视频 CDN：浏览器带 localhost Origin 会 403，需代理或原生 HTTP + 站点 Referer */
+/** 网易 / YouTube CDN：浏览器带 localhost Origin 会 403，需代理或原生 HTTP + 站点 Referer */
 export function needsMediaHotlinkBypass(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase()
     return (
+      host.endsWith('googlevideo.com') ||
       host.endsWith('bn.netease.com') ||
       host.endsWith('vod.126.net') ||
       (host.includes('flv') && host.includes('netease'))
@@ -45,6 +47,23 @@ export function needsMediaHotlinkBypass(url: string): boolean {
   } catch {
     return false
   }
+}
+
+export function hotlinkFallbackReferer(url: string): string | undefined {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    if (host.endsWith('googlevideo.com')) return 'https://www.youtube.com/'
+    if (
+      host.endsWith('bn.netease.com')
+      || host.endsWith('vod.126.net')
+      || (host.includes('flv') && host.includes('netease'))
+    ) {
+      return 'https://3g.163.com/'
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
 }
 
 export function browserMediaProxyUrl(url: string): string {

@@ -3,13 +3,17 @@
  * npx tsx scripts/youtube-embed.test.ts [path/to/arena-article.html]
  */
 import { readFileSync } from 'node:fs'
+import assert from 'node:assert/strict'
 
 import { sanitizeArticleHtml } from '../src/lib/sanitize'
+import { hotlinkFallbackReferer, needsMediaHotlinkBypass } from '../src/lib/mediaFetch'
 import {
   describeYoutubeEmbed,
+  isYoutubeCustomPlayable,
   stageYoutubeEmbedsInHtml,
   YOUTUBE_STAGED_SRC_ATTR,
 } from '../src/lib/youtubeEmbeds'
+import type { MediaDescriptor } from '../src/features/mediaSniffer/types'
 import { parseHTML } from 'linkedom'
 
 const withIframe =
@@ -58,6 +62,72 @@ for (const iframe of stagedIframes) {
   }
 }
 console.log('youtube loading stage: ok')
+
+function youtubeDescriptor(partial: Partial<MediaDescriptor> & Pick<MediaDescriptor, 'type' | 'url'>): MediaDescriptor {
+  return {
+    pageUrl: 'https://www.youtube.com/embed/Eu-gcfuxGn8',
+    score: 1,
+    videoTracks: [],
+    audioTracks: [],
+    subtitles: [],
+    drm: false,
+    drmKeySystems: [],
+    ...partial,
+  }
+}
+
+{
+  assert.equal(
+    isYoutubeCustomPlayable(
+      youtubeDescriptor({
+        type: 'progressive',
+        url: 'https://rr1---sn-abc.googlevideo.com/videoplayback?id=video-only&mime=video%2Fmp4',
+      }),
+    ),
+    false,
+    '无 hasAudio 的 googlevideo 不得交给自定义播放器',
+  )
+  assert.equal(
+    isYoutubeCustomPlayable(
+      youtubeDescriptor({
+        type: 'progressive',
+        url: 'https://rr1---sn-abc.googlevideo.com/videoplayback?id=video-only&mime=video%2Fmp4',
+        hasAudio: false,
+      }),
+    ),
+    false,
+    'video-only 自适应轨必须保留原站 iframe',
+  )
+  assert.equal(
+    isYoutubeCustomPlayable(
+      youtubeDescriptor({
+        type: 'progressive',
+        url: 'https://rr1---sn-abc.googlevideo.com/videoplayback?id=muxed&mime=video%2Fmp4',
+        hasAudio: true,
+      }),
+    ),
+    true,
+    '明确的 muxed 资源可以进自定义播放器',
+  )
+  assert.equal(
+    isYoutubeCustomPlayable(
+      youtubeDescriptor({
+        type: 'progressive',
+        url: 'https://rr1---sn-abc.googlevideo.com/videoplayback?id=drm',
+        hasAudio: true,
+        drm: true,
+      }),
+    ),
+    false,
+  )
+}
+
+{
+  const googlevideo = 'https://rr5---sn-i3b7knld.googlevideo.com/videoplayback?expire=1'
+  assert.equal(needsMediaHotlinkBypass(googlevideo), true, 'googlevideo 必须走原生请求桥，避免 localhost Origin 403')
+  assert.equal(hotlinkFallbackReferer(googlevideo), 'https://www.youtube.com/')
+  assert.equal(needsMediaHotlinkBypass('https://cdn.example/video.mp4'), false)
+}
 
 const fixture = process.argv[2]
 if (!fixture) {

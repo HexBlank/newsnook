@@ -12,6 +12,13 @@ const HLS_EXT = /\.m3u8(?:$|[?#])/i
 const DASH_EXT = /\.mpd(?:$|[?#])/i
 const M4S_EXT = /\.m4s(?:$|[?#])/i
 const VOLATILE_QUERY_KEY = /^(?:token|auth|authorization|signature|sig|expires?|expiry|e|hdnts|policy|key-pair-id|x-amz-.+)$/i
+// YouTube/googlevideo and similar chunk transports vary these fields on every
+// request. They are safe to remove only from the internal grouping key.
+const TRANSPORT_QUERY_KEY = /^(?:range|bytes|rn|rbuf|begin|end|alr|cpn|mt|ip|ipbits|mm|mn|ms|mv|mvi|pl|ei|cver|mh|expire|fvip|initcwndbps|lmt|source|requiressl|sp|sparams|ns|gir|keepalive|fexp|c|n|lsparams|lsig)$/i
+// The playback URL must keep authorization/signature context. Only remove
+// selectors that identify one byte/chunk request; removing expire/sig/n/etc.
+// produces a URL that no longer authorizes playback on the CDN.
+const PLAYBACK_RANGE_QUERY_KEY = /^(?:range|bytes|rn|rbuf|begin|end|alr)$/i
 const MIME_QUERY_KEY = /^(?:mime|mime-type|mimetype|content-type|content_type|type)$/i
 const FORMAT_QUERY_KEY = /^(?:format|fmt|container|ext)$/i
 
@@ -63,8 +70,9 @@ export function isHttpUrl(value: string): boolean {
 export function logicalMediaUrl(url: string): string {
   try {
     const parsed = new URL(url)
-    parsed.searchParams.delete('range')
-    parsed.searchParams.delete('bytes')
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (PLAYBACK_RANGE_QUERY_KEY.test(key)) parsed.searchParams.delete(key)
+    }
     return parsed.href
   } catch {
     return url
@@ -104,6 +112,7 @@ export function mediaFingerprint(originalUrl: string): string {
     const url = new URL(originalUrl)
     const stable = Array.from(url.searchParams.entries())
       .filter(([key]) => !VOLATILE_QUERY_KEY.test(key))
+      .filter(([key]) => !TRANSPORT_QUERY_KEY.test(key))
       .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
         `${leftKey}=${leftValue}`.localeCompare(`${rightKey}=${rightValue}`),
       )

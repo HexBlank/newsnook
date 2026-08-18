@@ -63,6 +63,17 @@ export function describeYoutubeEmbed(
   }
 }
 
+/** YouTube 自定义播放器只接收明确可交付资源；其余走原站 iframe。 */
+export function isYoutubeCustomPlayable(descriptor: {
+  type: 'progressive' | 'hls' | 'dash'
+  drm?: boolean
+  hasAudio?: boolean
+} | null | undefined): boolean {
+  if (!descriptor || descriptor.drm) return false
+  if (descriptor.type === 'hls' || descriptor.type === 'dash') return true
+  return descriptor.type === 'progressive' && descriptor.hasAudio === true
+}
+
 /**
  * Reader 初次注入正文时先移走 iframe src，避免 WebView 抢先绘制纯黑播放器。
  * React 挂载加载态并绑定 load 事件后，再真正创建 YouTube iframe。

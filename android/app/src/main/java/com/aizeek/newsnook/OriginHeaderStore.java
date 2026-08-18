@@ -69,13 +69,15 @@ final class OriginHeaderStore {
         String pageOrigin = originOf(pageUrl);
         if (targetOrigin == null) return Collections.emptyMap();
         Map<String, String> captured = capturedFor(targetOrigin);
-        boolean sameOrigin = targetOrigin.equals(pageOrigin);
         Map<String, String> result = new LinkedHashMap<>();
         copy(captured, result, "user-agent");
         copy(captured, result, "accept");
         copy(captured, result, "accept-language");
-        if (sameOrigin) {
-            copy(captured, result, "authorization");
+        // Replay credentials only to the exact origin where they were
+        // captured. A media CDN commonly differs from the page origin, but
+        // that does not make its own observed Authorization unsafe to reuse.
+        copy(captured, result, "authorization");
+        if (targetOrigin.equals(pageOrigin)) {
             String referer = header(captured, "referer");
             if (referer == null) referer = pageUrl;
             if (referer != null && !referer.isEmpty()) result.put("referer", referer);
@@ -88,7 +90,9 @@ final class OriginHeaderStore {
         String cookie = cookies == null ? null : cookies.cookieFor(targetUrl);
         if (cookie != null && !cookie.isEmpty()) {
             result.put("cookie", cookie);
-        } else if (sameOrigin) {
+        } else {
+            // CookieManager is queried for the exact target URL above. Fall
+            // back to an observed cookie only for that same exact origin.
             copy(captured, result, "cookie");
         }
         return result;

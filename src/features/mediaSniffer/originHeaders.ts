@@ -1,4 +1,5 @@
 const CREDENTIAL_HEADERS = new Set(['cookie', 'authorization'])
+const PUBLIC_HEADERS = new Set(['referer', 'origin', 'user-agent', 'accept', 'accept-language'])
 
 export function publicPlaybackHeaders(
   headers?: Record<string, string>,
@@ -7,7 +8,7 @@ export function publicPlaybackHeaders(
   const result: Record<string, string> = {}
   for (const [key, value] of Object.entries(headers)) {
     const lower = key.toLowerCase()
-    if (CREDENTIAL_HEADERS.has(lower) || lower === 'range') continue
+    if (CREDENTIAL_HEADERS.has(lower) || lower === 'range' || !PUBLIC_HEADERS.has(lower)) continue
     result[key] = value
   }
   return Object.keys(result).length ? result : undefined
@@ -35,7 +36,6 @@ export function playbackHeadersForTarget(input: {
   const pageOrigin = originOf(input.pageUrl)
   if (!targetOrigin) return {}
   const captured = input.capturedByOrigin[targetOrigin] ?? {}
-  const sameOrigin = targetOrigin === pageOrigin
   const result: Record<string, string> = {}
   const ua = header(captured, 'user-agent')
   const accept = header(captured, 'accept')
@@ -43,11 +43,15 @@ export function playbackHeadersForTarget(input: {
   if (ua) result['user-agent'] = ua
   if (accept) result.accept = accept
   if (language) result['accept-language'] = language
-  if (sameOrigin) {
-    for (const name of CREDENTIAL_HEADERS) {
-      const value = header(captured, name)
-      if (value) result[name] = value
-    }
+  // Credentials are replayed only to the exact origin where they were
+  // observed. Cross-origin replay is safe when the capture belongs to that
+  // target origin; page-origin equality is not required (CDNs commonly use a
+  // separate host).
+  for (const name of CREDENTIAL_HEADERS) {
+    const value = header(captured, name)
+    if (value) result[name] = value
+  }
+  if (targetOrigin === pageOrigin) {
     const referer = header(captured, 'referer') || input.pageUrl
     const origin = header(captured, 'origin') || pageOrigin
     if (referer) result.referer = referer

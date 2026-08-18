@@ -68,7 +68,7 @@ function isDashContainer(value: Record<string, unknown>): boolean {
 
 function trackHints(value: Record<string, unknown>, mediaKind?: MediaObservation['mediaKind']): Pick<
   MediaObservation,
-  'mimeType' | 'mediaKind' | 'width' | 'height' | 'bitrate' | 'hasAudio' | 'hasVideo' | 'codecs'
+  'mimeType' | 'mediaKind' | 'width' | 'height' | 'bitrate' | 'hasAudio' | 'hasVideo' | 'codecs' | 'quality' | 'initializationRange' | 'indexRange'
 > {
   const mimeType = stringField(value, 'mimeType', 'contentType', 'mime')
   const mime = normalizedMime(mimeType)
@@ -77,6 +77,15 @@ function trackHints(value: Record<string, unknown>, mediaKind?: MediaObservation
   const width = positiveNumber(value.width)
   const height = positiveNumber(value.height)
   const bitrate = positiveNumber(value.bitrate) ?? positiveNumber(value.bandwidth)
+  const segmentBase = value.segment_base && typeof value.segment_base === 'object'
+    ? value.segment_base as Record<string, unknown>
+    : value.segmentBase && typeof value.segmentBase === 'object'
+      ? value.segmentBase as Record<string, unknown>
+      : undefined
+  const initializationRange = stringField(value, 'initialization', 'initializationRange')
+    || (segmentBase ? stringField(segmentBase, 'initialization', 'initializationRange') : undefined)
+  const indexRange = stringField(value, 'index_range', 'indexRange')
+    || (segmentBase ? stringField(segmentBase, 'index_range', 'indexRange') : undefined)
   return {
     mimeType,
     mediaKind: kind,
@@ -84,8 +93,11 @@ function trackHints(value: Record<string, unknown>, mediaKind?: MediaObservation
     height,
     bitrate,
     codecs: stringField(value, 'codecs'),
+    quality: stringField(value, 'qualityLabel', 'quality', 'quality_label'),
     hasAudio: kind === 'audio' ? true : undefined,
     hasVideo: kind === 'video' ? true : undefined,
+    initializationRange,
+    indexRange,
   }
 }
 

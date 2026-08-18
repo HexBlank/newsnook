@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.io.IOException;
@@ -99,9 +100,23 @@ public class MediaSnifferPlugin extends Plugin {
           const push = (event) => {
             try {
               const key = [event.source, event.url || '', event.mimeType || '', event.drmKeySystem || '', event.bodyText ? 'body' : ''].join('|');
-              if (seen.has(key) || events.length >= 256) return;
+              if (seen.has(key)) return;
               seen.add(key);
               const observation = { pageUrl: location.href, timestamp: Date.now(), sessionNonce: nonce, ...event };
+              const priority = (item) => {
+                const mime = String(item.mimeType || item.mseMimeType || '').toLowerCase();
+                const url = String(item.url || '').toLowerCase();
+                if (/^(video|audio)\\//.test(mime) || /mpegurl|dash\\+xml/.test(mime) || /\\.(m3u8|mpd)(?:[?#]|$)/.test(url)) return 3;
+                if (/\\.(m4s|ts)(?:[?#]|$)/.test(url)) return 1;
+                if (/\\.(js|css|html?|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf)(?:[?#]|$)/.test(url)) return 0;
+                return 2;
+              };
+              if (events.length >= 256) {
+                let lowest = 4, lowestIndex = -1;
+                events.forEach((item, index) => { const value = priority(item); if (value < lowest) { lowest = value; lowestIndex = index; } });
+                if (lowestIndex < 0 || priority(observation) <= lowest) return;
+                events.splice(lowestIndex, 1);
+              }
               events.push(observation);
               if (isHighValue(observation)) window.__newsnookLastHighValueAt = Date.now();
               if (window !== window.top) window.top.postMessage({ __newsnookMediaObservation: observation, nonce }, '*');
@@ -156,6 +171,15 @@ public class MediaSnifferPlugin extends Plugin {
           const inspectPlayerState = () => {
             try { inspectPayload(window.ytInitialPlayerResponse); } catch (_) {}
             try { inspectPayload(window.__playinfo__); } catch (_) {}
+            // Embedded YouTube currently places the authoritative player
+            // response under ytcfg.PLAYER_VARS rather than the older
+            // ytplayer.config.args.player_response path.
+            try {
+              const playerVars = window.ytcfg?.get?.('PLAYER_VARS');
+              const embeddedResponse = playerVars?.embedded_player_response || playerVars?.player_response;
+              if (typeof embeddedResponse === 'string') inspectPayload(JSON.parse(embeddedResponse));
+              else inspectPayload(embeddedResponse);
+            } catch (_) {}
             try {
               const playerResponse = window.ytplayer?.config?.args?.player_response;
               if (typeof playerResponse === 'string') inspectPayload(JSON.parse(playerResponse));
@@ -259,14 +283,15 @@ public class MediaSnifferPlugin extends Plugin {
           try {
             const addSourceBuffer = MediaSource.prototype.addSourceBuffer;
             MediaSource.prototype.addSourceBuffer = function(mimeType) {
-              push({ source: 'mse', mseMimeType: String(mimeType) });
+              if (!this.__newsnookMediaSessionId) this.__newsnookMediaSessionId = `mse-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+              push({ source: 'mse', mseMimeType: String(mimeType), mediaSessionId: this.__newsnookMediaSessionId });
               return addSourceBuffer.call(this, mimeType);
             };
           } catch (_) {}
           try {
             const requestKeySystem = navigator.requestMediaKeySystemAccess?.bind(navigator);
             if (requestKeySystem) navigator.requestMediaKeySystemAccess = function(keySystem, configurations) {
-              push({ source: 'mse', drmKeySystem: String(keySystem) });
+              push({ source: 'mse', drmKeySystem: String(keySystem), mediaSessionId: `eme-${String(keySystem)}` });
               return requestKeySystem(keySystem, configurations);
             };
           } catch (_) {}
@@ -366,7 +391,7 @@ public class MediaSnifferPlugin extends Plugin {
     ) {
         String origin = OriginHeaderStore.originOf(url);
         if (!intercept) {
-            if (origin != null) PLAYBACK_CONTEXTS.remove(origin);
+            if (origin != null) PLAYBACK_CONTEXTS.entrySet().removeIf(entry -> origin.equals(entry.getValue().origin));
             purgePlaybackContexts();
             return;
         }
@@ -374,7 +399,7 @@ public class MediaSnifferPlugin extends Plugin {
         Map<String, String> headers = jsHeaders == null ? Collections.emptyMap() : jsHeaders;
         OkHttpClient playbackClient = client == null ? new OkHttpClient() : client;
         long expiresAt = System.currentTimeMillis() + PLAYBACK_CONTEXT_TTL_MS;
-        PLAYBACK_CONTEXTS.put(origin, new PlaybackContext(
+        PlaybackContext context = new PlaybackContext(
             url,
             format,
             extraOrigin,
@@ -382,7 +407,8 @@ public class MediaSnifferPlugin extends Plugin {
             sourcePage,
             playbackClient,
             expiresAt
-        ));
+        );
+        PLAYBACK_CONTEXTS.put(UUID.randomUUID().toString(), context);
         purgePlaybackContexts();
     }
 
@@ -450,11 +476,18 @@ public class MediaSnifferPlugin extends Plugin {
         purgePlaybackContexts();
         String origin = OriginHeaderStore.originOf(url);
         if (origin == null) return null;
-        PlaybackContext context = PLAYBACK_CONTEXTS.get(origin);
         long now = System.currentTimeMillis();
-        if (context == null || context.expiresAt < now) return null;
-        if (!context.scoped && !url.equals(context.originalUrl)) return null;
-        return context.forRequest(url);
+        PlaybackContext best = null;
+        for (PlaybackContext candidate : PLAYBACK_CONTEXTS.values()) {
+            if (!origin.equals(candidate.origin) || candidate.expiresAt < now) continue;
+            if (!candidate.scoped && !url.equals(candidate.originalUrl)) continue;
+            if (best == null
+                || (url.equals(candidate.originalUrl) && !url.equals(best.originalUrl))
+                || candidate.expiresAt > best.expiresAt) {
+                best = candidate;
+            }
+        }
+        return best == null ? null : best.forRequest(url);
     }
 
     private static void purgePlaybackContexts() {
@@ -467,6 +500,7 @@ public class MediaSnifferPlugin extends Plugin {
         final String origin;
         final boolean scoped;
         final Map<String, String> headers;
+        final Map<String, String> capturedHeaders;
         final Map<String, String> jsHeaders;
         final String sourcePage;
         final OkHttpClient client;
@@ -487,7 +521,8 @@ public class MediaSnifferPlugin extends Plugin {
             this.scoped = extraOrigin || "dash".equalsIgnoreCase(format) || "hls".equalsIgnoreCase(format);
             this.jsHeaders = Collections.unmodifiableMap(new HashMap<>(jsHeaders));
             this.sourcePage = sourcePage;
-            this.headers = Collections.unmodifiableMap(mergePlaybackHeaders(originalUrl, sourcePage, jsHeaders));
+            this.capturedHeaders = Collections.unmodifiableMap(new HashMap<>(OriginHeaderStore.headersFor(originalUrl, sourcePage)));
+            this.headers = Collections.unmodifiableMap(mergePlaybackHeaders(originalUrl, sourcePage, jsHeaders, capturedHeaders, this.origin));
             this.client = client;
             this.expiresAt = expiresAt;
         }
@@ -497,6 +532,7 @@ public class MediaSnifferPlugin extends Plugin {
             this.origin = source.origin;
             this.scoped = source.scoped;
             this.headers = Collections.unmodifiableMap(new HashMap<>(headers));
+            this.capturedHeaders = source.capturedHeaders;
             this.jsHeaders = source.jsHeaders;
             this.sourcePage = source.sourcePage;
             this.client = source.client;
@@ -504,18 +540,25 @@ public class MediaSnifferPlugin extends Plugin {
         }
 
         PlaybackContext forRequest(String requestUrl) {
-            return new PlaybackContext(this, mergePlaybackHeaders(requestUrl, sourcePage, jsHeaders));
+            return new PlaybackContext(this, mergePlaybackHeaders(requestUrl, sourcePage, jsHeaders, capturedHeaders, origin));
         }
     }
 
     private static Map<String, String> mergePlaybackHeaders(
         String requestUrl,
         String sourcePage,
-        Map<String, String> jsHeaders
+        Map<String, String> jsHeaders,
+        Map<String, String> capturedHeaders,
+        String capturedOrigin
     ) {
         Map<String, String> merged = new HashMap<>();
         if (jsHeaders != null) putAllIgnoreCase(merged, jsHeaders);
-        putAllIgnoreCase(merged, OriginHeaderStore.headersFor(requestUrl, sourcePage));
+        String requestOrigin = OriginHeaderStore.originOf(requestUrl);
+        if (capturedHeaders != null && !capturedHeaders.isEmpty() && capturedOrigin != null && capturedOrigin.equals(requestOrigin)) {
+            putAllIgnoreCase(merged, capturedHeaders);
+        } else {
+            putAllIgnoreCase(merged, OriginHeaderStore.headersFor(requestUrl, sourcePage));
+        }
         if (sourcePage != null && !hasHeader(merged, "referer")) {
             merged.put("referer", sourcePage);
         }
@@ -580,11 +623,14 @@ public class MediaSnifferPlugin extends Plugin {
         JSONArray networkEvents = new JSONArray();
         AtomicReference<String> pageUrl = new AtomicReference<>(initialUrl);
         AtomicBoolean finished = new AtomicBoolean(false);
+        AtomicLong nativeLastHighValueAt = new AtomicLong(0L);
         String sessionNonce = UUID.randomUUID().toString();
         String probeScript = buildProbeScript(sessionNonce);
-        OriginHeaderStore.clear();
+        // Header capture is TTL-bound and shared by the discovery lifecycle.
+        // Never clear it when another iframe/page sniff may still be active;
+        // doing so loses credentials for already discovered CDN tracks.
         ScriptHandler scriptHandler = installDocumentStartProbe(webView, probeScript);
-        ServiceWorkerSniffer.install(networkEvents, pageUrl);
+        ServiceWorkerSniffer.install(networkEvents, pageUrl, nativeLastHighValueAt);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -601,7 +647,7 @@ public class MediaSnifferPlugin extends Plugin {
 
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                recordNetworkEvent(networkEvents, pageUrl.get(), request);
+                recordNetworkEvent(networkEvents, pageUrl.get(), request, nativeLastHighValueAt);
                 return null;
             }
         });
@@ -623,7 +669,7 @@ public class MediaSnifferPlugin extends Plugin {
                 "Number(window.__newsnookLastHighValueAt) || 0",
                 value -> {
                     if (finished.get()) return;
-                    long lastHigh = parseJsMillis(value);
+                    long lastHigh = Math.max(parseJsMillis(value), nativeLastHighValueAt.get());
                     long innerNow = System.currentTimeMillis();
                     if (innerNow - startMs >= timeoutMs) {
                         finishSniff(call, webView, root, scriptHandler, networkEvents, pageUrl.get(), finished, sessionNonce);
@@ -657,19 +703,20 @@ public class MediaSnifferPlugin extends Plugin {
         return WebViewCompat.addDocumentStartJavaScript(webView, probeScript, Collections.singleton("*"));
     }
 
-    static void recordNetworkEventForServiceWorker(JSONArray events, String pageUrl, WebResourceRequest request) {
-        recordNetworkEvent(events, pageUrl, request, true);
+    static void recordNetworkEventForServiceWorker(JSONArray events, String pageUrl, WebResourceRequest request, AtomicLong lastHighValueAt) {
+        recordNetworkEvent(events, pageUrl, request, true, lastHighValueAt);
     }
 
-    private static void recordNetworkEvent(JSONArray events, String pageUrl, WebResourceRequest request) {
-        recordNetworkEvent(events, pageUrl, request, false);
+    private static void recordNetworkEvent(JSONArray events, String pageUrl, WebResourceRequest request, AtomicLong lastHighValueAt) {
+        recordNetworkEvent(events, pageUrl, request, false, lastHighValueAt);
     }
 
     private static void recordNetworkEvent(
         JSONArray events,
         String pageUrl,
         WebResourceRequest request,
-        boolean fromServiceWorker
+        boolean fromServiceWorker,
+        AtomicLong lastHighValueAt
     ) {
         String url = request.getUrl().toString();
         Map<String, String> requestHeaders = request.getRequestHeaders();
@@ -677,7 +724,6 @@ public class MediaSnifferPlugin extends Plugin {
         OriginHeaderStore.note(url, requestHeaders);
         if (isSkippableStaticAsset(url)) return;
         synchronized (events) {
-            if (events.length() >= MAX_NETWORK_EVENTS) return;
             JSONObject event = new JSONObject();
             try {
                 event.put("url", url);
@@ -703,11 +749,50 @@ public class MediaSnifferPlugin extends Plugin {
                     }
                 }
                 if (headers.length() > 0) event.put("requestHeaders", headers);
-                events.put(event);
+                if (observationPriority(event) >= 3 && lastHighValueAt != null) {
+                    lastHighValueAt.set(System.currentTimeMillis());
+                }
+                appendPrioritized(events, event);
             } catch (JSONException ignored) {
                 // 单条异常不影响页面继续加载。
             }
         }
+    }
+
+    private static void appendPrioritized(JSONArray events, JSONObject incoming) {
+        synchronized (events) {
+            if (events.length() < MAX_NETWORK_EVENTS) {
+                events.put(incoming);
+                return;
+            }
+            int incomingPriority = observationPriority(incoming);
+            int lowestIndex = -1;
+            int lowestPriority = Integer.MAX_VALUE;
+            for (int index = 0; index < events.length(); index += 1) {
+                JSONObject existing = events.optJSONObject(index);
+                int priority = observationPriority(existing);
+                if (priority < lowestPriority) {
+                    lowestPriority = priority;
+                    lowestIndex = index;
+                }
+            }
+            if (lowestIndex >= 0 && incomingPriority > lowestPriority) {
+                events.remove(lowestIndex);
+                events.put(incoming);
+            }
+        }
+    }
+
+    private static int observationPriority(JSONObject event) {
+        if (event == null) return 0;
+        String mime = event.optString("mimeType", "").toLowerCase(Locale.ROOT);
+        String url = event.optString("url", "").toLowerCase(Locale.ROOT);
+        if (mime.startsWith("video/") || mime.startsWith("audio/")
+            || mime.contains("mpegurl") || mime.contains("dash+xml")
+            || url.matches(".*\\.(m3u8|mpd)(?:[?#].*)?$")) return 3;
+        if (url.matches(".*\\.(m4s|ts)(?:[?#].*)?$")) return 1;
+        if (url.matches(".*\\.(js|css|html?|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf)(?:[?#].*)?$")) return 0;
+        return 2;
     }
 
     private static boolean isSkippableStaticAsset(String url) {
@@ -851,7 +936,7 @@ public class MediaSnifferPlugin extends Plugin {
             JSONObject event = events.optJSONObject(index);
             if (event == null) continue;
             String url = event.optString("url", "");
-            if (!isAllowedPageUrl(url) || hasMediaExtension(url)) continue;
+            if (!isAllowedPageUrl(url) || !MediaProbe.isSafeExternalUrl(url) || hasMediaExtension(url)) continue;
             String mime = event.optString("mimeType", "").trim();
             if (!mime.isEmpty()) continue;
             if (!seen.add(url)) continue;
@@ -867,7 +952,9 @@ public class MediaSnifferPlugin extends Plugin {
             String url = event.optString("url", "");
             pool.execute(() -> {
                 try {
-                    MediaProbe.Result result = MediaProbe.classify(client, url);
+                    String pageUrl = event.optString("pageUrl", "");
+                    Map<String, String> captured = OriginHeaderStore.headersFor(url, pageUrl);
+                    MediaProbe.Result result = MediaProbe.classify(client, url, captured);
                     if (result == null || result.mimeType == null || result.mimeType.isEmpty()) return;
                     synchronized (event) {
                         event.put("mimeType", result.mimeType);

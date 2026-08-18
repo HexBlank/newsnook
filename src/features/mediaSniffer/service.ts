@@ -157,5 +157,11 @@ export function mediaDescriptorHtml(
     attrs.push(`data-media-headers="${escapeHtml(JSON.stringify(publicHeaders))}"`)
   }
   if (options.poster) attrs.push(`poster="${escapeHtml(options.poster)}"`)
+  if (descriptor.relatedUrls?.length) {
+    attrs.push(`data-media-extra-urls="${escapeHtml(JSON.stringify(descriptor.relatedUrls))}"`)
+  }
+  if (descriptor.origins?.length) {
+    attrs.push(`data-media-origins="${escapeHtml(JSON.stringify(descriptor.origins))}"`)
+  }
   return `<video ${attrs.join(' ')}></video>${content}`
 }

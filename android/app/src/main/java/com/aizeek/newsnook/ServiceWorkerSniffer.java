@@ -6,6 +6,9 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.Map;
+import java.util.Collections;
 import org.json.JSONArray;
 
 final class ServiceWorkerSniffer {
@@ -21,10 +24,12 @@ final class ServiceWorkerSniffer {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebResourceRequest request) {
             for (Session session : SESSIONS) {
+                if (!session.belongsTo(request)) continue;
                 MediaSnifferPlugin.recordNetworkEventForServiceWorker(
                     session.events,
                     session.pageUrl.get(),
-                    request
+                    request,
+                    session.lastHighValueAt
                 );
             }
             return null;
@@ -34,18 +39,84 @@ final class ServiceWorkerSniffer {
     private static final class Session {
         final JSONArray events;
         final AtomicReference<String> pageUrl;
+        final AtomicLong lastHighValueAt;
 
-        Session(JSONArray events, AtomicReference<String> pageUrl) {
+        Session(JSONArray events, AtomicReference<String> pageUrl, AtomicLong lastHighValueAt) {
             this.events = events;
             this.pageUrl = pageUrl;
+            this.lastHighValueAt = lastHighValueAt;
+        }
+
+        boolean belongsTo(WebResourceRequest request) {
+            String requestUrl = request.getUrl().toString();
+            String requestOrigin = OriginHeaderStore.originOf(requestUrl);
+            String currentOrigin = OriginHeaderStore.originOf(pageUrl.get());
+            if (currentOrigin != null && currentOrigin.equals(requestOrigin)) return true;
+            Map<String, String> headers = request.getRequestHeaders() == null
+                ? Collections.emptyMap() : request.getRequestHeaders();
+            String referer = headers.get("Referer");
+            if (referer == null) referer = headers.get("referer");
+            String refererOrigin = OriginHeaderStore.originOf(referer);
+            if (currentOrigin != null && currentOrigin.equals(refererOrigin)) return true;
+
+            // Chromium/WebView may omit Referer on a Service Worker request.
+            // For YouTube embeds the actual media host is googlevideo.com, so
+            // use the page-origin allowlist as the fallback rather than losing
+            // every cross-origin media request.
+            return isKnownMediaCdn(requestUrl) && isYoutubeOrigin(currentOrigin);
+        }
+
+        private static boolean isYoutubeOrigin(String origin) {
+            try {
+                String host = android.net.Uri.parse(origin).getHost();
+                if (host == null) return false;
+                host = host.toLowerCase(java.util.Locale.ROOT);
+                return host.equals("youtube.com") || host.endsWith(".youtube.com")
+                    || host.equals("youtube-nocookie.com") || host.endsWith(".youtube-nocookie.com");
+            } catch (RuntimeException ignored) {
+                return false;
+            }
+        }
+
+        private static boolean isKnownMediaCdn(String value) {
+            try {
+                UriParts parts = UriParts.parse(value);
+                String host = parts.host;
+                return host.endsWith(".googlevideo.com")
+                    || host.equals("googlevideo.com")
+                    || parts.query.contains("mime=video%2fmp4")
+                    || parts.query.contains("mime=audio%2fmp4")
+                    || parts.path.matches(".*\\.(m3u8|mpd|mp4|m4s|webm|ts)$");
+            } catch (RuntimeException ignored) {
+                return false;
+            }
+        }
+
+        private static final class UriParts {
+            final String host;
+            final String path;
+            final String query;
+
+            private UriParts(String host, String path, String query) {
+                this.host = host.toLowerCase(java.util.Locale.ROOT);
+                this.path = path.toLowerCase(java.util.Locale.ROOT);
+                this.query = query.toLowerCase(java.util.Locale.ROOT);
+            }
+
+            static UriParts parse(String value) {
+                android.net.Uri uri = android.net.Uri.parse(value);
+                return new UriParts(uri.getHost() == null ? "" : uri.getHost(),
+                    uri.getPath() == null ? "" : uri.getPath(),
+                    uri.getEncodedQuery() == null ? "" : uri.getEncodedQuery());
+            }
         }
     }
 
-    static void install(JSONArray events, AtomicReference<String> pageUrl) {
+    static void install(JSONArray events, AtomicReference<String> pageUrl, AtomicLong lastHighValueAt) {
         try {
             ServiceWorkerController controller = ServiceWorkerController.getInstance();
             synchronized (LOCK) {
-                SESSIONS.add(new Session(events, pageUrl));
+                SESSIONS.add(new Session(events, pageUrl, lastHighValueAt));
                 controller.setServiceWorkerClient(FANOUT);
             }
         } catch (RuntimeException ignored) {

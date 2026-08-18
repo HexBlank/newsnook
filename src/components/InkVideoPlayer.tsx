@@ -57,9 +57,11 @@ interface Props {
   format?: 'progressive' | 'hls' | 'dash'
   sourcePage?: string
   requestHeaders?: Record<string, string>
+  extraUrls?: string[]
   deferLoad?: boolean
   onUnlocked?: () => void
   onRefreshSource?: () => void
+  onPlaybackError?: () => void
 }
 
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const
@@ -161,7 +163,7 @@ function formatTime(seconds: number): string {
  *   双击专职播放 / 暂停；上半屏与内嵌一致。
  * - 通用：双指缩放，放大后单指平移；顶部按钮旋转 / 还原画面。
  */
-export function InkVideoPlayer({ src, poster, title, format, sourcePage, requestHeaders, deferLoad, onUnlocked, onRefreshSource }: Props) {
+export function InkVideoPlayer({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, deferLoad, onUnlocked, onRefreshSource, onPlaybackError }: Props) {
   const [allowed, setAllowed] = useState(!deferLoad)
 
   useEffect(() => {
@@ -193,10 +195,10 @@ export function InkVideoPlayer({ src, poster, title, format, sourcePage, request
     )
   }
 
-  return <InkVideoPlayerReady src={src} poster={poster} title={title} format={format} sourcePage={sourcePage} requestHeaders={requestHeaders} onRefreshSource={onRefreshSource} />
+  return <InkVideoPlayerReady src={src} poster={poster} title={title} format={format} sourcePage={sourcePage} requestHeaders={requestHeaders} extraUrls={extraUrls} onRefreshSource={onRefreshSource} onPlaybackError={onPlaybackError} />
 }
 
-function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHeaders, onRefreshSource }: Props) {
+function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, onRefreshSource, onPlaybackError }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -340,6 +342,11 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
     const isDash = format === 'dash' || /\.mpd(\?|$)/i.test(url)
     let cancelled = false
     let progressiveBridgeAttempted = false
+    const failPlayback = (message: string) => {
+      if (cancelled) return
+      setFatal(message)
+      onPlaybackError?.()
+    }
 
     setReady(false)
     setFatal(null)
@@ -381,6 +388,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
           sourcePage,
           format: 'progressive',
           headers: requestHeaders,
+          extraUrls,
           forceBridge: true,
         }).then(() => {
           if (cancelled) return
@@ -388,11 +396,11 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
           video.src = url
           video.load()
         }).catch(() => {
-          if (!cancelled) setFatal('视频源暂时无法播放')
+          if (!cancelled) failPlayback('视频源暂时无法播放')
         })
         return
       }
-      setFatal('视频源暂时无法播放')
+      failPlayback('视频源暂时无法播放')
     }
     const onPlay = () => {
       setPlaying(true)
@@ -474,6 +482,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         sourcePage,
         format: isDash ? 'dash' : isHls ? 'hls' : 'progressive',
         headers: requestHeaders,
+        extraUrls,
         forceBridge: !isHls && !isDash && needsMediaHotlinkBypass(url),
       })
       if (cancelled) return
@@ -516,10 +525,10 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
               hls.recoverMediaError()
               return
             }
-            setFatal('视频流加载失败')
+            failPlayback('视频流加载失败')
           })
         } else {
-          setFatal('当前环境不支持 HLS 播放')
+          failPlayback('当前环境不支持 HLS 播放')
         }
       } else if (bypass) {
         if (Capacitor.isNativePlatform()) {
@@ -532,7 +541,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         video.src = url
       }
     })().catch(() => {
-      if (!cancelled) setFatal('视频流加载失败')
+      failPlayback('视频流加载失败')
     })
 
     return () => {
@@ -563,7 +572,7 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
       video.removeAttribute('src')
       video.load()
     }
-  }, [clearHideTimer, format, requestHeaders, sourcePage, src, syncBoostIndicator])
+  }, [clearHideTimer, extraUrls, format, onPlaybackError, requestHeaders, sourcePage, src, syncBoostIndicator])
 
   useEffect(() => {
     const onFs = () => {

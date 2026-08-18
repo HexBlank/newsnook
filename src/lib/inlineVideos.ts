@@ -5,6 +5,7 @@ export interface InlineVideoDescriptor {
   format?: 'progressive' | 'hls' | 'dash'
   sourcePage?: string
   requestHeaders?: Record<string, string>
+  extraUrls?: string[]
 }
 
 const VIDEO_SOURCE_ATTRS = [
@@ -57,6 +58,19 @@ function parseMediaRequestHeaders(video: Element): Record<string, string> | unde
   }
 }
 
+function parseMediaUrlList(video: Element, attribute: string): string[] | undefined {
+  const value = video.getAttribute(attribute)?.trim()
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed)) return undefined
+    const urls = parsed.filter((item): item is string => typeof item === 'string' && /^https?:\/\//i.test(item))
+    return urls.length ? urls : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Read a playable source from sanitized article HTML. Publishers use both a
  * direct `video[src]` and nested `source[src]`, with lazy-loading attributes as
@@ -85,6 +99,7 @@ export function describeInlineVideo(
     fallbackTitle ||
     '文章视频'
   const requestHeaders = parseMediaRequestHeaders(video)
+  const extraUrls = parseMediaUrlList(video, 'data-media-extra-urls')
 
   return {
     src,
@@ -99,5 +114,6 @@ export function describeInlineVideo(
       ? { sourcePage: firstAttribute(video, ['data-source-page']) }
       : {}),
     ...(requestHeaders ? { requestHeaders } : {}),
+    ...(extraUrls ? { extraUrls } : {}),
   }
 }

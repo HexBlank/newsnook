@@ -36,12 +36,18 @@ export interface MediaObservation {
   width?: number
   height?: number
   bitrate?: number
+  quality?: string
   bodyText?: string
   codecs?: string
   fromIframe?: boolean
   fromServiceWorker?: boolean
   sessionNonce?: string
   assetGroup?: string
+  /** Runtime MSE/player correlation identifier. Native/JS may provide it. */
+  mediaSessionId?: string
+  /** Optional segment-base metadata used when synthesising DASH. */
+  initializationRange?: string
+  indexRange?: string
 }
 
 export interface RequestContext {
@@ -60,6 +66,8 @@ export interface MediaAssetTrack {
   bitrate?: number
   language?: string
   quality?: string
+  initializationRange?: string
+  indexRange?: string
   requestContext: RequestContext
 }
 
@@ -117,4 +125,8 @@ export interface MediaDescriptor {
   drm: boolean
   drmKeySystems: string[]
   requestHeaders?: Record<string, string>
+  /** All URLs required by a synthetic/segmented asset, for native header setup. */
+  relatedUrls?: string[]
+  /** Exact origins used by the asset's tracks and manifest. */
+  origins?: string[]
 }
