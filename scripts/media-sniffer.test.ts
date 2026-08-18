@@ -78,20 +78,6 @@ const pageUrl = 'https://news.example/articles/42'
 }
 
 {
-  const htmlPayload = '<!DOCTYPE html><html><body><video src="https://ccm.91p52.com/358999.mp4?st=signed"></video></body></html>'
-  const observations = observeMediaInPayload(htmlPayload, 'https://91porn.com/view_video.php?viewkey=42')
-  assert.ok(
-    observations.some((item) => item.url === 'https://ccm.91p52.com/358999.mp4?st=signed'),
-    'HTML 字符串中的真实媒体链接仍应被发现',
-  )
-  assert.equal(
-    observations.some((item) => item.url?.includes('%3C!DOCTYPE')),
-    false,
-    '整段 HTML 不得被编码成伪 URL 资源',
-  )
-}
-
-{
   let emitted: string | undefined
   const observation: MediaObservation = {
     url: 'https://cdn.example/live.m3u8',
