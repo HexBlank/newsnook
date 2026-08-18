@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type Hls from 'hls.js'
 import {
   AlertCircle,
@@ -65,6 +66,13 @@ interface Props {
   onUnlocked?: () => void
   onRefreshSource?: () => void
   onPlaybackError?: () => void
+}
+
+function playableFormatForUrl(url: string, format?: Props['format']): NonNullable<Props['format']> {
+  if (format) return format
+  if (/\.m3u8(?:$|[?#])/i.test(url)) return 'hls'
+  if (/\.mpd(?:$|[?#])/i.test(url)) return 'dash'
+  return 'progressive'
 }
 
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const
@@ -169,6 +177,23 @@ function formatTime(seconds: number): string {
 export function InkVideoPlayer({ src, poster, title, format, sourcePage, requestHeaders, extraUrls, resources, deferLoad, onUnlocked, onRefreshSource, onPlaybackError }: Props) {
   const [allowed, setAllowed] = useState(!deferLoad)
   const [selectedResource, setSelectedResource] = useState<MediaResourceDescriptor | null>(null)
+  const resourceOptions = useMemo<MediaResourceDescriptor[]>(() => {
+    if (resources?.length) return resources
+    return [{
+      id: `direct:${src}`,
+      type: playableFormatForUrl(src, format),
+      url: src,
+      pageUrl: sourcePage || '',
+      score: 0,
+      videoTracks: [],
+      audioTracks: [],
+      subtitles: [],
+      drm: false,
+      drmKeySystems: [],
+      requestHeaders,
+      relatedUrls: extraUrls,
+    }]
+  }, [extraUrls, format, requestHeaders, resources, sourcePage, src])
 
   useEffect(() => {
     setSelectedResource(null)
@@ -217,7 +242,7 @@ export function InkVideoPlayer({ src, poster, title, format, sourcePage, request
     sourcePage={active?.pageUrl || sourcePage}
     requestHeaders={active?.requestHeaders || requestHeaders}
     extraUrls={activeExtraUrls.length ? activeExtraUrls : undefined}
-    resources={resources}
+    resources={resourceOptions}
     onSelectResource={setSelectedResource}
     onRefreshSource={onRefreshSource}
     onPlaybackError={onPlaybackError}
@@ -1208,7 +1233,8 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
   showChromeRef.current = showChrome
 
   return (
-    <div
+    <>
+      <div
       ref={rootRef}
       // 播放器控件叠在画面上，始终按深色配色渲染
       data-theme="dark"
@@ -1313,69 +1339,6 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
             >
               <RefreshCcw size={17} strokeWidth={1.7} />
             </button>
-          </div>
-        )}
-
-        {resourceOptions.length > 0 && !immersive && (
-          <button
-            type="button"
-            data-no-page-tap=""
-            aria-label={`选择视频资源，共 ${resourceOptions.length} 个`}
-            aria-expanded={resourceMenuOpen}
-            title={`视频资源（${resourceOptions.length}）`}
-            onClick={() => {
-              setResourceMenuOpen((open) => !open)
-              revealControls()
-            }}
-            className="fixed z-[60] flex items-center gap-2 rounded-full border border-haze bg-ink/95 px-3.5 py-2 text-paper shadow-xl shadow-black/35 backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
-            style={{
-              bottom: 'max(calc(var(--sab, 0px) + 76px), 76px)',
-              right: 'max(calc(var(--sar, 0px) + 1rem), 1rem)',
-            }}
-          >
-            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-cinnabar/15 text-cinnabar">
-              <ListVideo size={13} strokeWidth={2} />
-            </span>
-            <span className="font-mono text-[12px] font-medium tracking-[0.03em]">嗅探 {resourceOptions.length}</span>
-          </button>
-        )}
-
-        {resourceMenuOpen && resourceOptions.length > 0 && !immersive && (
-          <div
-            className="fixed z-[61] max-h-[min(60vh,280px)] w-[min(88vw,330px)] overflow-y-auto rounded-xl border border-paper/20 bg-ink-raised/95 p-1.5 shadow-xl backdrop-blur-md"
-            style={{
-              bottom: 'max(calc(var(--sab, 0px) + 128px), 128px)',
-              right: 'max(calc(var(--sar, 0px) + 1rem), 1rem)',
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <div className="px-2.5 py-1.5 text-[10px] tracking-wide text-paper/55">已嗅探到 {resourceOptions.length} 个资源</div>
-            {resourceOptions.map((resource, index) => {
-              const label = resource.type === 'hls' ? 'HLS' : resource.type === 'dash' ? 'DASH' : 'MP4'
-              const detail = resource.videoTracks.find((track) => track.width || track.height)
-              return (
-                <button
-                  key={`${resource.id || resource.url}:${index}`}
-                  type="button"
-                  onClick={() => {
-                    onSelectResource?.(resource)
-                    setResourceMenuOpen(false)
-                    revealControls()
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-paper transition-colors hover:bg-paper/10 active:bg-paper/15"
-                >
-                  <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-paper/10 font-mono text-[10px]">{index + 1}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1 text-[11px]">
-                      <span>{label}</span>
-                      {resource.isAd && <span className="rounded bg-cinnabar/20 px-1 text-[9px] text-cinnabar-soft">广告</span>}
-                      {detail && <span className="text-paper/50">{detail.width || '?'}×{detail.height || '?'}</span>}
-                    </span>
-                    <span className="mt-0.5 block truncate text-[10px] text-paper/50">{resource.url}</span>
-                  </span>
-                </button>
-              )
-            })}
           </div>
         )}
 
@@ -1573,6 +1536,97 @@ function InkVideoPlayerReady({ src, poster, title, format, sourcePage, requestHe
         </div>
       )}
     </div>
+    {typeof document !== 'undefined' && createPortal(
+      <MediaResourceOverlay
+        resources={resourceOptions}
+        open={resourceMenuOpen}
+        immersive={immersive}
+        onToggle={() => {
+          setResourceMenuOpen((open) => !open)
+          revealControls()
+        }}
+        onSelect={(resource) => {
+          onSelectResource?.(resource)
+          setResourceMenuOpen(false)
+          revealControls()
+        }}
+      />,
+      document.body,
+      )}
+    </>
+  )
+}
+
+function MediaResourceOverlay({
+  resources,
+  open,
+  immersive,
+  onToggle,
+  onSelect,
+}: {
+  resources: MediaResourceDescriptor[]
+  open: boolean
+  immersive: boolean
+  onToggle: () => void
+  onSelect: (resource: MediaResourceDescriptor) => void
+}) {
+  if (!resources.length || immersive) return null
+  return (
+    <>
+      <button
+        type="button"
+        data-no-page-tap=""
+        aria-label={`选择视频资源，共 ${resources.length} 个`}
+        aria-expanded={open}
+        title={`视频资源（${resources.length}）`}
+        onClick={onToggle}
+        className="fixed z-[100] flex items-center gap-2 rounded-full border border-haze bg-ink/95 px-3.5 py-2 text-paper shadow-xl shadow-black/35 backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
+        style={{
+          bottom: 'max(calc(var(--sab, 0px) + 76px), 76px)',
+          right: 'max(calc(var(--sar, 0px) + 1rem), 1rem)',
+        }}
+      >
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-cinnabar/15 text-cinnabar">
+          <ListVideo size={13} strokeWidth={2} />
+        </span>
+        <span className="font-mono text-[12px] font-medium tracking-[0.03em]">嗅探 {resources.length}</span>
+      </button>
+
+      {open && (
+        <div
+          className="fixed z-[101] max-h-[min(60vh,280px)] w-[min(88vw,330px)] overflow-y-auto rounded-xl border border-paper/20 bg-ink-raised/95 p-1.5 shadow-xl backdrop-blur-md"
+          style={{
+            bottom: 'max(calc(var(--sab, 0px) + 128px), 128px)',
+            right: 'max(calc(var(--sar, 0px) + 1rem), 1rem)',
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="px-2.5 py-1.5 text-[10px] tracking-wide text-paper/55">已嗅探到 {resources.length} 个资源</div>
+          {resources.map((resource, index) => {
+            const label = resource.type === 'hls' ? 'HLS' : resource.type === 'dash' ? 'DASH' : 'MP4'
+            const detail = resource.videoTracks.find((track) => track.width || track.height)
+            return (
+              <button
+                key={`${resource.id || resource.url}:${index}`}
+                type="button"
+                onClick={() => onSelect(resource)}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-paper transition-colors hover:bg-paper/10 active:bg-paper/15"
+              >
+                <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-paper/10 font-mono text-[10px]">{index + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1 text-[11px]">
+                    <span>{label}</span>
+                    {resource.isAd && <span className="rounded bg-cinnabar/20 px-1 text-[9px] text-cinnabar-soft">广告</span>}
+                    {detail && <span className="text-paper/50">{detail.width || '?'}×{detail.height || '?'}</span>}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] text-paper/50">{resource.url}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </>
   )
 }
 
