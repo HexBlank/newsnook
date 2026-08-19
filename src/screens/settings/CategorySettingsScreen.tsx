@@ -20,6 +20,8 @@ interface Props {
   enabledCount: number
   /** 当前激活预设名，显示在顶栏说明 */
   presetLabel?: string
+  /** 正在编辑内置预设时，「恢复默认」= 恢复该内置出厂 */
+  restoreFactory?: boolean
   onReorder: (order: CategoryId[]) => void
   onToggleVisible: (categoryId: CategoryId) => void
   onToggleAutoRefresh?: (enabled: boolean) => void
@@ -80,6 +82,7 @@ export function CategorySettingsScreen({
   prefs,
   enabledCount,
   presetLabel,
+  restoreFactory,
   onReorder,
   onToggleVisible,
   onToggleAutoRefresh,
@@ -681,13 +684,17 @@ export function CategorySettingsScreen({
           <div className="w-full max-w-sm rounded-2xl border border-haze bg-ink-raised p-5 shadow-2xl">
             <div className="flex items-center gap-2 text-cinnabar-soft">
               <RotateCcw size={18} strokeWidth={2} />
-              <h3 className="font-display text-[17px] font-medium text-paper">恢复分类默认配置？</h3>
+              <h3 className="font-display text-[17px] font-medium text-paper">
+                {restoreFactory ? '恢复出厂配置？' : '恢复分类默认配置？'}
+              </h3>
             </div>
             <p className="mt-2 text-[12.5px] leading-relaxed text-paper-muted">
-              将重置所有分类的排列顺序、显隐状态以及内置推荐信源为出厂预设。
+              {restoreFactory
+                ? `将「${presetLabel ?? '当前预设'}」恢复为内置出厂的分类顺序、显隐与信源。当前改动会丢掉。`
+                : '将重置所有分类的排列顺序、显隐状态以及内置推荐信源为出厂预设。'}
             </p>
 
-            {Boolean(prefs.customCategories?.length) && (
+            {!restoreFactory && Boolean(prefs.customCategories?.length) && (
               <label className="mt-4 flex cursor-pointer items-center gap-2.5 rounded-xl border border-haze/80 bg-ink/60 p-2.5">
                 <input
                   type="checkbox"

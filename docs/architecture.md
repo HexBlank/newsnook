@@ -113,7 +113,7 @@ Android 物理返回键由 `@capacitor/app` 在 `App.tsx` 统一处理：阅读�
 - **综合**：跟随用户启用的全部源
 - 其余分类：绑定默认 `sourceIds`，可由偏好覆盖
 
-场景预设（`sources/presets.ts` + `hooks/usePresets.ts`）：快照分类顺序/显隐、各类别选源与综合频道启用列表，一键切换。
+场景预设（`sources/presets.ts` + `hooks/usePresets.ts`）：快照分类顺序/显隐、各类别选源与综合频道启用列表。内置可就地改并覆盖存储，另存为才复制成用户预设；`activePresetId` 可直接指向内置 id。
 
 ### 7.3 用户偏好
 
@@ -234,7 +234,7 @@ ReaderScreen / CommentsDrawer
 |---|---|
 | `enabled` | 启用源 ID 列表 |
 | `preferences` | 分类/排版/主题/eink/翻译/代理等偏好与 API 配置 |
-| `presets` | 场景预设快照 |
+| `presets` | 场景预设：`activePresetId`、用户预设、内置覆盖 |
 | `custom-sources` | 用户自建源 |
 | `later-items` | 稍后读文章 |
 | `read` | 已读 ID 集合 |

@@ -16,20 +16,28 @@ import {
 import {
   BUILTIN_DEFAULT_ID,
   BUILTIN_PRESETS,
+  BUILTIN_TECH_ID,
   MIGRATE_LAYOUT_PRESET_ID,
-  activatePresetWritable,
+  USER_DEFAULT_LAYOUT_ID,
+  activatePreset,
   applySnapshotToPrefs,
   buildFreshInstallPresetsState,
   buildMigratedPresetsState,
+  createBlankUserPreset,
   deleteUserPreset,
   duplicateSourcesAcrossCategories,
-  ensureActiveUserPreset,
+  emptyLayoutSnapshot,
   findBuiltinPreset,
+  isBuiltinOverridden,
   mixThemeOverlap,
+  normalizePresetsState,
   normalizeSnapshot,
+  renameUserPreset,
   resolvePreset,
+  restoreBuiltinFactory,
   saveAsUserPreset,
   snapshotFromRuntime,
+  updateActiveSnapshot,
   updateUserPresetSnapshot,
 } from '../src/sources/presets'
 
@@ -251,22 +259,25 @@ console.log('layout-presets builtins: ok')
 
 // —— Task 3: lifecycle ——
 const migrated = buildMigratedPresetsState(DEFAULT_PREFERENCES, ['ithome'])
-assert.equal(migrated.activePresetId, MIGRATE_LAYOUT_PRESET_ID)
-assert.equal(migrated.userPresets[0].name, '我的布局')
-assert.deepEqual(migrated.userPresets[0].snapshot.enabledSourceIds, ['ithome'])
-assert.equal(migrated.userPresets[0].builtin, false)
+assert.equal(migrated.activePresetId, BUILTIN_DEFAULT_ID)
+assert.equal(migrated.userPresets.length, 0)
+assert.ok(isBuiltinOverridden(migrated, BUILTIN_DEFAULT_ID))
+assert.deepEqual(resolvePreset(migrated, BUILTIN_DEFAULT_ID)?.snapshot.enabledSourceIds, ['ithome'])
 
 const fresh = buildFreshInstallPresetsState()
-assert.notEqual(fresh.activePresetId, BUILTIN_DEFAULT_ID)
-assert.ok(fresh.userPresets.some((p) => p.id === fresh.activePresetId))
+assert.equal(fresh.activePresetId, BUILTIN_DEFAULT_ID)
+assert.equal(fresh.userPresets.length, 0)
+assert.equal(Object.keys(fresh.builtinOverrides).length, 0)
 
 const { state: afterSave, preset } = saveAsUserPreset(
   migrated,
-  migrated.userPresets[0].snapshot,
+  resolvePreset(migrated, BUILTIN_DEFAULT_ID)!.snapshot,
   '科技副本',
 )
 assert.equal(preset.name, '科技副本')
 assert.equal(preset.builtin, false)
+assert.equal(afterSave.activePresetId, preset.id)
+assert.ok(isBuiltinOverridden(afterSave, BUILTIN_DEFAULT_ID))
 
 const untouched = updateUserPresetSnapshot(afterSave, BUILTIN_DEFAULT_ID, {
   ...preset.snapshot,
@@ -274,7 +285,20 @@ const untouched = updateUserPresetSnapshot(afterSave, BUILTIN_DEFAULT_ID, {
 })
 assert.equal(untouched, afterSave)
 
+const editedBuiltin = updateActiveSnapshot(
+  { ...fresh, activePresetId: BUILTIN_DEFAULT_ID },
+  { ...findBuiltinPreset(BUILTIN_DEFAULT_ID)!.snapshot, hiddenCategoryIds: ['mix'] },
+)
+assert.equal(editedBuiltin.userPresets.length, 0)
+assert.ok(isBuiltinOverridden(editedBuiltin, BUILTIN_DEFAULT_ID))
+assert.ok(resolvePreset(editedBuiltin, BUILTIN_DEFAULT_ID)!.snapshot.hiddenCategoryIds.includes('mix'))
+
+const restored = restoreBuiltinFactory(editedBuiltin, BUILTIN_DEFAULT_ID)!
+assert.equal(restored.applied, true)
+assert.ok(!isBuiltinOverridden(restored.state, BUILTIN_DEFAULT_ID))
+
 const onlyOne = {
+  ...fresh,
   activePresetId: preset.id,
   userPresets: [preset],
 }
@@ -282,27 +306,76 @@ const afterDelete = deleteUserPreset(onlyOne, preset.id)
 assert.equal(afterDelete.activePresetId, BUILTIN_DEFAULT_ID)
 assert.equal(afterDelete.userPresets.length, 0)
 
-const activated = activatePresetWritable(migrated, 'builtin-tech')!
-assert.ok(activated.state.userPresets.some((p) => p.id === activated.state.activePresetId))
-assert.equal(resolvePreset(activated.state, activated.state.activePresetId)?.builtin, false)
+const activated = activatePreset(migrated, BUILTIN_TECH_ID)!
+assert.equal(activated.state.activePresetId, BUILTIN_TECH_ID)
+assert.equal(activated.state.userPresets.length, migrated.userPresets.length)
+assert.equal(resolvePreset(activated.state, activated.state.activePresetId)?.builtin, true)
 
-const worldApply = activatePresetWritable(migrated, 'builtin-world')!
+const worldApply = activatePreset(migrated, 'builtin-world')!
 const worldPrefs = applySnapshotToPrefs(DEFAULT_PREFERENCES, worldApply.snapshot)
 assert.deepEqual(
   visibleCategories(worldPrefs).map((c) => c.id),
   ['mix', 'intl', 'hot', 'tech-depth', 'science'],
 )
 
-const depthApply = activatePresetWritable(migrated, 'builtin-depth')!
+const depthApply = activatePreset(migrated, 'builtin-depth')!
 const depthPrefs = applySnapshotToPrefs(DEFAULT_PREFERENCES, depthApply.snapshot)
 assert.deepEqual(
   visibleCategories(depthPrefs).map((c) => c.id),
   ['tech-depth', 'intl', 'astral-codex-ten', 'marginalian', 'aldaily', 'theue', 'tech'],
 )
 
-const ensured = ensureActiveUserPreset(afterDelete)
-assert.equal(resolvePreset(ensured, ensured.activePresetId)?.builtin, false)
-assert.ok(ensured.userPresets.length >= 1)
+const blank = createBlankUserPreset(fresh, '空白台')
+assert.equal(blank.preset.basedOnBuiltinId, undefined)
+assert.deepEqual(blank.preset.snapshot, emptyLayoutSnapshot())
+assert.equal(blank.state.activePresetId, blank.preset.id)
+
+const renamedBuiltin = renameUserPreset(fresh, BUILTIN_DEFAULT_ID, '门户改名')
+assert.equal(renamedBuiltin, fresh)
+
+const folded = normalizePresetsState({
+  activePresetId: USER_DEFAULT_LAYOUT_ID,
+  userPresets: [
+    {
+      id: USER_DEFAULT_LAYOUT_ID,
+      name: '我的布局',
+      builtin: false,
+      basedOnBuiltinId: BUILTIN_DEFAULT_ID,
+      snapshot: { ...findBuiltinPreset(BUILTIN_DEFAULT_ID)!.snapshot, hiddenCategoryIds: ['mix'] },
+      updatedAt: 1,
+    },
+    {
+      id: 'user_renamed_tech',
+      name: '周末科技',
+      builtin: false,
+      basedOnBuiltinId: BUILTIN_TECH_ID,
+      snapshot: findBuiltinPreset(BUILTIN_TECH_ID)!.snapshot,
+      updatedAt: 2,
+    },
+  ],
+})!
+assert.equal(folded.activePresetId, BUILTIN_DEFAULT_ID)
+assert.ok(isBuiltinOverridden(folded, BUILTIN_DEFAULT_ID))
+assert.equal(folded.userPresets.length, 1)
+assert.equal(folded.userPresets[0].name, '周末科技')
+
+const migratedLegacy = normalizePresetsState({
+  activePresetId: MIGRATE_LAYOUT_PRESET_ID,
+  userPresets: [
+    {
+      id: MIGRATE_LAYOUT_PRESET_ID,
+      name: '我的布局',
+      builtin: false,
+      snapshot: snapshotFromRuntime(DEFAULT_PREFERENCES, ['ithome']),
+      updatedAt: 3,
+    },
+  ],
+})!
+assert.equal(migratedLegacy.activePresetId, BUILTIN_DEFAULT_ID)
+assert.equal(migratedLegacy.userPresets.length, 0)
+assert.deepEqual(resolvePreset(migratedLegacy, BUILTIN_DEFAULT_ID)?.snapshot.enabledSourceIds, [
+  'ithome',
+])
 
 console.log('layout-presets lifecycle: ok')
 console.log('layout-presets: all ok')

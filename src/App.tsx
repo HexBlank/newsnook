@@ -90,7 +90,6 @@ import {
   type TypographyPrefs,
 } from './sources/preferences'
 import { SOURCES, findSource } from './sources/registry'
-import { BUILTIN_PRESETS } from './sources/presets'
 
 const ReaderScreen = lazy(() =>
   import('./screens/ReaderScreen').then((module) => ({
@@ -520,16 +519,13 @@ export default function App() {
 
   const presetSwitcherItems = useMemo(() => {
     const activeId = presets.state.activePresetId
-    const activeUser = presets.state.userPresets.find((item) => item.id === activeId)
-    const basedOn = activeUser?.basedOnBuiltinId
-
     return [
-      ...BUILTIN_PRESETS.map((preset) => ({
+      ...presets.builtins.map((preset) => ({
         id: preset.id,
         name: preset.name,
         description: preset.description,
         builtin: true,
-        active: basedOn === preset.id,
+        active: preset.id === activeId,
       })),
       ...presets.state.userPresets.map((preset) => ({
         id: preset.id,
@@ -539,7 +535,7 @@ export default function App() {
         active: preset.id === activeId,
       })),
     ]
-  }, [presets.state])
+  }, [presets.builtins, presets.state])
 
   const presetSwitcherConfig = useMemo(() => ({
     activeName: presets.activePreset?.name ?? '场景预设',
@@ -685,6 +681,8 @@ export default function App() {
           }}
           onEditLayout={() => setSettingsRoute({ name: 'categories', returnTo: 'presets' })}
           onSaveAs={(name) => presets.saveAs(name)}
+          onCreateBlank={(name) => presets.createBlank(name)}
+          onRestoreFactory={(id) => presets.restoreFactory(id)}
           onRename={(id, name) => presets.rename(id, name)}
           onDelete={(id) => presets.remove(id)}
           onBack={() => setSettingsRoute(null)}
@@ -821,6 +819,7 @@ export default function App() {
         prefs={prefs}
         enabledCount={enabledIds.length}
         presetLabel={presets.activePreset?.name}
+        restoreFactory={Boolean(presets.activePreset?.builtin)}
         onReorder={(order) => update((prev) => setCategoryOrder(prev, order))}
         onToggleVisible={(id) => update((prev) => toggleCategoryVisible(prev, id))}
         onToggleAutoRefresh={(enabled) =>
@@ -830,7 +829,13 @@ export default function App() {
         onEditCategory={(id) => setSettingsRoute({ name: 'category-edit', categoryId: id })}
         onNewCategory={() => setSettingsRoute({ name: 'category-edit' })}
         onOpenChannels={() => setSettingsRoute({ name: 'channels' })}
-        onResetLayout={(opts) => update((prev) => resetCategoryLayout(prev, opts))}
+        onResetLayout={(opts) => {
+          if (presets.activePreset?.builtin) {
+            presets.restoreFactory()
+            return
+          }
+          update((prev) => resetCategoryLayout(prev, opts))
+        }}
         onBack={() =>
           setSettingsRoute(
             settingsRoute.name === 'categories' && settingsRoute.returnTo === 'presets'

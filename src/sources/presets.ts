@@ -44,6 +44,8 @@ export interface LayoutPreset {
 export interface PresetsState {
   activePresetId: string
   userPresets: LayoutPreset[]
+  /** 用户对内置预设的就地修改；与出厂相同则不出现在此表 */
+  builtinOverrides: Record<string, LayoutSnapshot>
 }
 
 const KNOWN_SOURCE_IDS = new Set(SOURCES.map((source) => source.id))
@@ -518,12 +520,56 @@ export function findBuiltinPreset(id: string): LayoutPreset | undefined {
   return BUILTIN_PRESETS.find((preset) => preset.id === id)
 }
 
+export function snapshotsEqual(a: LayoutSnapshot, b: LayoutSnapshot): boolean {
+  const left = normalizeSnapshot(a)
+  const right = normalizeSnapshot(b)
+  const sortSources = (snapshot: LayoutSnapshot) =>
+    Object.fromEntries(
+      Object.entries(snapshot.categorySources).sort(([x], [y]) => x.localeCompare(y)),
+    )
+  return (
+    JSON.stringify({ ...left, categorySources: sortSources(left) }) ===
+    JSON.stringify({ ...right, categorySources: sortSources(right) })
+  )
+}
+
+export function emptyLayoutSnapshot(): LayoutSnapshot {
+  return normalizeSnapshot({
+    categoryOrder: ['mix'],
+    hiddenCategoryIds: hiddenExcept(['mix']),
+    categorySources: {},
+    customCategories: [],
+    enabledSourceIds: [],
+  })
+}
+
+export function emptyPresetsState(): PresetsState {
+  return { activePresetId: BUILTIN_DEFAULT_ID, userPresets: [], builtinOverrides: {} }
+}
+
+function builtinOverridesOf(state: PresetsState): Record<string, LayoutSnapshot> {
+  return state.builtinOverrides ?? {}
+}
+
+export function isBuiltinOverridden(state: PresetsState, id: string): boolean {
+  return Boolean(findBuiltinPreset(id) && builtinOverridesOf(state)[id])
+}
+
 export function resolvePreset(state: PresetsState, id: string): LayoutPreset | undefined {
-  return findBuiltinPreset(id) ?? state.userPresets.find((preset) => preset.id === id)
+  const builtin = findBuiltinPreset(id)
+  if (builtin) {
+    const overlay = builtinOverridesOf(state)[id]
+    return overlay ? { ...builtin, snapshot: normalizeSnapshot(overlay) } : builtin
+  }
+  return state.userPresets.find((preset) => preset.id === id)
 }
 
 export function listAllPresets(userPresets: LayoutPreset[]): LayoutPreset[] {
   return [...BUILTIN_PRESETS, ...userPresets]
+}
+
+export function listResolvedBuiltins(state: PresetsState): LayoutPreset[] {
+  return BUILTIN_PRESETS.map((preset) => resolvePreset(state, preset.id) ?? preset)
 }
 
 function newUserPresetId(prefix = 'user'): string {
@@ -547,26 +593,36 @@ function userPresetFromSnapshot(
   }
 }
 
+function withOverride(
+  state: PresetsState,
+  builtinId: string,
+  snapshot: LayoutSnapshot,
+): PresetsState {
+  const factory = findBuiltinPreset(builtinId)
+  if (!factory) return state
+  const normalized = normalizeSnapshot(snapshot)
+  const builtinOverrides = { ...builtinOverridesOf(state) }
+  if (snapshotsEqual(normalized, factory.snapshot)) {
+    delete builtinOverrides[builtinId]
+  } else {
+    builtinOverrides[builtinId] = normalized
+  }
+  return { ...state, builtinOverrides }
+}
+
 export function buildMigratedPresetsState(
   prefs: Preferences,
   enabledSourceIds: string[],
 ): PresetsState {
-  const preset = userPresetFromSnapshot(
-    MIGRATE_LAYOUT_PRESET_ID,
-    '我的布局',
+  return withOverride(
+    emptyPresetsState(),
+    BUILTIN_DEFAULT_ID,
     snapshotFromRuntime(prefs, enabledSourceIds),
-    { description: '升级前的分类与频道设置' },
   )
-  return { activePresetId: preset.id, userPresets: [preset] }
 }
 
 export function buildFreshInstallPresetsState(): PresetsState {
-  const builtin = findBuiltinPreset(BUILTIN_DEFAULT_ID)!
-  const preset = userPresetFromSnapshot(USER_DEFAULT_LAYOUT_ID, '我的布局', builtin.snapshot, {
-    description: '基于默认门户',
-    basedOnBuiltinId: BUILTIN_DEFAULT_ID,
-  })
-  return { activePresetId: preset.id, userPresets: [preset] }
+  return emptyPresetsState()
 }
 
 export function saveAsUserPreset(
@@ -583,10 +639,18 @@ export function saveAsUserPreset(
   return {
     preset,
     state: {
+      ...state,
       activePresetId: preset.id,
       userPresets: [...state.userPresets, preset],
     },
   }
+}
+
+export function createBlankUserPreset(
+  state: PresetsState,
+  name: string,
+): { state: PresetsState; preset: LayoutPreset } {
+  return saveAsUserPreset(state, emptyLayoutSnapshot(), name.trim() || '未命名预设')
 }
 
 export function updateUserPresetSnapshot(
@@ -606,7 +670,16 @@ export function updateUserPresetSnapshot(
   return { ...state, userPresets: next }
 }
 
+/** 写回当前激活项：内置走覆盖层，用户预设改 snapshot */
+export function updateActiveSnapshot(state: PresetsState, snapshot: LayoutSnapshot): PresetsState {
+  if (findBuiltinPreset(state.activePresetId)) {
+    return withOverride(state, state.activePresetId, snapshot)
+  }
+  return updateUserPresetSnapshot(state, state.activePresetId, snapshot)
+}
+
 export function renameUserPreset(state: PresetsState, presetId: string, name: string): PresetsState {
+  if (findBuiltinPreset(presetId)) return state
   const trimmed = name.trim()
   if (!trimmed) return state
   const index = state.userPresets.findIndex((preset) => preset.id === presetId)
@@ -617,6 +690,7 @@ export function renameUserPreset(state: PresetsState, presetId: string, name: st
 }
 
 export function deleteUserPreset(state: PresetsState, presetId: string): PresetsState {
+  if (findBuiltinPreset(presetId)) return state
   const userPresets = state.userPresets.filter((preset) => preset.id !== presetId)
   if (userPresets.length === state.userPresets.length) return state
 
@@ -624,63 +698,107 @@ export function deleteUserPreset(state: PresetsState, presetId: string): Presets
     return { ...state, userPresets }
   }
 
-  const fallback =
-    userPresets.find((preset) => preset.id === MIGRATE_LAYOUT_PRESET_ID) ??
-    userPresets.find((preset) => preset.id === USER_DEFAULT_LAYOUT_ID) ??
-    userPresets[0]
-
+  const fallback = userPresets[0]
   if (fallback) {
-    return { activePresetId: fallback.id, userPresets }
+    return { ...state, activePresetId: fallback.id, userPresets }
   }
 
-  // 无用户预设时临时指向内置；hook / ensureActiveUserPreset 应立刻物化为可写副本
-  return { activePresetId: BUILTIN_DEFAULT_ID, userPresets: [] }
+  return { ...state, activePresetId: BUILTIN_DEFAULT_ID, userPresets: [] }
 }
 
-/**
- * 应用任意预设后，保证 active 落在可写用户预设上。
- * - 用户预设：直接激活
- * - 内置：复用已有 basedOn 副本，或另存一份再激活
- */
-export function activatePresetWritable(
+export function activatePreset(
   state: PresetsState,
   presetId: string,
 ): { state: PresetsState; snapshot: LayoutSnapshot } | undefined {
   const preset = resolvePreset(state, presetId)
   if (!preset) return undefined
+  return {
+    snapshot: normalizeSnapshot(preset.snapshot),
+    state: { ...state, activePresetId: preset.id },
+  }
+}
 
-  const snapshot = normalizeSnapshot(preset.snapshot)
+export function restoreBuiltinFactory(
+  state: PresetsState,
+  presetId: string,
+): { state: PresetsState; snapshot: LayoutSnapshot; applied: boolean } | undefined {
+  const builtin = findBuiltinPreset(presetId)
+  if (!builtin) return undefined
+  const builtinOverrides = { ...builtinOverridesOf(state) }
+  delete builtinOverrides[presetId]
+  return {
+    snapshot: builtin.snapshot,
+    applied: state.activePresetId === presetId,
+    state: { ...state, builtinOverrides },
+  }
+}
 
-  if (!preset.builtin) {
-    return { state: { ...state, activePresetId: preset.id }, snapshot }
+export function ensureValidActivePreset(state: PresetsState): PresetsState {
+  if (resolvePreset(state, state.activePresetId)) {
+    return { ...state, builtinOverrides: builtinOverridesOf(state) }
+  }
+  return { ...state, activePresetId: BUILTIN_DEFAULT_ID, builtinOverrides: builtinOverridesOf(state) }
+}
+
+function legacyFoldTarget(preset: LayoutPreset): string | undefined {
+  if (preset.id === MIGRATE_LAYOUT_PRESET_ID || preset.id === USER_DEFAULT_LAYOUT_ID) {
+    return BUILTIN_DEFAULT_ID
+  }
+  if (!preset.basedOnBuiltinId) return undefined
+  const builtin = findBuiltinPreset(preset.basedOnBuiltinId)
+  if (builtin && preset.name === builtin.name) return builtin.id
+  return undefined
+}
+
+/** 把旧版 copy-on-write 副本折进对应内置覆盖层 */
+export function foldLegacyWritableCopies(state: PresetsState): PresetsState {
+  const foldablesByBuiltin = new Map<string, LayoutPreset[]>()
+  const remaining: LayoutPreset[] = []
+
+  for (const preset of state.userPresets) {
+    const target = legacyFoldTarget(preset)
+    if (!target) {
+      remaining.push(preset)
+      continue
+    }
+    const list = foldablesByBuiltin.get(target) ?? []
+    list.push(preset)
+    foldablesByBuiltin.set(target, list)
   }
 
-  const existing = state.userPresets.find((item) => item.basedOnBuiltinId === preset.id)
-  if (existing) {
-    const updated = updateUserPresetSnapshot(state, existing.id, snapshot)
-    return {
-      snapshot,
-      state: { ...updated, activePresetId: existing.id },
+  let next: PresetsState = {
+    ...state,
+    userPresets: remaining,
+    builtinOverrides: { ...builtinOverridesOf(state) },
+  }
+
+  for (const [builtinId, foldables] of foldablesByBuiltin) {
+    const pick =
+      foldables.find((preset) => preset.id === state.activePresetId) ??
+      foldables.reduce((latest, preset) => (preset.updatedAt >= latest.updatedAt ? preset : latest))
+    if (!next.builtinOverrides[builtinId]) {
+      next = withOverride(next, builtinId, pick.snapshot)
+    }
+    if (foldables.some((preset) => preset.id === next.activePresetId)) {
+      next = { ...next, activePresetId: builtinId }
     }
   }
 
-  const { state: next, preset: copy } = saveAsUserPreset(
-    state,
-    snapshot,
-    preset.name,
-    preset.description,
-    preset.id,
-  )
-  return { state: { ...next, activePresetId: copy.id }, snapshot }
+  return ensureValidActivePreset(next)
 }
 
-/** 若 active 误指内置或缺失，物化为可写用户预设 */
-export function ensureActiveUserPreset(state: PresetsState): PresetsState {
-  const active = resolvePreset(state, state.activePresetId)
-  if (active && !active.builtin) return state
-
-  const materialized = activatePresetWritable(state, active?.id ?? BUILTIN_DEFAULT_ID)
-  return materialized?.state ?? buildFreshInstallPresetsState()
+function normalizeBuiltinOverrides(raw: unknown): Record<string, LayoutSnapshot> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const result: Record<string, LayoutSnapshot> = {}
+  for (const [id, snapshot] of Object.entries(raw as Record<string, unknown>)) {
+    const factory = findBuiltinPreset(id)
+    if (!factory) continue
+    const normalized = normalizeSnapshot(snapshot)
+    if (!snapshotsEqual(normalized, factory.snapshot)) {
+      result[id] = normalized
+    }
+  }
+  return result
 }
 
 export function normalizePresetsState(raw: unknown): PresetsState | null {
@@ -707,8 +825,9 @@ export function normalizePresetsState(raw: unknown): PresetsState | null {
     })
   }
 
-  return ensureActiveUserPreset({
+  return foldLegacyWritableCopies({
     activePresetId: input.activePresetId,
     userPresets,
+    builtinOverrides: normalizeBuiltinOverrides(input.builtinOverrides),
   })
 }

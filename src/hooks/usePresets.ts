@@ -7,19 +7,22 @@ import {
   savePresetsState,
 } from '../lib/storage'
 import {
-  BUILTIN_PRESETS,
-  activatePresetWritable,
+  activatePreset,
   applySnapshotToPrefs,
   buildFreshInstallPresetsState,
   buildMigratedPresetsState,
+  createBlankUserPreset,
   deleteUserPreset,
-  ensureActiveUserPreset,
+  ensureValidActivePreset,
+  listResolvedBuiltins,
   normalizePresetsState,
   renameUserPreset,
   resolvePreset,
+  restoreBuiltinFactory,
   saveAsUserPreset,
   snapshotFromRuntime,
-  updateUserPresetSnapshot,
+  snapshotsEqual,
+  updateActiveSnapshot,
   type LayoutPreset,
   type LayoutSnapshot,
   type PresetsState,
@@ -47,10 +50,6 @@ function bootstrapPresetsState(): PresetsState {
   return buildFreshInstallPresetsState()
 }
 
-function sameSnapshot(a: LayoutSnapshot, b: LayoutSnapshot): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
-}
-
 export interface UsePresetsArgs {
   prefs: Preferences
   enabledIds: string[]
@@ -62,9 +61,10 @@ export interface UsePresetsApi {
   state: PresetsState
   builtins: readonly LayoutPreset[]
   activePreset: LayoutPreset | undefined
-  basedOnBuiltinId: string | undefined
   applyPreset: (id: string) => void
   saveAs: (name: string, description?: string) => string
+  createBlank: (name: string) => string
+  restoreFactory: (id?: string) => void
   rename: (id: string, name: string) => void
   remove: (id: string) => void
 }
@@ -76,7 +76,7 @@ export function usePresets({
   setEnabledIds,
 }: UsePresetsArgs): UsePresetsApi {
   const [state, setState] = useState<PresetsState>(() => {
-    const initial = ensureActiveUserPreset(bootstrapPresetsState())
+    const initial = ensureValidActivePreset(bootstrapPresetsState())
     savePresetsState(initial)
     return initial
   })
@@ -104,12 +104,12 @@ export function usePresets({
 
     const snapshot = snapshotFromRuntime(prefs, enabledIds)
     setState((prev) => {
-      const ensured = ensureActiveUserPreset(prev)
-      const current = ensured.userPresets.find((item) => item.id === ensured.activePresetId)
-      if (current && sameSnapshot(current.snapshot, snapshot)) {
+      const ensured = ensureValidActivePreset(prev)
+      const current = resolvePreset(ensured, ensured.activePresetId)
+      if (current && snapshotsEqual(current.snapshot, snapshot)) {
         return ensured === prev ? prev : ensured
       }
-      return updateUserPresetSnapshot(ensured, ensured.activePresetId, snapshot)
+      return updateActiveSnapshot(ensured, snapshot)
     })
   }, [prefs, enabledIds])
 
@@ -124,10 +124,11 @@ export function usePresets({
   )
 
   const activePreset = useMemo(() => resolvePreset(state, state.activePresetId), [state])
+  const builtins = useMemo(() => listResolvedBuiltins(state), [state])
 
   const applyPreset = useCallback(
     (id: string) => {
-      const result = activatePresetWritable(stateRef.current, id)
+      const result = activatePreset(stateRef.current, id)
       if (!result) return
       setState(result.state)
       pushRuntime(result.snapshot)
@@ -137,17 +138,40 @@ export function usePresets({
 
   const saveAs = useCallback(
     (name: string, description?: string) => {
+      const current = resolvePreset(stateRef.current, stateRef.current.activePresetId)
       const snapshot = snapshotFromRuntime(prefs, enabledIds)
       const { state: next, preset } = saveAsUserPreset(
         stateRef.current,
         snapshot,
         name,
         description,
+        current?.builtin ? current.id : undefined,
       )
       setState(next)
       return preset.id
     },
     [enabledIds, prefs],
+  )
+
+  const createBlank = useCallback(
+    (name: string) => {
+      const { state: next, preset } = createBlankUserPreset(stateRef.current, name)
+      setState(next)
+      pushRuntime(preset.snapshot)
+      return preset.id
+    },
+    [pushRuntime],
+  )
+
+  const restoreFactory = useCallback(
+    (id?: string) => {
+      const targetId = id ?? stateRef.current.activePresetId
+      const result = restoreBuiltinFactory(stateRef.current, targetId)
+      if (!result) return
+      setState(result.state)
+      if (result.applied) pushRuntime(result.snapshot)
+    },
+    [pushRuntime],
   )
 
   const rename = useCallback((id: string, name: string) => {
@@ -157,8 +181,7 @@ export function usePresets({
   const remove = useCallback(
     (id: string) => {
       const prev = stateRef.current
-      const deleted = deleteUserPreset(prev, id)
-      const next = ensureActiveUserPreset(deleted)
+      const next = ensureValidActivePreset(deleteUserPreset(prev, id))
       setState(next)
       if (next.activePresetId !== prev.activePresetId) {
         const active = resolvePreset(next, next.activePresetId)
@@ -170,11 +193,12 @@ export function usePresets({
 
   return {
     state,
-    builtins: BUILTIN_PRESETS,
+    builtins,
     activePreset,
-    basedOnBuiltinId: activePreset?.basedOnBuiltinId,
     applyPreset,
     saveAs,
+    createBlank,
+    restoreFactory,
     rename,
     remove,
   }

@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   Pencil,
   Plus,
+  RotateCcw,
   SlidersHorizontal,
   Trash2,
   TrendingUp,
@@ -30,6 +31,8 @@ import {
   BUILTIN_TECH_ID,
   BUILTIN_WORLD_ID,
   findBuiltinPreset,
+  isBuiltinOverridden,
+  resolvePreset,
   type LayoutPreset,
   type LayoutSnapshot,
   type PresetsState,
@@ -43,6 +46,8 @@ interface Props {
   onEditPreset: (id: string) => void
   onEditLayout: () => void
   onSaveAs: (name: string) => void
+  onCreateBlank: (name: string) => void
+  onRestoreFactory: (id: string) => void
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
   onBack: () => void
@@ -53,6 +58,8 @@ type DialogState =
   | { type: 'edit'; id: string; name: string }
   | { type: 'delete'; id: string; name: string }
   | { type: 'saveAs' }
+  | { type: 'createBlank' }
+  | { type: 'restore'; id: string; name: string }
   | { type: 'rename'; id: string; name: string }
   | null
 
@@ -137,13 +144,17 @@ function formatUpdateTime(timestamp: number): string {
 function ActivePresetHero({
   activePreset,
   basedOnBuiltinName,
+  modified,
   onEditLayout,
   onSaveAs,
+  onRestore,
 }: {
   activePreset?: LayoutPreset
   basedOnBuiltinName?: string
+  modified?: boolean
   onEditLayout: () => void
   onSaveAs: () => void
+  onRestore?: () => void
 }) {
   if (!activePreset) return null
 
@@ -167,9 +178,13 @@ function ActivePresetHero({
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cinnabar" />
               正在使用
             </span>
-            {basedOnBuiltinName ? (
+            {activePreset.builtin ? (
               <span className="font-mono text-[10px] tracking-[0.1em] text-paper-faint">
-                派生自「{basedOnBuiltinName}」
+                {modified ? '内置 · 已修改' : '内置场景'}
+              </span>
+            ) : basedOnBuiltinName ? (
+              <span className="font-mono text-[10px] tracking-[0.1em] text-paper-faint">
+                来自「{basedOnBuiltinName}」
               </span>
             ) : (
               <span className="font-mono text-[10px] tracking-[0.1em] text-paper-faint">
@@ -178,14 +193,26 @@ function ActivePresetHero({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onSaveAs}
-            className="inline-flex items-center gap-1 rounded-full border border-haze bg-paper/5 px-2.5 py-1 font-mono text-[10px] tracking-[0.1em] text-paper-muted transition-colors hover:border-cinnabar/40 hover:text-paper"
-          >
-            <CopyPlus size={11.5} strokeWidth={1.7} />
-            另存为新预设
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onRestore && (
+              <button
+                type="button"
+                onClick={onRestore}
+                className="inline-flex items-center gap-1 rounded-full border border-haze bg-paper/5 px-2.5 py-1 font-mono text-[10px] tracking-[0.1em] text-paper-muted transition-colors hover:border-cinnabar/40 hover:text-paper"
+              >
+                <RotateCcw size={11.5} strokeWidth={1.7} />
+                恢复出厂
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSaveAs}
+              className="inline-flex items-center gap-1 rounded-full border border-haze bg-paper/5 px-2.5 py-1 font-mono text-[10px] tracking-[0.1em] text-paper-muted transition-colors hover:border-cinnabar/40 hover:text-paper"
+            >
+              <CopyPlus size={11.5} strokeWidth={1.7} />
+              另存为新预设
+            </button>
+          </div>
         </div>
 
         {/* 预设标题与描述 */}
@@ -242,13 +269,17 @@ function ActivePresetHero({
 function BuiltinPresetCard({
   preset,
   isCurrent,
+  modified,
   onApply,
   onCustomize,
+  onRestore,
 }: {
   preset: LayoutPreset
   isCurrent: boolean
+  modified: boolean
   onApply: () => void
   onCustomize: () => void
+  onRestore?: () => void
 }) {
   const Icon = getBuiltinIcon(preset.id)
   const summary = getPresetSummary(preset.snapshot)
@@ -285,6 +316,11 @@ function BuiltinPresetCard({
                     使用中
                   </span>
                 )}
+                {modified && (
+                  <span className="rounded-full bg-paper/5 px-1.5 py-0.5 font-mono text-[9px] text-paper-faint">
+                    已修改
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -318,22 +354,46 @@ function BuiltinPresetCard({
         </span>
 
         {isCurrent ? (
-          <button
-            type="button"
-            onClick={onCustomize}
-            className="inline-flex items-center gap-1 rounded-full border border-cinnabar/50 bg-cinnabar/10 px-2.5 py-1 font-mono text-[10px] tracking-wide text-cinnabar-soft transition-colors hover:bg-cinnabar/20"
-          >
-            <SlidersHorizontal size={11} strokeWidth={1.7} />
-            去编辑
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onRestore && (
+              <button
+                type="button"
+                onClick={onRestore}
+                className="inline-flex items-center gap-1 rounded-full border border-haze bg-transparent px-2.5 py-1 font-mono text-[10px] tracking-wide text-paper-muted transition-colors hover:border-cinnabar/30 hover:text-paper"
+              >
+                <RotateCcw size={11} strokeWidth={1.7} />
+                出厂
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onCustomize}
+              className="inline-flex items-center gap-1 rounded-full border border-cinnabar/50 bg-cinnabar/10 px-2.5 py-1 font-mono text-[10px] tracking-wide text-cinnabar-soft transition-colors hover:bg-cinnabar/20"
+            >
+              <SlidersHorizontal size={11} strokeWidth={1.7} />
+              去编辑
+            </button>
+          </div>
         ) : (
-          <button
-            type="button"
-            onClick={onApply}
-            className="inline-flex items-center gap-1 rounded-full border border-haze bg-transparent px-3 py-1 font-mono text-[10px] tracking-wide text-paper transition-colors hover:border-cinnabar/50 hover:bg-cinnabar/10 hover:text-cinnabar"
-          >
-            应用此预设
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onRestore && (
+              <button
+                type="button"
+                onClick={onRestore}
+                className="inline-flex items-center gap-1 rounded-full border border-haze bg-transparent px-2.5 py-1 font-mono text-[10px] tracking-wide text-paper-muted transition-colors hover:border-cinnabar/30 hover:text-paper"
+              >
+                <RotateCcw size={11} strokeWidth={1.7} />
+                出厂
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onApply}
+              className="inline-flex items-center gap-1 rounded-full border border-haze bg-transparent px-3 py-1 font-mono text-[10px] tracking-wide text-paper transition-colors hover:border-cinnabar/50 hover:bg-cinnabar/10 hover:text-cinnabar"
+            >
+              应用此预设
+            </button>
+          </div>
         )}
       </div>
     </li>
@@ -485,7 +545,13 @@ function UserPresetCard({
 }
 
 /** 自定义预设为空时的引导卡片 */
-function PresetEmptyState({ onSaveAs }: { onSaveAs: () => void }) {
+function PresetEmptyState({
+  onSaveAs,
+  onCreateBlank,
+}: {
+  onSaveAs: () => void
+  onCreateBlank: () => void
+}) {
   return (
     <div className="page-x pt-2">
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-haze/90 bg-ink-raised/30 px-4 py-7 text-center">
@@ -494,16 +560,26 @@ function PresetEmptyState({ onSaveAs }: { onSaveAs: () => void }) {
         </div>
         <h3 className="mt-3 font-display text-[16px] text-paper">还没有自定义预设</h3>
         <p className="mt-1 max-w-xs text-[12px] leading-relaxed text-paper-muted">
-          保存当前分类与信源，随时一键切换。
+          另存当前布局，或从空白开始搭一套。
         </p>
-        <button
-          type="button"
-          onClick={onSaveAs}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-cinnabar/60 bg-cinnabar/15 px-4 py-1.5 font-mono text-[11px] font-medium text-cinnabar-soft transition-colors hover:bg-cinnabar/25"
-        >
-          <Plus size={13} strokeWidth={2} />
-          保存当前布局为新预设
-        </button>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={onCreateBlank}
+            className="inline-flex items-center gap-1.5 rounded-full border border-haze bg-transparent px-4 py-1.5 font-mono text-[11px] text-paper transition-colors hover:border-cinnabar/50 hover:text-cinnabar-soft"
+          >
+            <Plus size={13} strokeWidth={2} />
+            创建空白
+          </button>
+          <button
+            type="button"
+            onClick={onSaveAs}
+            className="inline-flex items-center gap-1.5 rounded-full border border-cinnabar/60 bg-cinnabar/15 px-4 py-1.5 font-mono text-[11px] font-medium text-cinnabar-soft transition-colors hover:bg-cinnabar/25"
+          >
+            <CopyPlus size={13} strokeWidth={2} />
+            另存当前
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -516,63 +592,84 @@ export function PresetListScreen({
   onEditPreset,
   onEditLayout,
   onSaveAs,
+  onCreateBlank,
+  onRestoreFactory,
   onRename,
   onDelete,
   onBack,
 }: Props) {
   const [dialog, setDialog] = useState<DialogState>(null)
 
-  const activePreset = state.userPresets.find((item) => item.id === state.activePresetId)
+  const activePreset = resolvePreset(state, state.activePresetId)
   const basedOnBuiltin = activePreset?.basedOnBuiltinId
     ? findBuiltinPreset(activePreset.basedOnBuiltinId)
     : undefined
+  const activeModified = Boolean(
+    activePreset?.builtin && isBuiltinOverridden(state, activePreset.id),
+  )
 
   return (
     <SettingsShell
       title="场景预设"
-      caption={`当前「${activePreset?.name ?? '自定义预设'}」`}
+      caption={`当前「${activePreset?.name ?? '场景预设'}」`}
       onBack={onBack}
       action={
         <button
           type="button"
-          onClick={() => setDialog({ type: 'saveAs' })}
+          onClick={() => setDialog({ type: 'createBlank' })}
           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-haze bg-ink-raised/60 px-3 py-1.5 font-mono text-[10.5px] tracking-[0.08em] text-paper transition-colors hover:border-cinnabar/50 hover:text-cinnabar-soft"
         >
           <Plus size={12.5} strokeWidth={2} />
-          另存当前
+          创建空白
         </button>
       }
     >
       <ActivePresetHero
         activePreset={activePreset}
         basedOnBuiltinName={basedOnBuiltin?.name}
+        modified={activeModified}
         onEditLayout={onEditLayout}
         onSaveAs={() => setDialog({ type: 'saveAs' })}
+        onRestore={
+          activeModified
+            ? () =>
+                setDialog({
+                  type: 'restore',
+                  id: activePreset!.id,
+                  name: activePreset!.name,
+                })
+            : undefined
+        }
       />
 
-      <SettingsHint>切换会整包替换；改分类写回当前预设。</SettingsHint>
+      <SettingsHint>切换会整包替换；改分类写回当前预设，内置可恢复出厂。</SettingsHint>
 
       {/* 内置场景包 */}
       <SettingsSection title="内置场景包">
         <ul className="page-x grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {builtins.map((preset) => {
-            const isCurrent = Boolean(
-              activePreset && activePreset.basedOnBuiltinId === preset.id,
-            )
+            const isCurrent = preset.id === state.activePresetId
+            const modified = isBuiltinOverridden(state, preset.id)
 
             return (
               <BuiltinPresetCard
                 key={preset.id}
                 preset={preset}
                 isCurrent={isCurrent}
+                modified={modified}
                 onApply={() => setDialog({ type: 'apply', id: preset.id, name: preset.name })}
                 onCustomize={() => {
-                  if (activePreset) {
-                    onEditPreset(activePreset.id)
-                  } else {
-                    setDialog({ type: 'apply', id: preset.id, name: preset.name })
+                  if (isCurrent) {
+                    onEditPreset(preset.id)
+                    return
                   }
+                  setDialog({ type: 'apply', id: preset.id, name: preset.name })
                 }}
+                onRestore={
+                  modified
+                    ? () => setDialog({ type: 'restore', id: preset.id, name: preset.name })
+                    : undefined
+                }
               />
             )
           })}
@@ -582,7 +679,10 @@ export function PresetListScreen({
       {/* 我的自定义预设 */}
       <SettingsSection title="我的预设">
         {state.userPresets.length === 0 ? (
-          <PresetEmptyState onSaveAs={() => setDialog({ type: 'saveAs' })} />
+          <PresetEmptyState
+            onSaveAs={() => setDialog({ type: 'saveAs' })}
+            onCreateBlank={() => setDialog({ type: 'createBlank' })}
+          />
         ) : (
           <ul className="page-x grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {state.userPresets.map((preset) => {
@@ -601,11 +701,7 @@ export function PresetListScreen({
                   }}
                   onApply={() => setDialog({ type: 'apply', id: preset.id, name: preset.name })}
                   onRename={() => setDialog({ type: 'rename', id: preset.id, name: preset.name })}
-                  onDelete={
-                    state.userPresets.length > 1
-                      ? () => setDialog({ type: 'delete', id: preset.id, name: preset.name })
-                      : undefined
-                  }
+                  onDelete={() => setDialog({ type: 'delete', id: preset.id, name: preset.name })}
                 />
               )
             })}
@@ -659,7 +755,7 @@ export function PresetListScreen({
         title="删除预设？"
         message={
           dialog?.type === 'delete' ? (
-            <>删除「{dialog.name}」后不可恢复。若正在使用，将自动切换到其它预设。</>
+            <>删除「{dialog.name}」后不可恢复。若正在使用，将切换到其它预设或内置场景。</>
           ) : null
         }
         confirmLabel="删除"
@@ -676,15 +772,49 @@ export function PresetListScreen({
       {/* 弹窗：另存为 */}
       <PromptDialog
         open={dialog?.type === 'saveAs'}
-        title="另存当前布局"
-        message="把当前分类与频道设置存成新的自定义预设。"
+        title="另存为新预设"
+        message="以当前预设为蓝本复制一份自定义预设。"
         label="预设名称"
-        defaultValue="我的预设"
+        defaultValue={activePreset ? `${activePreset.name} 副本` : '我的预设'}
         confirmLabel="保存"
         onCancel={() => setDialog(null)}
         onConfirm={(name) => {
           setDialog(null)
           onSaveAs(name)
+        }}
+      />
+
+      {/* 弹窗：创建空白 */}
+      <PromptDialog
+        open={dialog?.type === 'createBlank'}
+        title="创建空白预设"
+        message="从空白开始：仅保留综合分类，信源全空，不基于任何内置场景。"
+        label="预设名称"
+        defaultValue="未命名预设"
+        confirmLabel="创建"
+        onCancel={() => setDialog(null)}
+        onConfirm={(name) => {
+          setDialog(null)
+          onCreateBlank(name)
+        }}
+      />
+
+      {/* 弹窗：恢复出厂 */}
+      <ConfirmDialog
+        open={dialog?.type === 'restore'}
+        title="恢复出厂配置？"
+        message={
+          dialog?.type === 'restore' ? (
+            <>将「{dialog.name}」恢复为内置出厂分类与信源。当前改动会丢掉。</>
+          ) : null
+        }
+        confirmLabel="恢复出厂"
+        onCancel={() => setDialog(null)}
+        onConfirm={() => {
+          if (dialog?.type !== 'restore') return
+          const { id } = dialog
+          setDialog(null)
+          onRestoreFactory(id)
         }}
       />
 
