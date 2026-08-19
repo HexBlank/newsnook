@@ -114,6 +114,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "lightningcss": "^1.33.0",
     "oxlint": "^1.75.0",
     "socks-proxy-agent": "^10.1.0",
     "typescript": "~6.0.2",

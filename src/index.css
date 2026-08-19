@@ -283,11 +283,20 @@
 }
 
 /* 安全区变量：优先取 Android 原生注入的高度，回退取 CSS env() */
+/* Chrome < 79 不支持 max()，先给 fallback，再用 @supports 覆盖 */
 :root {
-  --sat: max(var(--sat-native, 0px), env(safe-area-inset-top, 0px));
-  --sab: max(var(--sab-native, 0px), env(safe-area-inset-bottom, 0px));
-  --sal: max(var(--sal-native, 0px), env(safe-area-inset-left, 0px));
-  --sar: max(var(--sar-native, 0px), env(safe-area-inset-right, 0px));
+  --sat: var(--sat-native, 0px);
+  --sab: var(--sab-native, 0px);
+  --sal: var(--sal-native, 0px);
+  --sar: var(--sar-native, 0px);
+}
+@supports (width: max(1px, 2px)) {
+  :root {
+    --sat: max(var(--sat-native, 0px), env(safe-area-inset-top, 0px));
+    --sab: max(var(--sab-native, 0px), env(safe-area-inset-bottom, 0px));
+    --sal: max(var(--sal-native, 0px), env(safe-area-inset-left, 0px));
+    --sar: max(var(--sar-native, 0px), env(safe-area-inset-right, 0px));
+  }
 }
 
 /* 阅读排版：默认值写在这里，用户偏好在运行时覆盖同名变量 */
@@ -1578,3 +1587,4 @@ html[data-eink='1'] .lead-cover-veil {
     rgb(0 0 0 / 0.94) 100%
   );
 }
+
