@@ -15,10 +15,19 @@
     <meta name="description" content="有所闻 News Nook，直连原发媒体的沉浸式阅读器。" />
     <style>
       :root {
-        --sat: max(var(--sat-native, 0px), env(safe-area-inset-top, 0px));
-        --sab: max(var(--sab-native, 0px), env(safe-area-inset-bottom, 0px));
-        --sal: max(var(--sal-native, 0px), env(safe-area-inset-left, 0px));
-        --sar: max(var(--sar-native, 0px), env(safe-area-inset-right, 0px));
+        /* fallback for Chrome < 79 where max() is unsupported */
+        --sat: var(--sat-native, 0px);
+        --sab: var(--sab-native, 0px);
+        --sal: var(--sal-native, 0px);
+        --sar: var(--sar-native, 0px);
+      }
+      @supports (width: max(1px, 2px)) {
+        :root {
+          --sat: max(var(--sat-native, 0px), env(safe-area-inset-top, 0px));
+          --sab: max(var(--sab-native, 0px), env(safe-area-inset-bottom, 0px));
+          --sal: max(var(--sal-native, 0px), env(safe-area-inset-left, 0px));
+          --sar: max(var(--sar-native, 0px), env(safe-area-inset-right, 0px));
+        }
       }
 
       /*
@@ -58,8 +67,36 @@
     />
     <title>有所闻 · News Nook</title>
     <script>
+      // WebView 版本检测：低于 Chrome 69 直接提示，不进入应用
+      ;(function () {
+        var ua = navigator.userAgent
+        var match = ua.match(/Chrome\/(\d+)/)
+        var ver = match ? parseInt(match[1], 10) : 999
+        if (ver < 69) {
+          document.title = '需要更新 WebView'
+          document.documentElement.innerHTML =
+            '<body style="margin:0;background:#0e0f12;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center">' +
+            '<div><h2 style="font-size:20px;margin:0 0 12px">需要更新系统 WebView</h2>' +
+            '<p style="font-size:14px;opacity:.7;line-height:1.6">您的 Android System WebView 版本过低（Chrome ' + ver + '），无法运行本应用。<br>请在应用商店搜索「Android System WebView」或「Google Chrome」并更新。</p></div></body>'
+          throw new Error('WebView too old: Chrome/' + ver)
+        }
+      })()
+
+      // Chrome < 84 不支持 flex gap，标记 html 以启用 CSS margin fallback
+      ;(function () {
+        var ua = navigator.userAgent
+        var m = ua.match(/Chrome\/(\d+)/)
+        if (m && parseInt(m[1], 10) < 84) {
+          document.documentElement.dataset.noFlexGap = '1'
+        }
+      })()
+
       // 低版本 Android WebView 兼容 Polyfill
       ;(function () {
+        // globalThis（Chrome 71+）
+        if (typeof globalThis === 'undefined') {
+          ;(function () { this.globalThis = this })()
+        }
         if (typeof Object.hasOwn !== 'function') {
           Object.hasOwn = function (obj, prop) {
             return Object.prototype.hasOwnProperty.call(obj, prop)
@@ -99,6 +136,58 @@
         if (typeof queueMicrotask !== 'function') {
           window.queueMicrotask = function (cb) {
             Promise.resolve().then(cb)
+          }
+        }
+        // String.prototype.replaceAll（Chrome 85+）
+        if (!String.prototype.replaceAll) {
+          String.prototype.replaceAll = function (search, replacement) {
+            if (search instanceof RegExp) {
+              if (!search.global) throw new TypeError('replaceAll must be called with a global RegExp')
+              return this.replace(search, replacement)
+            }
+            return this.split(search).join(replacement)
+          }
+        }
+        // Array.prototype.findLast / findLastIndex（Chrome 97+）
+        if (!Array.prototype.findLast) {
+          Array.prototype.findLast = function (fn, thisArg) {
+            for (var i = this.length - 1; i >= 0; i--) {
+              if (fn.call(thisArg, this[i], i, this)) return this[i]
+            }
+          }
+        }
+        if (!Array.prototype.findLastIndex) {
+          Array.prototype.findLastIndex = function (fn, thisArg) {
+            for (var i = this.length - 1; i >= 0; i--) {
+              if (fn.call(thisArg, this[i], i, this)) return i
+            }
+            return -1
+          }
+        }
+        // Promise.allSettled（Chrome 76+）
+        if (!Promise.allSettled) {
+          Promise.allSettled = function (promises) {
+            return Promise.all(
+              Array.from(promises).map(function (p) {
+                return Promise.resolve(p).then(
+                  function (value) { return { status: 'fulfilled', value: value } },
+                  function (reason) { return { status: 'rejected', reason: reason } }
+                )
+              })
+            )
+          }
+        }
+        // Object.groupBy（Chrome 117+）
+        if (typeof Object.groupBy !== 'function') {
+          Object.groupBy = function (items, callbackFn) {
+            var obj = Object.create(null)
+            var i = 0
+            for (var item of items) {
+              var key = callbackFn(item, i++)
+              if (!(key in obj)) obj[key] = []
+              obj[key].push(item)
+            }
+            return obj
           }
         }
       })()

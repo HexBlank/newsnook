@@ -6,6 +6,7 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import postcss from 'postcss'
+import { transform as lcssTransform } from 'lightningcss'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
 import { SocksProxyAgent } from 'socks-proxy-agent'
 
@@ -478,9 +479,94 @@ function colorMixToRgb(val: string): string {
         return `rgb(var(--tone-${colorName}-rgb))`
       },
     )
+    // color-mix(in srgb, var(--color-xxx) NN%, transparent)
+    .replace(
+      /color-mix\(\s*in\s+srgb\s*,\s*var\(--color-([a-z0-9-]+)\)\s+([0-9.]+)%\s*,\s*transparent\s*\)/g,
+      (_match, colorName, pct) => {
+        const alpha = Number((Number(pct) / 100).toFixed(4))
+        if (staticColorRgb[colorName]) {
+          return `rgb(${staticColorRgb[colorName]} / ${alpha})`
+        }
+        return `rgb(var(--tone-${colorName}-rgb) / ${alpha})`
+      },
+    )
+    // color-mix(in srgb, var(--color-xxx) NN%, white NN%)
+    .replace(
+      /color-mix\(\s*in\s+srgb\s*,\s*var\(--color-([a-z0-9-]+)\)\s+([0-9.]+)%\s*,\s*white\s+([0-9.]+)%\s*\)/g,
+      (_match, colorName) => {
+        if (staticColorRgb[colorName]) {
+          return `rgb(${staticColorRgb[colorName]})`
+        }
+        return `var(--color-${colorName})`
+      },
+    )
+    // color-mix(in oklab, currentcolor NN%, transparent)
+    .replace(
+      /color-mix\(\s*in\s+oklab\s*,\s*currentcolor\s+([0-9.]+)%\s*,\s*transparent\s*\)/gi,
+      () => `currentcolor`,
+    )
+    // color-mix(in oklab, #hex var(--alpha), transparent) — Tailwind shadow
+    .replace(
+      /color-mix\(\s*in\s+oklab\s*,\s*(#[0-9a-fA-F]+)\s+var\([^)]+\)\s*,\s*transparent\s*\)/g,
+      (_match, hex) => hex,
+    )
 }
 
 function unlayerCssPlugin(): Plugin {
+  const LOGICAL_PROPS_MAP: Record<string, string[]> = {
+    'padding-inline': ['padding-left', 'padding-right'],
+    'padding-inline-start': ['padding-left'],
+    'padding-inline-end': ['padding-right'],
+    'padding-block': ['padding-top', 'padding-bottom'],
+    'padding-block-start': ['padding-top'],
+    'padding-block-end': ['padding-bottom'],
+    'margin-inline': ['margin-left', 'margin-right'],
+    'margin-inline-start': ['margin-left'],
+    'margin-inline-end': ['margin-right'],
+    'margin-block': ['margin-top', 'margin-bottom'],
+    'margin-block-start': ['margin-top'],
+    'margin-block-end': ['margin-bottom'],
+    'inset-inline': ['left', 'right'],
+    'inset-inline-start': ['left'],
+    'inset-inline-end': ['right'],
+    'inset-block': ['top', 'bottom'],
+    'inset-block-start': ['top'],
+    'inset-block-end': ['bottom'],
+    'border-inline': ['border-left', 'border-right'],
+    'border-inline-width': ['border-left-width', 'border-right-width'],
+    'border-inline-style': ['border-left-style', 'border-right-style'],
+    'border-inline-color': ['border-left-color', 'border-right-color'],
+    'border-inline-start': ['border-left'],
+    'border-inline-start-width': ['border-left-width'],
+    'border-inline-start-style': ['border-left-style'],
+    'border-inline-start-color': ['border-left-color'],
+    'border-inline-end': ['border-right'],
+    'border-inline-end-width': ['border-right-width'],
+    'border-inline-end-style': ['border-right-style'],
+    'border-inline-end-color': ['border-right-color'],
+    'border-block': ['border-top', 'border-bottom'],
+    'border-block-width': ['border-top-width', 'border-bottom-width'],
+    'border-block-style': ['border-top-style', 'border-bottom-style'],
+    'border-block-color': ['border-top-color', 'border-bottom-color'],
+    'border-block-start': ['border-top'],
+    'border-block-start-width': ['border-top-width'],
+    'border-block-start-style': ['border-top-style'],
+    'border-block-start-color': ['border-top-color'],
+    'border-block-end': ['border-bottom'],
+    'border-block-end-width': ['border-bottom-width'],
+    'border-block-end-style': ['border-bottom-style'],
+    'border-block-end-color': ['border-bottom-color'],
+    'border-start-start-radius': ['border-top-left-radius'],
+    'border-start-end-radius': ['border-top-right-radius'],
+    'border-end-start-radius': ['border-bottom-left-radius'],
+    'border-end-end-radius': ['border-bottom-right-radius'],
+    'scroll-margin-inline': ['scroll-margin-left', 'scroll-margin-right'],
+    'scroll-margin-inline-start': ['scroll-margin-left'],
+    'scroll-margin-inline-end': ['scroll-margin-right'],
+    'scroll-margin-block': ['scroll-margin-top', 'scroll-margin-bottom'],
+    'scroll-padding-inline': ['scroll-padding-left', 'scroll-padding-right'],
+  }
+
   const unlayer = {
     postcssPlugin: 'postcss-unlayer-plugin',
     AtRule: {
@@ -490,6 +576,9 @@ function unlayerCssPlugin(): Plugin {
         } else {
           atRule.remove()
         }
+      },
+      property(atRule: any) {
+        atRule.remove()
       },
       supports(atRule: any) {
         if (typeof atRule.params === 'string' && atRule.params.includes('color-mix')) {
@@ -505,6 +594,15 @@ function unlayerCssPlugin(): Plugin {
       },
     },
     Declaration(decl: any) {
+      if (LOGICAL_PROPS_MAP[decl.prop]) {
+        const props = LOGICAL_PROPS_MAP[decl.prop]
+        for (const p of props) {
+          decl.cloneBefore({ prop: p, value: decl.value })
+        }
+        decl.remove()
+        return
+      }
+
       if (typeof decl.value === 'string') {
         if (decl.value.includes('color-mix')) {
           decl.value = colorMixToRgb(decl.value)
@@ -532,7 +630,49 @@ function unlayerCssPlugin(): Plugin {
           typeof file.source === 'string'
         ) {
           const res = await postcss([unlayer]).process(file.source, { from: undefined })
-          file.source = res.css
+          const lowered = lcssTransform({
+            filename: file.fileName,
+            code: Buffer.from(res.css),
+            targets: { chrome: 69 << 16 },
+          })
+          // lightningcss 无法降级含 var() 的 color-mix，最终扫一遍兜底
+          let css = colorMixToRgb(lowered.code.toString())
+            .replace(/color-mix\([^)]*\)/g, (m) => {
+              return m.includes('var(') ? 'transparent' : m
+            })
+
+          // Flex gap polyfill: Chrome < 84 不支持 flex gap。
+          // 为每个 .gap-* utility 追加精确的 margin fallback。
+          const gapFallbacks: string[] = []
+          css.replace(
+            /\.(gap-[^\s{]+)\s*\{\s*(column-gap|row-gap|gap):\s*([^;}]+);?\s*\}/g,
+            (_full, cls: string, prop: string, val: string) => {
+              const sel = `.${cls}`.replace(/\\\./g, '\\.')
+              if (prop === 'column-gap') {
+                gapFallbacks.push(
+                  `html[data-no-flex-gap="1"] ${sel} > * + * { margin-left: ${val.trim()}; }`,
+                )
+              } else if (prop === 'row-gap') {
+                gapFallbacks.push(
+                  `html[data-no-flex-gap="1"] ${sel} > * + * { margin-top: ${val.trim()}; }`,
+                )
+              } else {
+                gapFallbacks.push(
+                  `html[data-no-flex-gap="1"] ${sel} > * + * { margin-left: ${val.trim()}; }`,
+                )
+                // Use a stronger selector to override margin-left for .flex-col
+                gapFallbacks.push(
+                  `html[data-no-flex-gap="1"] .flex-col${sel} > * + * { margin-left: 0; margin-top: ${val.trim()}; }`,
+                )
+              }
+              return ''
+            },
+          )
+          if (gapFallbacks.length > 0) {
+            css += '\n' + gapFallbacks.join('\n')
+          }
+
+          file.source = css
         }
       }
     },
@@ -554,8 +694,8 @@ export default defineConfig({
     __APP_BUILD__: JSON.stringify(buildStamp()),
   },
   build: {
-    target: ['chrome80', 'es2020'],
-    cssTarget: 'chrome80',
+    target: ['chrome69', 'es2020'],
+    cssTarget: 'chrome69',
     // hls.js is loaded only when an HLS video is opened; keep first paint lean.
     chunkSizeWarningLimit: 550,
   },
