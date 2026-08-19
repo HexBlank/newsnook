@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { Check, Monitor, Moon, Pencil, Play, Sun } from 'lucide-react'
 
+// 自定义主题高度依赖现代 CSS（如支持 rgb 拆分甚至 color-mix），低版本下显示不全且容易跑偏
+const isModernWebView = () => {
+  const m = navigator.userAgent.match(/Chrome\/(\d+)/)
+  return !m || parseInt(m[1], 10) >= 89
+}
+
 import { SettingsSection, SettingsShell } from '../../components/SettingsShell'
 import { ToggleSwitch } from '../../components/ToggleSwitch'
 import {
@@ -123,9 +129,10 @@ export function AppearanceScreen({
         </div>
       </div>
 
-      <SettingsSection title="风格">
-        <ul aria-label="选择外观风格" className="page-x grid grid-cols-2 gap-3">
-          {THEME_SCHEMES.map((item) => {
+      {isModernWebView() && (
+        <SettingsSection title="风格">
+          <ul aria-label="选择外观风格" className="page-x grid grid-cols-2 gap-3">
+            {THEME_SCHEMES.map((item) => {
             const checked = item.id === scheme
             const isCustom = item.id === 'custom'
             const swatch =
@@ -189,6 +196,7 @@ export function AppearanceScreen({
           })}
         </ul>
       </SettingsSection>
+      )}
 
       <SettingsSection title="主题">
         <ul
