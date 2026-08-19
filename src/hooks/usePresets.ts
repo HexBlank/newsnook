@@ -85,8 +85,6 @@ export function usePresets({
   stateRef.current = state
 
   const skipSync = useRef(true)
-  /** StrictMode 下 effect 可能跑两次；应用运行态后忽略随后的写回 */
-  const suppressSyncCount = useRef(0)
 
   useEffect(() => {
     savePresetsState(state)
@@ -95,10 +93,6 @@ export function usePresets({
   useEffect(() => {
     if (skipSync.current) {
       skipSync.current = false
-      return
-    }
-    if (suppressSyncCount.current > 0) {
-      suppressSyncCount.current -= 1
       return
     }
 
@@ -115,8 +109,6 @@ export function usePresets({
 
   const pushRuntime = useCallback(
     (snapshot: LayoutSnapshot) => {
-      // prefs + enabledIds 各可能触发一次 sync effect；StrictMode 再加倍
-      suppressSyncCount.current = 4
       updatePrefs((prev) => applySnapshotToPrefs(prev, snapshot))
       setEnabledIds(snapshot.enabledSourceIds)
     },
